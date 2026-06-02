@@ -340,9 +340,10 @@ void loop() {
 
         // Offset 11: Validity Flags (RaceBox Protocol)
         uint8_t raceboxValidityFlags = 0;
-        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validDate) raceboxValidityFlags |= (1 << 0); // Bit 0: valid date
-        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validTime) raceboxValidityFlags |= (1 << 1); // Bit 1: valid time
+        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validDate)    raceboxValidityFlags |= (1 << 0); // Bit 0: valid date
+        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validTime)    raceboxValidityFlags |= (1 << 1); // Bit 1: valid time
         if (myGNSS.packetUBXNAVPVT->data.valid.bits.fullyResolved) raceboxValidityFlags |= (1 << 2); // Bit 2: fully resolved
+        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validMagDec)  raceboxValidityFlags |= (1 << 3); // Bit 3: valid magnetic declination
         writeLittleEndian(payload, 11, raceboxValidityFlags);
 
         // Offset 12: Time Accuracy (RaceBox Protocol)
@@ -352,7 +353,11 @@ void loop() {
         writeLittleEndian(payload, 16, myGNSS.packetUBXNAVPVT->data.nano);
 
         // Offset 20: Fix Status (RaceBox Protocol)
-        writeLittleEndian(payload, 20, myGNSS.packetUBXNAVPVT->data.fixType);
+        // Protocol only defines 0 (no fix), 2 (2D fix), 3 (3D fix) — clamp any
+        // other u-blox fix types (e.g. 1=DR only, 4=GNSS+DR) to 0 (no fix).
+        uint8_t safeFixType = (myGNSS.packetUBXNAVPVT->data.fixType == 2 || myGNSS.packetUBXNAVPVT->data.fixType == 3)
+                              ? myGNSS.packetUBXNAVPVT->data.fixType : 0;
+        writeLittleEndian(payload, 20, safeFixType);
 
         // Offset 21: Fix Status Flags (RaceBox Protocol)
         uint8_t fixStatusFlagsRacebox = 0;

@@ -81,8 +81,8 @@
 // ============================================================================
 
 // Enforce device ID range
-static_assert(DEVICE_ID <= 3999999999UL,
-    "ERROR: DEVICE_ID cannot exceed 3999999999 — RaceBox app will not connect.");
+static_assert(DEVICE_ID >= 1000000000UL && DEVICE_ID <= 3999999999UL,
+    "ERROR: DEVICE_ID must be a 10-digit number between 1000000000 and 3999999999.");
 
 // Enforce sane EMA alpha range
 static_assert(ACCEL_ALPHA > 0.0f && ACCEL_ALPHA <= 1.0f,
