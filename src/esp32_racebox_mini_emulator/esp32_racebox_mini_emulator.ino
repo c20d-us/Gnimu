@@ -343,7 +343,7 @@ void loop() {
         if (myGNSS.packetUBXNAVPVT->data.valid.bits.validDate)    raceboxValidityFlags |= (1 << 0); // Bit 0: valid date
         if (myGNSS.packetUBXNAVPVT->data.valid.bits.validTime)    raceboxValidityFlags |= (1 << 1); // Bit 1: valid time
         if (myGNSS.packetUBXNAVPVT->data.valid.bits.fullyResolved) raceboxValidityFlags |= (1 << 2); // Bit 2: fully resolved
-        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validMagDec)  raceboxValidityFlags |= (1 << 3); // Bit 3: valid magnetic declination
+        if (myGNSS.packetUBXNAVPVT->data.valid.bits.validMag)  raceboxValidityFlags |= (1 << 3); // Bit 3: valid magnetic declination
         writeLittleEndian(payload, 11, raceboxValidityFlags);
 
         // Offset 12: Time Accuracy (RaceBox Protocol)
@@ -451,8 +451,15 @@ void loop() {
       lat = myGNSS.packetUBXNAVPVT->data.lat * 1e-7;
       lon = myGNSS.packetUBXNAVPVT->data.lon * 1e-7;
     }
-    Serial.printf("BLE Packet Rate: %.2f Hz | GNSS Update Rate: %.2f Hz | SVs: %u | Fix: %u | HAcc: %u mm | Lat: %.7f Lon: %.7f\n",
-                  bleRate, gnssRate, sats, fix, hAcc, lat, lon);
+    // Convert filtered IMU values to protocol units for display
+    int16_t dispGX = filtered_ax * 1000.0 / 9.80665;
+    int16_t dispGY = filtered_ay * 1000.0 / 9.80665;
+    int16_t dispGZ = filtered_az * 1000.0 / 9.80665;
+    int16_t dispRX = filtered_gx * 180.0 / M_PI * 100.0;
+    int16_t dispRY = filtered_gy * 180.0 / M_PI * 100.0;
+    int16_t dispRZ = filtered_gz * 180.0 / M_PI * 100.0;
+    Serial.printf("BLE Rate: %.2f Hz | GNSS Rate: %.2f Hz | SV: %u | Fix: %u | HAcc: %u mm | Lat: %.7f Lon: %.7f | milliG: X=%d Y=%d Z=%d | centiDeg/s: X=%d Y=%d Z=%d\n",
+                  bleRate, gnssRate, sats, fix, hAcc, lat, lon, dispGX, dispGY, dispGZ, dispRX, dispRY, dispRZ);
     gpsUpdateCount = 0;
     gnssUpdateCount = 0;
     lastGpsRateCheckTime = now;

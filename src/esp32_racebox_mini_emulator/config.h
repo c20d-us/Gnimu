@@ -26,7 +26,7 @@
 // ============================================================================
 
 #define GPS_BAUD             115200
-#define FACTORY_GPS_BAUD       9600
+#define FACTORY_GPS_BAUD     115200
 #define MAX_NAVIGATION_RATE      25   // Hz — maximum supported by RaceBox Mini protocol
 #define GPS_DYNAMIC_MODEL   DYN_MODEL_AUTOMOTIVE
 
