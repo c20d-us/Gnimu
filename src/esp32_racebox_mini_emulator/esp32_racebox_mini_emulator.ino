@@ -3,8 +3,8 @@
 // Some minor changes have been made:
 //  - Fixed some bugs
 //  - Externalized settings to config.h
-//  - Introduced a BLE toggle
-//  - Introduced adjustability to BLE power levels
+//  - Added a BLE toggle
+//  - Added adjustability of BLE power levels
 //  - Added gyro calibration
 //
 #include "config.h"
@@ -22,7 +22,7 @@
 SFE_UBLOX_GNSS myGNSS;
 HardwareSerial GPS_Serial(2);
 
-const String deviceName = String(MODEL) + " " + String(DEVICE_ID);
+const String deviceName = String(MODEL) + " " + DEVICE_ID;
 
 Adafruit_MPU6050 mpu;
 // Storage for the filtered values
@@ -189,6 +189,7 @@ void calibrateGyro() {
 void setup() {
   Serial.begin(115200);
   delay(500); // Allow USB serial to enumerate before sending any output
+  Serial.println("🚀 RaceBox Mini Emulator starting up...");
 
   pinMode(ONBOARD_LED_PIN, OUTPUT);
 
@@ -209,11 +210,6 @@ void setup() {
   filtered_ax = a.acceleration.x;
   filtered_ay = a.acceleration.y;
   filtered_az = a.acceleration.z;
-
-// Calibrate the MPU6050
-#ifdef GYRO_CALIBRATION_ENABLED
-  calibrateGyro();
-#endif
 
   GPS_Serial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   if (!myGNSS.begin(GPS_Serial)) {
@@ -307,6 +303,15 @@ void setup() {
   Serial.println("🚫 SBAS disabled.");
 #endif
 
+// Calibrate the MPU6050
+// Do this late in setup() so that the device has time to be settled prior.
+// Doing it sooner might catch small movements from being plugged in.
+// To be safe, throw in an extra second of wait time for settling.
+#ifdef GYRO_CALIBRATION_ENABLED
+  delay(500);
+  calibrateGyro();
+#endif
+
 #ifdef BLE_ENABLED
   // --- BLE Setup ---
   BLEDevice::init(deviceName.c_str());
@@ -344,7 +349,7 @@ void setup() {
   // Serial number — the 10-digit device ID from config.h
   BLECharacteristic *pSerial = pDeviceInfo->createCharacteristic(
       "00002a25-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pSerial->setValue(String(DEVICE_ID).c_str());
+  pSerial->setValue(DEVICE_ID);
   // Firmware revision
   BLECharacteristic *pFirm = pDeviceInfo->createCharacteristic(
       "00002a26-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);

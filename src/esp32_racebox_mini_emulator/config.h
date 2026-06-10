@@ -5,9 +5,13 @@
 // ============================================================================
 
 // Change DEVICE_ID to personalize your device.
-// Must be 10 digits and less than 4000000000.
-// The RaceBox app will not connect to IDs of 4000000000 or higher.
-#define DEVICE_ID 3608675309UL
+// It is a STRING of exactly 10 digits — quote it, so leading zeros are kept
+// (e.g. "0123456789"). Do NOT use a bare number: a leading zero would be read
+// as an octal literal and an unquoted ID loses its leading zeros.
+// First digit must be 0-3, so the value stays below 4000000000 — the RaceBox
+// app will not connect to IDs of 4000000000 or higher. See compile-time
+// validation at the bottom of this file.
+#define DEVICE_ID "3608675309"
 #define FIRMWARE_VERSION "3.3"
 #define HARDWARE_VERSION "1"
 #define MANUFACTURER "RaceBox"
@@ -26,7 +30,7 @@
 // ============================================================================
 
 #define GPS_BAUD 115200
-#define FACTORY_GPS_BAUD 115200
+#define FACTORY_GPS_BAUD 9600
 #define MAX_NAVIGATION_RATE 25 // Hz — max supported by RaceBox Mini protocol
 #define GPS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
@@ -50,7 +54,7 @@
 // When enabled, the device must be stationary during the first second of boot.
 #define GYRO_CALIBRATION_ENABLED
 
-// Number of calibration samples to average (10ms each)
+// Number of calibration samples to average (10ms each) - 100 seems good
 #define GYRO_CALIBRATION_SAMPLES 100
 
 #define ACCEL_SAMPLE_INTERVAL_MS 10 // 10ms = 100Hz sample rate
@@ -70,8 +74,8 @@
 // BLE Transmit Power
 // Select one of the following levels by assigning it to BLE_TX_POWER.
 // Lower power reduces potential RF interference with the GNSS module.
-// The receiver will usually be close, so high power is not needed.
-// If you have connection drop troubles, try increasing the power level.
+// The receiver will usually be close, so high power is not really needed.
+// If you have connection drops, try increasing the power level.
 //   ESP_PWR_LVL_N12  =  -12 dBm  (lowest — ~125x less power than default)
 //   ESP_PWR_LVL_N9   =   -9 dBm
 //   ESP_PWR_LVL_N6   =   -6 dBm
@@ -106,10 +110,28 @@
 // --- COMPILE-TIME VALIDATION ---
 // ============================================================================
 
-// Enforce device ID range
-static_assert(DEVICE_ID >= 1000000000UL && DEVICE_ID <= 3999999999UL,
-              "ERROR: DEVICE_ID must be a 10-digit number between 1000000000 "
-              "and 3999999999.");
+// Enforce device ID format: a 10-digit string with first digit 0-3.
+// DEVICE_ID is a string so leading zeros survive; these constexpr helpers let
+// us validate that string at compile time (C++ has no compile-time regex).
+namespace device_id {
+// Length of a C-string literal, counted at compile time.
+constexpr int length(const char *s) { return *s ? 1 + length(s + 1) : 0; }
+// True only if every character is a digit 0-9.
+constexpr bool allDigits(const char *s) {
+  return *s == '\0'                 ? true
+         : (*s >= '0' && *s <= '9') ? allDigits(s + 1)
+                                    : false;
+}
+} // namespace device_id
+
+static_assert(
+    device_id::length(DEVICE_ID) == 10,
+    "ERROR: DEVICE_ID must be exactly 10 digits, quoted as a string.");
+static_assert(device_id::allDigits(DEVICE_ID),
+              "ERROR: DEVICE_ID must contain only digits 0-9.");
+static_assert(DEVICE_ID[0] >= '0' && DEVICE_ID[0] <= '3',
+              "ERROR: DEVICE_ID's first digit must be 0-3 (value below "
+              "4000000000).");
 
 // Enforce sane EMA alpha range
 static_assert(ACCEL_ALPHA > 0.0f && ACCEL_ALPHA <= 1.0f,
