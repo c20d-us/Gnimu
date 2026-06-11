@@ -69,7 +69,7 @@ flowchart LR
 |-------------|-----------|
 | SDA         | GPIO21 (default I²C SDA) |
 | SCL         | GPIO22 (default I²C SCL) |
-| VCC         | 3V3 |
+| VCC         | VIN |
 | GND         | GND |
 
 **Status LED:** the onboard LED (GPIO2) blinks while waiting for a BLE connection
