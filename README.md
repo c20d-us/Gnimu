@@ -162,26 +162,6 @@ improve fix quality, including indoors.
 
 ---
 
-## Repository layout
-
-```
-.
-├── LICENSE                     # GNU GPL v3
-├── README.md
-├── Documentation/              # Datasheets & protocol references
-│   ├── HGLRC M100-5883.pdf                     # Reference GNSS module datasheet
-│   ├── RaceBox BLE Protocol Description rev 8.pdf
-│   └── esp32-wroom-wifi-devkit-v1_pinout_30_v2.png
-└── src/
-    └── esp32_racebox_mini_emulator/
-        ├── esp32_racebox_mini_emulator.ino   # Main sketch (setup/loop + logic)
-        ├── config.h                          # All user-tunable settings
-        ├── ubx_helpers.h                     # UBX packet helper declarations
-        └── ubx_helpers.cpp                   # UBX packet helper implementations
-```
-
----
-
 ## Troubleshooting
 
 | Symptom | Things to check |
