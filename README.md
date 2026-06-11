@@ -45,7 +45,7 @@ flowchart LR
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0CB5N8RQ8"><strong>u-blox GNSS module</strong></a></td>
-    <td>A u-blox <a href="https://www.u-blox.com/en/product/max-m10-series"><strong>M10</strong>-class</a> receiver. Reference unit: HGLRC M100-5883 (datasheet in <a href="Documentation/"><code>Documentation/</code></a>). Other u-blox modules supported by the SparkFun library should work.</td>
+    <td>A u-blox <a href="https://www.u-blox.com/en/product/max-m10-series">M10-class</a> receiver. Reference unit: HGLRC M100-5883 (datasheet in <a href="Documentation/"><code>Documentation/</code></a>). Other u-blox modules supported by the SparkFun library should work.</td>
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B01DK83ZYQ"><strong>IMU</strong></a></td>
@@ -81,7 +81,7 @@ flowchart LR
 | VCC         | VIN (5V pin) |
 | GND         | GND |
 
-**Status LED:** the onboard LED (GPIO2) blinks while waiting for a BLE connection and stays solid once a client is connected.
+**Status LED:** the onboard LED (GPIO2) blinks while waiting for a BLE connection and stays solid when a client is connected.
 
 > Pin assignments for the GNSS UART and the LED are configurable in [`config.h`](src/esp32_racebox_mini_emulator/config.h). The MPU6050 uses the ESP32's default I²C pins.
 
@@ -190,6 +190,8 @@ Several values are checked with `static_assert` at compile time, so an invalid c
 GNSS reception is sensitive to nearby RF noise. On compact builds, the ESP32's BLE radio can desensitize the GNSS receiver. Dialing `BLE_TX_POWER` down to a low level (the default is `ESP_PWR_LVL_N12`, the minimum) keeps the radio quiet — the receiver is usually close by, so high power isn't needed — and can dramatically improve fix quality, including indoors.
 
 The **RF shield** shown in the [build gallery](#build-gallery) is the hardware counterpart to this: a grounded metal enclosure over the GNSS module that physically blocks radio noise from reaching the GNSS receiver. The two measures stack — lowering the BLE power quiets the source, while the shield blocks whatever remains. Either helps on its own; together they give the most reliable lock.
+
+With the BLE power level set to -12db, I have seen simultaneuous lock on as many as 20 satellites with horizontal accuracy (HAcc) as low as 220mm and [pDOP](https://en.wikipedia.org/wiki/Dilution_of_precision) values under 2 (really good for a cheap consumer-grade GNSS module).
 
 ---
 
