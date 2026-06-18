@@ -220,7 +220,7 @@ With the BLE power level set to -12db, I have seen simultaneuous lock on as many
 
 This project is a major evolution of earlier work by [**Anchit Chandra Sekhar**](https://github.com/anchit92). Changes in this version include bug fixes, externalized configuration, a BLE transmit-power control, startup gyro calibration, and modularization of the codebase.
 
-Protocol details follow the *RaceBox BLE Protocol Description* (rev 8), [available from RaceBox.](https://www.racebox.pro/products/mini-micro-protocol-documentation).
+Protocol details follow the *RaceBox BLE Protocol Description* (rev 8), [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
 
 ---
 
