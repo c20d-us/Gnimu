@@ -27,7 +27,7 @@ I originally started this project as a streaming GNSS+IMU telemetry source for u
 flowchart LR
     GNSS["u-blox GNSS module"] -- "UART · 115200 baud" --> ESP32["ESP32"]
     IMU["accel + gyro"] -- "I²C" --> ESP32
-    ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox app (phone / tablet)"]
+    ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
 ```
 
 ---
