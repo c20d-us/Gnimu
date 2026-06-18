@@ -169,7 +169,7 @@ Photos of the reference build, from loose components to the finished, enclosed u
 
 ## Configuration
 
-All user-tunable settings live in [`config.h`](src/Gnimu/config.h), grouped into sections. Highlights:
+All user-tunable settings live in [`src/Gnimu/config.h`](src/Gnimu/config.h), grouped into sections. Highlights:
 
 | Setting | Purpose |
 |---------|---------|
