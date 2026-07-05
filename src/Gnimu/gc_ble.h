@@ -18,30 +18,29 @@
 
 #pragma once
 #include <Arduino.h>
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h> // for UBX_NAV_PVT_data_t
 
 // ============================================================================
-// GNSS module - u-blox receiver on Serial2
+// BLE module - RaceBox-compatible Bluetooth Low Energy server
 //
-// Owns the receiver object and its serial port internally (see gnss.cpp).
-// Callers interact only through the small read-only interface below; the live
-// receiver is never exposed, so nothing outside this module can reconfigure it.
+// Owns the BLE server, characteristics, and connection state internally (see
+// gc_ble.cpp). Callers interact only through the small interface below; the live
+// server objects are never exposed.
 // ============================================================================
 
-// Bring up the receiver: open serial, detect the module (auto-recovering its
-// baud rate if needed), and configure PVT output, dynamic model, navigation
-// rate, and enabled constellations. Call once in setup().
-void gnssBegin();
+// Initialize the BLE device: configure the status LED pin, set TX power, create
+// the RaceBox service and its Tx/Rx characteristics, publish the Device
+// Information Service, and start advertising. Call once in setup(), after the
+// device name is known.
+void bleBegin();
 
-// Poll the GNSS link - feeds the parser from the UART. Call every loop().
-void gnssPoll();
+// True while a client is connected.
+bool bleIsConnected();
 
-// True exactly once per new navigation epoch (when iTOW advances). Internally
-// polls the receiver and de-duplicates, so it is safe to call every loop().
-bool gnssHasNewEpoch();
+// Send a packet to the connected client via a notify on the Tx characteristic.
+// Caller is responsible for checking bleIsConnected() first if it cares.
+void bleSendPacket(uint8_t *data, size_t len);
 
-// Read-only view of the most recent PVT solution, or nullptr if none yet.
-const UBX_NAV_PVT_data_t *gnssLatestPvt();
-
-// True if the receiver currently reports a valid vehicle heading.
-bool gnssHeadingValid();
+// Service the connection lifecycle - re-advertise after a disconnect, track
+// connect/disconnect edges, and drive the status LED (solid while connected,
+// blinking while disconnected). Call every loop().
+void bleUpdate();

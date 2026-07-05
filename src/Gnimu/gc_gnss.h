@@ -18,30 +18,30 @@
 
 #pragma once
 #include <Arduino.h>
+#include <SparkFun_u-blox_GNSS_Arduino_Library.h> // for UBX_NAV_PVT_data_t
 
 // ============================================================================
-// IMU module - accelerometer + gyroscope
+// GNSS module - u-blox receiver on Serial2
 //
-// Owns all IMU state internally (see imu.cpp); callers interact only through
-// the small API below.
+// Owns the receiver object and its serial port internally (see gc_gnss.cpp).
+// Callers interact only through the small read-only interface below; the live
+// receiver is never exposed, so nothing outside this module can reconfigure it.
 // ============================================================================
 
-// The filtered IMU values converted to RaceBox protocol units.
-struct ImuProtocolUnits {
-  int16_t gX, gY, gZ; // acceleration, milli-g
-  int16_t rX, rY, rZ; // rotation rate, centi-deg/sec
-};
+// Bring up the receiver: open serial, detect the module (auto-recovering its
+// baud rate if needed), and configure PVT output, dynamic model, navigation
+// rate, and enabled constellations. Call once in setup().
+void gnssBegin();
 
-// Detect the IMU, set ranges/bandwidth, seed the filters with a first
-// reading, and (when GYRO_CALIBRATION_ENABLED is defined) calibrate gyro bias.
-// Keep the device still during startup. Halts with a serial message if the
-// chip isn't found.
-void imuBegin();
+// Poll the GNSS link - feeds the parser from the UART. Call every loop().
+void gnssPoll();
 
-// Poll the IMU at a fixed interval and update the smoothed accel/gyro
-// values. Self-throttles to ACCEL_SAMPLE_INTERVAL_MS, so it is safe to call
-// every loop().
-void imuPoll();
+// True exactly once per new navigation epoch (when iTOW advances). Internally
+// polls the receiver and de-duplicates, so it is safe to call every loop().
+bool gnssHasNewEpoch();
 
-// Convert the current filtered IMU values into RaceBox protocol units.
-ImuProtocolUnits imuReadProtocolUnits();
+// Read-only view of the most recent PVT solution, or nullptr if none yet.
+const UBX_NAV_PVT_data_t *gnssLatestPvt();
+
+// True if the receiver currently reports a valid vehicle heading.
+bool gnssHeadingValid();

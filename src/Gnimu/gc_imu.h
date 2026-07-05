@@ -20,27 +20,28 @@
 #include <Arduino.h>
 
 // ============================================================================
-// BLE module - RaceBox-compatible Bluetooth Low Energy server
+// IMU module - accelerometer + gyroscope
 //
-// Owns the BLE server, characteristics, and connection state internally (see
-// ble.cpp). Callers interact only through the small interface below; the live
-// server objects are never exposed.
+// Owns all IMU state internally (see gc_imu.cpp); callers interact only through
+// the small API below.
 // ============================================================================
 
-// Initialize the BLE device: configure the status LED pin, set TX power, create
-// the RaceBox service and its Tx/Rx characteristics, publish the Device
-// Information Service, and start advertising. Call once in setup(), after the
-// device name is known.
-void bleBegin();
+// The filtered IMU values converted to RaceBox protocol units.
+struct ImuProtocolUnits {
+  int16_t gX, gY, gZ; // acceleration, milli-g
+  int16_t rX, rY, rZ; // rotation rate, centi-deg/sec
+};
 
-// True while a client is connected.
-bool bleIsConnected();
+// Detect the IMU, set ranges/bandwidth, seed the filters with a first
+// reading, and (when GYRO_CALIBRATION_ENABLED is defined) calibrate gyro bias.
+// Keep the device still during startup. Halts with a serial message if the
+// chip isn't found.
+void imuBegin();
 
-// Send a packet to the connected client via a notify on the Tx characteristic.
-// Caller is responsible for checking bleIsConnected() first if it cares.
-void bleSendPacket(uint8_t *data, size_t len);
+// Poll the IMU at a fixed interval and update the smoothed accel/gyro
+// values. Self-throttles to ACCEL_SAMPLE_INTERVAL_MS, so it is safe to call
+// every loop().
+void imuPoll();
 
-// Service the connection lifecycle - re-advertise after a disconnect, track
-// connect/disconnect edges, and drive the status LED (solid while connected,
-// blinking while disconnected). Call every loop().
-void bleUpdate();
+// Convert the current filtered IMU values into RaceBox protocol units.
+ImuProtocolUnits imuReadProtocolUnits();

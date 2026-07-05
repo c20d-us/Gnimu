@@ -16,12 +16,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "telemetry.h"
-#include "ble.h"
+#include "gc_telemetry.h"
+#include "gc_ble.h"
 #include "config.h"
-#include "gnss.h"
-#include "imu.h"
-#include "ubx_helpers.h"
+#include "gc_gnss.h"
+#include "gc_imu.h"
+#include "gc_ubx_helpers.h"
 #include <string.h> // for memcpy
 
 // --- Packet timing / stats counters - private to this file ---

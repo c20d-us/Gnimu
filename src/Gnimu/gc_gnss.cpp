@@ -16,7 +16,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gnss.h"
+#include "gc_gnss.h"
 #include "config.h"
 
 // --- GNSS state - private to this file ---

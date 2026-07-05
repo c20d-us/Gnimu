@@ -16,7 +16,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "ubx_helpers.h"
+#include "gc_ubx_helpers.h"
 
 // The byte writes below are explicit (least-significant byte first) rather than
 // a memcpy of the raw value, so the output is little-endian on ANY host CPU -
