@@ -1,4 +1,4 @@
-# Gnimu (nee-moo) - GNSS + IMU data over BLE
+# Gnimu - GNSS + IMU data over BLE
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platform: ESP32](https://img.shields.io/badge/platform-ESP32-000000.svg)](https://www.espressif.com/en/products/socs/esp32)
@@ -9,6 +9,8 @@ The code in this repo lets you turn an ESP32 development board, a GNSS (Global N
 This is a low-cost, hackable platform for experimenting with GNSS and IMU data logging, the RaceBox BLE protocol, and sensor fusion built from off-the-shelf parts.
 
 I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
+
+I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else pronounces it.
 
 > [!IMPORTANT]
 > **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
