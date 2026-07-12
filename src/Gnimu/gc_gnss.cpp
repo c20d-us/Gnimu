@@ -23,68 +23,91 @@
 static SFE_UBLOX_GNSS myGNSS;
 static HardwareSerial gnssSerial(2);
 
-// Report a detection failure at the given baud rate and halt forever - the
-// device cannot function without the GNSS module.
-static void haltGnssNotDetected(uint32_t baud) {
-  Serial.print("u-blox GNSS not detected at ");
-  Serial.print(baud);
-  Serial.println(" baud.");
-  Serial.println("Check documentation for the factory baud rate and/or check "
-                 "your wiring.");
-  while (1)
-    delay(100);
+// --- Callback State ---
+static UBX_NAV_PVT_data_t cachedPVT;
+static volatile bool newEpochAvailable = false;
+
+// The callback function triggered automatically by checkCallbacks()
+// when a completely valid UBX-NAV-PVT packet is received.
+static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
+  // Copy the cleanly parsed data into our local cache
+  memcpy(&cachedPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
+  newEpochAvailable = true;
 }
 
-static void resetGnssBaudRate() {
-  Serial.println("Attempting to set Correct Baud Rate");
-  gnssSerial.begin(FACTORY_GNSS_BAUD, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
-  delay(500);
+// Try connecting at the target baud rate, and if that fails, sweep through
+// all common u-blox baud rates to find the module and reconfigure it.
+bool connectAndConfigureBaud(uint32_t targetBaud) {
+  // Array of baud rates to test. We test the target rate first for the fastest
+  // boot on normal runs, followed by common u-blox rates.
+  const uint32_t baudRates[] = {targetBaud, 9600,   38400, 57600,
+                                115200,     230400, 460800};
+  const int numRates = sizeof(baudRates) / sizeof(baudRates[0]);
 
-  if (!myGNSS.begin(gnssSerial)) {
-    haltGnssNotDetected(FACTORY_GNSS_BAUD);
-  } else {
-    Serial.print("GNSS detected at ");
-    Serial.print(FACTORY_GNSS_BAUD);
-    Serial.println(" baud!");
+  for (int i = 0; i < numRates; i++) {
+    uint32_t testBaud = baudRates[i];
+    Serial.printf("Trying GNSS at %d baud...\n", testBaud);
+
+    gnssSerial.begin(testBaud, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
+    delay(100); // Give the serial port a moment to stabilize
+
+    if (myGNSS.begin(gnssSerial)) {
+      Serial.printf("✅ GNSS detected at %d baud.\n", testBaud);
+
+      // If we found it, but it's at the wrong speed, switch it.
+      if (testBaud != targetBaud) {
+        Serial.printf("Switching GNSS to target %d baud...\n", targetBaud);
+        myGNSS.setSerialRate(targetBaud);
+        delay(100);
+
+        // Cycle the microcontroller's UART to match the new module speed
+        gnssSerial.end();
+        delay(100);
+        gnssSerial.begin(targetBaud, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
+        delay(100);
+
+        if (myGNSS.begin(gnssSerial)) {
+          Serial.println(
+              "✅ Baud rate switched successfully. Saving to flash...");
+          myGNSS.saveConfiguration(); // Lock it in for the next boot
+          return true;
+        } else {
+          Serial.println("❌ Failed to verify new baud rate.");
+          return false; // Something went deeply wrong
+        }
+      }
+      return true; // We connected successfully at the target baud rate
+    }
+
+    // Clean up and prepare for the next loop iteration if this baud failed
+    gnssSerial.end();
+    delay(100);
   }
-  delay(500);
-
-  // Now switch baud rate
-  Serial.print("Setting baud rate to ");
-  Serial.print(GNSS_BAUD);
-  Serial.println("...");
-  myGNSS.setSerialRate(GNSS_BAUD);
-  Serial.print("Baud rate changed to ");
-  Serial.println(GNSS_BAUD);
-
-  gnssSerial.end();
-  delay(100);
-  // Re-initialize the serial port at the new baud rate
-  gnssSerial.begin(GNSS_BAUD, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
-  delay(500);
-
-  if (!myGNSS.begin(gnssSerial)) {
-    haltGnssNotDetected(GNSS_BAUD);
-  }
-  Serial.print("GNSS detected at ");
-  Serial.print(GNSS_BAUD);
-  Serial.println(" baud! Saving to Flash");
-  myGNSS.saveConfiguration(); // Save to flash
-  gnssSerial.end();
 }
 
 void gnssBegin() {
-  gnssSerial.begin(GNSS_BAUD, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
-  if (!myGNSS.begin(gnssSerial)) {
-    Serial.println("❌ GNSS not detected. Attempting to configure.");
-    gnssSerial.end();
-    resetGnssBaudRate();
-    gnssSerial.begin(GNSS_BAUD, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
+  if (!connectAndConfigureBaud(GNSS_BAUD)) {
+    Serial.println("❌ u-blox GNSS not detected at any standard baud rate.");
+    Serial.println("X Check your wiring.");
+    while (1)
+      delay(100); // Halt
   }
 
-  // Set GNSS output to PVT only
+  // --- Set GNSS output to PVT only ---
   myGNSS.setAutoPVT(true);
+
+  // --- Register the callback to handle the PVT data automatically ---
+  myGNSS.setAutoPVTcallbackPtr(&pvtCallback);
+
+  // --- Set the GNSS dynamic model ---
   myGNSS.setDynamicModel(GNSS_DYNAMIC_MODEL);
+
+  // --- Turn off NMEA messages - we want UBX only ---
+  myGNSS.setUART1Output(COM_TYPE_UBX);
+
+  // --- Set minimum elevation of satellites to track ---
+  myGNSS.setVal8(UBLOX_CFG_NAVSPG_INFIL_MINELEV, SV_MIN_ELEVAION);
+
   // --- Configure GNSS update rate to MAX_NAVIGATION_RATE Hz ---
   if (myGNSS.setNavigationFrequency(MAX_NAVIGATION_RATE)) {
     Serial.printf("✅ GNSS update rate set to %d Hz.\n", MAX_NAVIGATION_RATE);
@@ -167,22 +190,29 @@ void gnssBegin() {
 #endif
 }
 
-void gnssPoll() { myGNSS.checkUblox(); }
+void gnssPoll() {
+  // Pump the UART and parse incoming bytes into complete packets
+  myGNSS.checkUblox();
+  // Fire the registered callbacks for any completed packets
+  myGNSS.checkCallbacks();
+}
 
 bool gnssHasNewEpoch() {
-  if (!(myGNSS.getPVT() && myGNSS.packetUBXNAVPVT != nullptr))
-    return false;
-
-  static uint32_t lastITOW = 0;
-  uint32_t currentITOW = myGNSS.packetUBXNAVPVT->data.iTOW;
-  if (currentITOW == lastITOW)
-    return false; // Same epoch - nothing new
-  lastITOW = currentITOW;
-  return true;
+  if (newEpochAvailable) {
+    newEpochAvailable = false; // Reset the flag for the next epoch
+    return true;
+  }
+  return false;
 }
 
 const UBX_NAV_PVT_data_t *gnssLatestPvt() {
-  return myGNSS.packetUBXNAVPVT ? &myGNSS.packetUBXNAVPVT->data : nullptr;
+  // Return a pointer to our safely cached struct, not the live volatile one
+  return &cachedPVT;
 }
 
-bool gnssHeadingValid() { return myGNSS.getHeadVehValid(); }
+bool gnssHeadingValid() {
+  // Since checkUblox() updates the library's internal state on successful
+  // parse, we can still safely call this, or extract it from the cachedPVT if
+  // desired.
+  return myGNSS.getHeadVehValid();
+}

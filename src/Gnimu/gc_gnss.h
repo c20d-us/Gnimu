@@ -36,11 +36,11 @@ void gnssBegin();
 // Poll the GNSS link - feeds the parser from the UART. Call every loop().
 void gnssPoll();
 
-// True exactly once per new navigation epoch (when iTOW advances). Internally
-// polls the receiver and de-duplicates, so it is safe to call every loop().
+// True exactly once per new navigation epoch. Driven by an internal callback
+// that verifies complete packet reception. Safe to call every loop().
 bool gnssHasNewEpoch();
 
-// Read-only view of the most recent PVT solution, or nullptr if none yet.
+// Read-only view of the most recent PVT solution from the callback cache.
 const UBX_NAV_PVT_data_t *gnssLatestPvt();
 
 // True if the receiver currently reports a valid vehicle heading.

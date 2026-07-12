@@ -47,10 +47,10 @@
 // --- GNSS SETTINGS ---
 // ============================================================================
 
-#define GNSS_BAUD 115200
-#define FACTORY_GNSS_BAUD 9600 // Confirm via docs for your chosen GNSS
+#define GNSS_BAUD 460800
 #define MAX_NAVIGATION_RATE 25 // Hz - max supported by RaceBox Mini protocol
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
+#define SV_MIN_ELEVAION 15 // deg - ignore SVs below this angle (anti-multipath)
 
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
