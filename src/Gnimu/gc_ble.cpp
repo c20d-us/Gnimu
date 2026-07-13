@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -29,8 +27,22 @@ static const String deviceName = String(MODEL) + " " + DEVICE_ID;
 static BLEServer *pServer = NULL;
 static BLECharacteristic *pCharacteristicTx = NULL;
 static BLECharacteristic *pCharacteristicRx = NULL;
+static unsigned long connectTimeMs = 0;
 static volatile bool deviceConnected = false;
 static volatile bool oldDeviceConnected = false;
+
+// --- Drive the onboard LED: solid when connected, blink when disconnected ---
+static void updateLed() {
+  if (!deviceConnected) {
+    static unsigned long lastBlinkMs = 0;
+    if (millis() - lastBlinkMs > LED_BLINK_INTERVAL_MS) {
+      lastBlinkMs = millis();
+      digitalWrite(ONBOARD_LED_PIN, !digitalRead(ONBOARD_LED_PIN));
+    }
+  } else {
+    digitalWrite(ONBOARD_LED_PIN, HIGH);
+  }
+}
 
 // --- BLE Callbacks ---
 class ServerCallbacks : public BLEServerCallbacks {
@@ -38,6 +50,7 @@ class ServerCallbacks : public BLEServerCallbacks {
     deviceConnected = true;
     // Request a larger MTU to fit an 88-byte packet + headers in one go
     pServer->updatePeerMTU(pServer->getConnId(), BLE_MTU_SIZE);
+    connectTimeMs = millis();
     Serial.println("✅ BLE Client connected & MTU update requested");
   }
   void onDisconnect(BLEServer *pServer) {
@@ -48,14 +61,10 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class RxCharacteristicCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
-    String rxValue = pCharacteristic->getValue();
-
-    if (rxValue.length() > 0) {
-      Serial.print("📨 Received BLE command: ");
-      for (size_t i = 0; i < rxValue.length(); i++) {
-        Serial.printf("0x%02X ", (uint8_t)rxValue[i]);
-      }
-      Serial.println();
+    // Zero heap allocation. We just check if any bytes arrived.
+    size_t rxLen = pCharacteristic->getLength();
+    if (rxLen > 0) {
+      Serial.printf("📨 Received %d bytes from app (ignored)\n", rxLen);
     }
   }
 };
@@ -78,6 +87,7 @@ void bleBegin() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
+  // --- Create RaceBox Service ---
   BLEService *pService = pServer->createService(RACEBOX_SERVICE_UUID);
   pCharacteristicTx = pService->createCharacteristic(
       RACEBOX_CHARACTERISTIC_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
@@ -87,6 +97,7 @@ void bleBegin() {
       BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pCharacteristicRx->setCallbacks(new RxCharacteristicCallbacks());
   pService->start();
+
   // --- Device Information Service ---
   BLEService *pDeviceInfo =
       pServer->createService("0000180a-0000-1000-8000-00805f9b34fb");
@@ -111,41 +122,32 @@ void bleBegin() {
       "00002a29-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
   pManufacturer->setValue(MANUFACTURER);
   pDeviceInfo->start();
+
+  // --- Start advertising ---
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(RACEBOX_SERVICE_UUID);
-  // Advertise Device Information Service to help official apps discover the
-  // device
+  // Advertise Device Information Service so apps can discover the device
   pAdvertising->addServiceUUID("0000180a-0000-1000-8000-00805f9b34fb");
   pAdvertising->setScanResponse(true);
   BLEDevice::startAdvertising();
   Serial.println("📡 BLE advertising started.");
 }
 
-bool bleIsConnected() { return deviceConnected; }
+bool bleIsConnected() {
+  // Give the connection a short pause to ensure that MTU negotiation completes.
+  return deviceConnected && (millis() - connectTimeMs > 100);
+}
 
 void bleSendPacket(uint8_t *data, size_t len) {
   pCharacteristicTx->setValue(data, len);
   pCharacteristicTx->notify();
 }
 
-// --- Drive the onboard LED: solid when connected, blink when disconnected ---
-static void updateLed() {
-  if (!deviceConnected) {
-    static unsigned long lastBlinkMs = 0;
-    if (millis() - lastBlinkMs > LED_BLINK_INTERVAL_MS) {
-      lastBlinkMs = millis();
-      digitalWrite(ONBOARD_LED_PIN, !digitalRead(ONBOARD_LED_PIN));
-    }
-  } else {
-    digitalWrite(ONBOARD_LED_PIN, HIGH);
-  }
-}
-
 void bleUpdate() {
-  // BLE connection state management - runs regardless of GNSS state. The
-  // re-advertise after a disconnect is deferred (non-blocking): we record when
-  // the disconnect happened and restart advertising on a later loop() pass once
-  // the settle delay has elapsed, rather than blocking the whole loop.
+  // BLE connection state management.
+  // The re-advertise after a disconnect is deferred  so that it's non-blocking.
+  // We record when the disconnect happened and restart advertising on a later
+  // loop() pass once the settle delay has elapsed.
   static bool reAdvertisePending = false;
   static unsigned long disconnectMs = 0;
 
@@ -160,9 +162,10 @@ void bleUpdate() {
     reAdvertisePending = false;
     oldDeviceConnected = deviceConnected;
   }
-  // Settle delay elapsed - restart advertising. Only clear the pending flag on
-  // success; on failure, leave it set and reset the timer so we retry after
-  // another interval rather than sitting unconnectable until reboot.
+  // Settle delay has elapsed, restart advertising.
+  // Only clear the pending flag on success. On failure, leave it set and reset
+  // the timer so we retry after another interval rather than sitting
+  // unconnectable until reboot.
   if (reAdvertisePending &&
       millis() - disconnectMs >= BLE_READVERTISE_DELAY_MS) {
     if (BLEDevice::getAdvertising()->start()) {

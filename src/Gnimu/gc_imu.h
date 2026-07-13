@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -20,10 +18,8 @@
 #include <Arduino.h>
 
 // ============================================================================
-// IMU module - accelerometer + gyroscope
-//
-// Owns all IMU state internally (see gc_imu.cpp); callers interact only through
-// the small API below.
+// IMU module - accelerometer + gyroscope data
+// Owns all IMU state internally.
 // ============================================================================
 
 // The filtered IMU values converted to RaceBox protocol units.
@@ -32,10 +28,8 @@ struct ImuProtocolUnits {
   int16_t rX, rY, rZ; // rotation rate, centi-deg/sec
 };
 
-// Detect the IMU, set ranges/bandwidth, seed the filters with a first
-// reading, and (when GYRO_CALIBRATION_ENABLED is defined) calibrate gyro bias.
-// Keep the device still during startup. Halts with a serial message if the
-// chip isn't found.
+// Detect the IMU, set ranges/bandwidth, seed the filters with a first reading.
+// Halts with a serial message if the chip isn't found.
 void imuBegin();
 
 // Poll the IMU at a fixed interval and update the smoothed accel/gyro
@@ -43,5 +37,5 @@ void imuBegin();
 // every loop().
 void imuPoll();
 
-// Convert the current filtered IMU values into RaceBox protocol units.
+// Retrieve the current filtered IMU values in RaceBox protocol units.
 ImuProtocolUnits imuReadProtocolUnits();

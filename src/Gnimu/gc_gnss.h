@@ -23,25 +23,22 @@
 // ============================================================================
 // GNSS module - u-blox receiver on Serial2
 //
-// Owns the receiver object and its serial port internally (see gc_gnss.cpp).
-// Callers interact only through the small read-only interface below; the live
-// receiver is never exposed, so nothing outside this module can reconfigure it.
+// Owns the receiver object and its serial port internally.
+// Callers interact only through the small read-only interface below.
 // ============================================================================
 
-// Bring up the receiver: open serial, detect the module (auto-recovering its
-// baud rate if needed), and configure PVT output, dynamic model, navigation
-// rate, and enabled constellations. Call once in setup().
+// Bring up the receiver and configure the GNSS.
+// Call once in setup().
 void gnssBegin();
 
-// Poll the GNSS link - feeds the parser from the UART. Call every loop().
+// Pump the GNSS UART and trigger a callback if a new epoch has arrived.
+// Call every loop().
 void gnssPoll();
 
-// True exactly once per new navigation epoch. Driven by an internal callback
-// that verifies complete packet reception. Safe to call every loop().
-bool gnssHasNewEpoch();
-
-// Read-only view of the most recent PVT solution from the callback cache.
-const UBX_NAV_PVT_data_t *gnssLatestPvt();
+// Fetches a pointer to the most recent PVT data.
+// Returns a valid pointer to the PVT if a new epoch has arrived since the last
+// call, otherwise returns nullptr.
+const UBX_NAV_PVT_data_t *gnssConsumePvt();
 
 // True if the receiver currently reports a valid vehicle heading.
 bool gnssHeadingValid();

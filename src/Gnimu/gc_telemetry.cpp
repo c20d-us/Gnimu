@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,30 +15,33 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "gc_telemetry.h"
-#include "gc_ble.h"
 #include "config.h"
+#include "gc_ble.h"
 #include "gc_gnss.h"
 #include "gc_imu.h"
 #include "gc_ubx_helpers.h"
-#include <string.h> // for memcpy
+#include <string.h>
 
-// --- Packet timing / stats counters - private to this file ---
+// --- Internal counters and a private pointer to the latest PVT data ---
 static unsigned long lastReportMs = 0;
-static volatile unsigned int bleSentPacketCount = 0;
-static volatile unsigned int gnssEpochCount = 0;
-
-void telemetryBegin() { lastReportMs = millis(); }
+static unsigned int bleSentPacketCount = 0;
+static unsigned int gnssEpochCount = 0;
+static const UBX_NAV_PVT_data_t *pvt = nullptr;
 
 // Assemble an 88-byte RaceBox Data Message from the latest GNSS + IMU data.
 // Fills packet[0..87] with the UBX header, 80-byte payload, and checksum.
-static void buildPacket(uint8_t *packet) {
-  ImuProtocolUnits imu = imuReadProtocolUnits();
+// Once packet is built, hand off to BLE to send it.
+static void sendPacket() {
+  // Defensive check: if we somehow reach here with no data, abort immediately.
+  if (pvt == nullptr) {
+    return;
+  }
 
+  uint8_t packet[88] = {0};
   uint8_t payload[80] = {0};
 
-  // Read fields from the latest PVT solution - a read-only view owned by the
-  // GNSS module. Non-null here because we only build after gnssHasNewEpoch().
-  const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
+  ImuProtocolUnits imu = imuReadProtocolUnits();
+
   // Casts pin each field to its RaceBox protocol wire width (U1/U2/U4/I4),
   // so the writeLittleEndian overload is correct regardless of the u-blox
   // library's field types.
@@ -52,7 +53,7 @@ static void buildPacket(uint8_t *packet) {
   writeLittleEndian(payload, 9, (uint8_t)pvt->min);   // U1
   writeLittleEndian(payload, 10, (uint8_t)pvt->sec);  // U1
 
-  // Offset 11: Validity Flags (RaceBox Protocol)
+  // Offset 11: Validity Flags
   uint8_t validityFlags = 0;
   if (pvt->valid.bits.validDate)
     validityFlags |= (1 << 0); // Bit 0: valid date
@@ -64,34 +65,32 @@ static void buildPacket(uint8_t *packet) {
     validityFlags |= (1 << 3); // Bit 3: valid magnetic declination
   writeLittleEndian(payload, 11, validityFlags);
 
-  // Offset 12: Time Accuracy (RaceBox Protocol)
+  // Offset 12: Time Accuracy
   writeLittleEndian(payload, 12, (uint32_t)pvt->tAcc); // U4
 
-  // Offset 16: Nanoseconds (RaceBox Protocol)
+  // Offset 16: Nanoseconds
   writeLittleEndian(payload, 16, (int32_t)pvt->nano); // I4
 
-  // Offset 20: Fix Status (RaceBox Protocol)
+  // Offset 20: Fix Status
   // Protocol only defines 0 (no fix), 2 (2D fix), 3 (3D fix).
-  // Clamp other u-blox fix types (e.g. 1=DR only, 4=GNSS+DR) to 0 (no fix).
+  // Clamp any other u-blox fix types (e.g. 1=DR only, 4=GNSS+DR) to 0 (no fix).
   uint8_t safeFixType =
       (pvt->fixType == 2 || pvt->fixType == 3) ? pvt->fixType : 0;
   writeLittleEndian(payload, 20, safeFixType);
 
-  // Offset 21: Fix Status Flags (RaceBox Protocol)
+  // Offset 21: Fix Status Flags
   uint8_t fixStatusFlags = 0;
 
   if (pvt->fixType == 3) {
     fixStatusFlags |= (1 << 0); // Bit 0: valid fix
   }
 
-  if (gnssHeadingValid()) { // Use the confirmed function to check
-                            // for valid heading
-    fixStatusFlags |=
-        (1 << 5); // Bit 5: valid heading (as per RaceBox Protocol)
+  if (gnssHeadingValid()) {
+    fixStatusFlags |= (1 << 5); // Bit 5: valid heading
   }
   writeLittleEndian(payload, 21, fixStatusFlags);
 
-  // Offset 22: Date/Time Flags (RaceBox Protocol)
+  // Offset 22: Date/Time Flags
   uint8_t dateTimeFlags = 0;
   if (pvt->valid.bits.validTime)
     dateTimeFlags |= (1 << 5); // Available confirmation of Date/Time Validity
@@ -101,7 +100,7 @@ static void buildPacket(uint8_t *packet) {
     dateTimeFlags |= (1 << 7); // Confirmed UTC Time Validity
   writeLittleEndian(payload, 22, dateTimeFlags);
 
-  // Offset 23: Number of SVs (RaceBox Protocol)
+  // Offset 23: Number of SVs
   writeLittleEndian(payload, 23, (uint8_t)pvt->numSV); // U1
 
   // Remaining fields, mostly direct mappings from u-blox data
@@ -117,7 +116,7 @@ static void buildPacket(uint8_t *packet) {
   writeLittleEndian(payload, 60, (uint32_t)pvt->headAcc); // U4
   writeLittleEndian(payload, 64, (uint16_t)pvt->pDOP);    // U2
 
-  // Offset 66: Lat/Lon Flags (RaceBox Protocol)
+  // Offset 66: Lat/Lon Flags
   uint8_t latLonFlags = 0;
   if (pvt->fixType <
       2) { // If no 2D/3D fix, then coordinates are considered invalid
@@ -130,6 +129,7 @@ static void buildPacket(uint8_t *packet) {
   // Report 100% to avoid low battery warnings.
   writeLittleEndian(payload, 67, (uint8_t)BATTERY_REPORT_PERCENT);
 
+  // Offset 68-78: IMU data
   writeLittleEndian(payload, 68, imu.gX);
   writeLittleEndian(payload, 70, imu.gY);
   writeLittleEndian(payload, 72, imu.gZ);
@@ -137,7 +137,7 @@ static void buildPacket(uint8_t *packet) {
   writeLittleEndian(payload, 76, imu.rY);
   writeLittleEndian(payload, 78, imu.rZ);
 
-  // Wrap in UBX (standard RaceBox header and checksum)
+  // Add RaceBox protocol header
   packet[0] = 0xB5;
   packet[1] = 0x62;
   packet[2] = 0xFF; // Message Class: RaceBox Data Message
@@ -145,32 +145,21 @@ static void buildPacket(uint8_t *packet) {
   packet[4] = 80;   // Payload size
   packet[5] = 0;
   memcpy(packet + 6, payload, 80);
-  uint8_t ckA, ckB;
-  calculateChecksum(payload, 80, 0xFF, 0x01, &ckA, &ckB);
-  packet[86] = ckA;
-  packet[87] = ckB;
-}
 
-// On each new GNSS epoch, count it and (when connected) send a packet
-void telemetrySendPacketIfReady() {
-  if (!gnssHasNewEpoch())
-    return;
-  gnssEpochCount++;
+  // Calculate payload checksum and add to packet
+  UbxChecksum checksum = calculateChecksum(payload, 80, 0xFF, 0x01);
+  packet[86] = checksum.ckA;
+  packet[87] = checksum.ckB;
 
-  if (!bleIsConnected())
-    return;
-  bleSentPacketCount++;
-
-  uint8_t packet[88] = {0};
-  buildPacket(packet);
-
+  // Hand the packet off to BLE
   bleSendPacket(packet, 88);
+  bleSentPacketCount++;
 }
 
 // Periodically print packet rate and GNSS/IMU debug stats over serial
-void telemetryReport() {
-  // Report packet send rate - runs regardless of GPS state
+static void telemetrySerialReport() {
   const unsigned long now = millis();
+
   if ((now - lastReportMs) >= STATS_REPORT_INTERVAL_MS) {
     float elapsed = (now - lastReportMs) / 1000.0;
     float bleRate = bleSentPacketCount / elapsed;
@@ -181,7 +170,6 @@ void telemetryReport() {
     uint8_t fix = 0;
     uint32_t hAcc = 0;
     double lat = 0.0, lon = 0.0;
-    const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
     if (pvt != nullptr) {
       sats = pvt->numSV;
       fix = pvt->fixType;
@@ -191,13 +179,35 @@ void telemetryReport() {
     }
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
+
+    // Print out the informational report
     Serial.printf("BLE Rate: %.2f Hz | GNSS Rate: %.2f Hz | SV: %u | Fix: %u | "
                   "HAcc: %u mm | Lat: %.7f Lon: %.7f | milliG: X=%d Y=%d Z=%d "
                   "| centiDeg/s: X=%d Y=%d Z=%d\n",
                   bleRate, gnssRate, sats, fix, hAcc, lat, lon, imu.gX, imu.gY,
                   imu.gZ, imu.rX, imu.rY, imu.rZ);
+
+    // Reset packet and epoch counts for the next report
     bleSentPacketCount = 0;
     gnssEpochCount = 0;
+
+    // Update the last report timestamp
     lastReportMs = now;
   }
+}
+
+// --- Simple startup - nothing really to do here ---
+void telemetryBegin() { return; }
+
+// On each new GNSS epoch, count it and (when connected) send a packet.
+// Always try to send informational report over serial.
+void telemetrySendIfReady() {
+  if (const UBX_NAV_PVT_data_t *newPvt = gnssConsumePvt()) {
+    pvt = newPvt;
+    gnssEpochCount++;
+    if (bleIsConnected()) {
+      sendPacket();
+    }
+  }
+  telemetrySerialReport();
 }

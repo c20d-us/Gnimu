@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -23,10 +21,10 @@
 // ============================================================================
 
 // Change DEVICE_ID to personalize your device.
-// It is a STRING of exactly 10 digits - quote it, so leading zeros are kept
+// It is a STRING of exactly 10 digits. Quote it, so that leading zeros are kept
 // (e.g. "0123456789"). Do NOT use a bare number: a leading zero would be read
 // as an octal literal and an unquoted ID loses its leading zeros.
-// First digit must be 0-3, so the value stays below 4000000000 - the RaceBox
+// First digit must be 0-3, so the value stays below 4000000000. The RaceBox
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
 #define DEVICE_ID "0008675309"
@@ -39,49 +37,44 @@
 // --- HARDWARE PINS ---
 // ============================================================================
 
-#define GNSS_RX_PIN 16 // Only change if your specific ESP32 board differs
-#define GNSS_TX_PIN 17 // Only change if your specific ESP32 board differs
-#define ONBOARD_LED_PIN 2
+#define GNSS_RX_PIN 16    // Change if your specific ESP32 board differs
+#define GNSS_TX_PIN 17    // Change if your specific ESP32 board differs
+#define ONBOARD_LED_PIN 2 // Change if your specific ESP32 board differs
 
 // ============================================================================
 // --- GNSS SETTINGS ---
 // ============================================================================
 
 #define GNSS_BAUD 460800
-#define MAX_NAVIGATION_RATE 25 // Hz - max supported by RaceBox Mini protocol
+#define MAX_NAVIGATION_RATE 25 // in Hz; max supported by RaceBox Mini protocol
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
-#define SV_MIN_ELEVAION 15 // deg - ignore SVs below this angle (anti-multipath)
+#define SV_MINELEV 15 // in deg; ignore SVs below this angle (anti-multipath)
 
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
-// from. Enabling too many can reduce the update rate below 25Hz on some
-// modules. Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
-// At a minimum, North American use should include GPS and Galileo.
-
-#define ENABLE_GNSS_GPS
-#define ENABLE_GNSS_GALILEO
-// #define ENABLE_GNSS_GLONASS  // Not supported by HGLRC M100-5883
-// #define ENABLE_GNSS_BEIDOU   // Not supported by HGLRC M100-5883
-// #define ENABLE_GNSS_SBAS     // Not supported by HGLRC M100-5883
-// #define ENABLE_GNSS_QZSS     // Not supported by HGLRC M100-5883
+// from. Enabling too many can reduce the update rate below 25Hz.
+// For North American use you should include GPS and Galileo.
+// Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
+#define GNSS_CONSTELLATIONS                                                    \
+  {                                                                            \
+      {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
+      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, true},                            \
+      {"GLONASS", SFE_UBLOX_GNSS_ID_GLONASS, false},                           \
+      {"BeiDou", SFE_UBLOX_GNSS_ID_BEIDOU, false},                             \
+      {"QZSS", SFE_UBLOX_GNSS_ID_QZSS, false},                                 \
+      {"SBAS", SFE_UBLOX_GNSS_ID_SBAS, false},                                 \
+  }
 
 // ============================================================================
 // --- IMU SETTINGS ---
 // ============================================================================
 
-// Comment out to disable gyro bias calibration at startup.
-// When enabled, device must be stationary during first few seconds of boot.
-#define GYRO_CALIBRATION_ENABLED
-
-// Number of calibration samples to average (10ms each) - 100 seems sufficient.
-#define GYRO_CALIBRATION_SAMPLES 100
-
-#define ACCEL_SAMPLE_INTERVAL_MS 10 // 10ms = 100Hz sample rate
+#define ACCEL_SAMPLE_INTERVAL_MS 10 // in ms; = 100Hz sample rate
 #define ACCEL_ALPHA 0.8f            // EMA smoothing: 1.0 = raw, 0.5 = moderate
 #define GYRO_ALPHA 0.8f             // EMA smoothing: 1.0 = raw, 0.5 = moderate
-#define ACCEL_RANGE MPU6050_RANGE_4_G // +/- 4g range is sufficient for auto-x
-#define GYRO_RANGE MPU6050_RANGE_500_DEG
-#define FILTER_BANDWIDTH MPU6050_BAND_21_HZ
+#define ACCEL_RANGE MPU6050_RANGE_4_G       // 4g range is sufficient for auto-x
+#define GYRO_RANGE MPU6050_RANGE_500_DEG    // 500deg/s is sufficient for auto-x
+#define FILTER_BANDWIDTH MPU6050_BAND_21_HZ // built-in low-pass filter setting
 
 // ============================================================================
 // --- BLE SETTINGS ---
@@ -90,8 +83,8 @@
 // BLE Transmit Power
 // Select one of the following levels by assigning it to BLE_TX_POWER.
 // Lower power reduces potential RF interference with the GNSS module.
-// The receiver will usually be close, so high power is not usually needed.
-// If you have connection drops, try increasing the power level.
+// The receiver will usually be close, so high power is not really needed.
+// If you have connection drop issues, try increasing the power level.
 //   ESP_PWR_LVL_N12  =  -12 dBm (minimum power)
 //   ESP_PWR_LVL_N9   =   -9 dBm
 //   ESP_PWR_LVL_N6   =   -6 dBm
@@ -100,17 +93,17 @@
 //   ESP_PWR_LVL_P3   =   +3 dBm (default)
 //   ESP_PWR_LVL_P6   =   +6 dBm
 //   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
-#define BLE_TX_POWER ESP_PWR_LVL_N12 // set to lowest power level for our needs
+#define BLE_TX_POWER ESP_PWR_LVL_N12
 
-#define BLE_MTU_SIZE 128 // Bytes - must be >= 91 to carry an 88-byte notify
-#define BLE_READVERTISE_DELAY_MS 500 // ms - delay before BLE re-advertising
-#define LED_BLINK_INTERVAL_MS 1000   // ms - LED blink rate when disconnected
+#define BLE_MTU_SIZE 128 // in bytes; must be >= 91 to carry an 88-byte notify
+#define BLE_READVERTISE_DELAY_MS 500 // in ms; delay before BLE re-advertising
+#define LED_BLINK_INTERVAL_MS 1000   // in ms; LED blink rate when disconnected
 
 // ============================================================================
-// --- TIMING & REPORTING ---
+// --- SERIAL REPORTING TIMING ---
 // ============================================================================
 
-#define STATS_REPORT_INTERVAL_MS 1000 // ms - serial stats reporting interval
+#define STATS_REPORT_INTERVAL_MS 1000 // ms; serial stats reporting interval
 
 // ============================================================================
 // --- PROTOCOL CONSTANTS ---

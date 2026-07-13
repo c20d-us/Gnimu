@@ -37,7 +37,6 @@ void setup() {
 void loop() {
   gnssPoll();
   imuPoll();
-  telemetrySendPacketIfReady();
-  telemetryReport();
+  telemetrySendIfReady();
   bleUpdate();
 }

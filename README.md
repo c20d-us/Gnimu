@@ -6,11 +6,11 @@
 
 The code in this repo lets you turn an ESP32 development board, a GNSS (Global Navigation Satellite System) module, and an IMU (Inertial Measurement Unit) module into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools should be able to connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at or near 25Hz.
 
-This is a low-cost, hackable platform for experimenting with GNSS and IMU data logging, the RaceBox BLE protocol, and sensor fusion built from off-the-shelf parts.
+This is a low-cost, hackable platform for experimenting with GNSS+IMU data logging, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
 
 I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
 
-I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else pronounces it.
+I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
 
 > [!IMPORTANT]
 > **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
@@ -20,14 +20,14 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 ## What it does
 
 - Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at up to **25 Hz**.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz with data smoothing, and optional gyro-bias calibration at startup.
-- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to any RaceBox-compatible client at or near 25Hz.
+- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz with integrated data smoothing.
+- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client at or near 25Hz.
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
 - Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
 
 ```mermaid
 flowchart LR
-    GNSS["u-blox GNSS module"] -- "UART · 115200 baud" --> ESP32["ESP32"]
+    GNSS["u-blox GNSS module"] -- "UART · 460800 baud" --> ESP32["ESP32"]
     IMU["accel + gyro"] -- "I²C" --> ESP32
     ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
 ```
@@ -55,7 +55,7 @@ flowchart LR
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0BQYPKRQS"><strong>Project Box</strong></a></td>
-    <td>ABS Plastic Project Case, White, 80x50x26mm. You'll need to cut holes into this box to fit your specific board and component layout (see images below).</td>
+    <td>ABS plastic project case, white, 80x50x26mm. You'll need to cut holes into this box to fit your specific board and component layout (see images below).</td>
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0FPMC9917"><strong>Nylon M2.5 hex standoffs</strong></a></td>
@@ -178,11 +178,10 @@ All user-tunable settings live in [`src/Gnimu/config.h`](src/Gnimu/config.h), gr
 | `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
 | `MODEL`, `FIRMWARE_VERSION`, `HARDWARE_VERSION`, `MANUFACTURER` | Values reported via the BLE Device Information Service. |
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `ONBOARD_LED_PIN` | Hardware pin assignments. |
-| `GNSS_BAUD`, `FACTORY_GNSS_BAUD` | Serial baud rates. On first boot the firmware can detect a module at its factory baud, switch it to `GNSS_BAUD`, and save the config to flash. |
+| `GNSS_BAUD` | Serial baud rates. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
 | `MAX_NAVIGATION_RATE` | GNSS update rate in Hz (1–25). |
 | `ENABLE_GNSS_*` | Per-constellation toggles (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports. |
-| `GYRO_CALIBRATION_ENABLED`, `GYRO_CALIBRATION_SAMPLES` | Startup gyro-bias calibration — keep the device still during the first second of boot. |
-| `ACCEL_ALPHA`, `GYRO_ALPHA` | IMU smoothing (exponential moving average) strength. |
+| `ACCEL_ALPHA`, `GYRO_ALPHA` | IMU data EMA smoothing (exponential moving average) strength. |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
 
 Several values are checked with `static_assert` at compile time, so an invalid configuration fails the build with a clear message instead of misbehaving on the device.
@@ -193,13 +192,15 @@ GNSS reception is sensitive to nearby RF noise. On compact builds, the ESP32's B
 
 The **RF shield** shown in the [build gallery](#build-gallery) is the hardware counterpart to this: a grounded metal enclosure over the GNSS module that physically blocks radio noise from reaching the GNSS receiver. The two measures stack — lowering the BLE power quiets the source, while the shield blocks whatever remains. Either helps on its own; together they give the most reliable lock.
 
+When the BLE power level was left at the default value of +9dbm on my ESP32 board, the device had significantly worse lock quality, sometimes not getting a fix at all (especially indoors).
+
 With the BLE power level set to -12db, I have seen simultaneuous lock on as many as 20 satellites with horizontal accuracy (HAcc) as low as 220mm and [pDOP](https://en.wikipedia.org/wiki/Dilution_of_precision) values under 2 (really good for a cheap consumer-grade GNSS module).
 
 ---
 
 ## Usage
 
-1. Power the assembled device and give the GNSS module time to acquire a fix (faster outdoors / near a window). The onboard LED blinks while unconnected.
+1. Power the assembled device and give the GNSS module time to acquire a fix. The onboard LED blinks while unconnected.
 2. In the **RaceBox app** (or another RaceBox-compatible client), scan for and connect to the device — it advertises using the `MODEL` + `DEVICE_ID` name.
 3. On connect, the LED goes solid and the device begins streaming data packets.
 4. Optional: keep a serial monitor open at 115200 baud to watch live diagnostics.
@@ -211,18 +212,25 @@ With the BLE power level set to -12db, I have seen simultaneuous lock on as many
 | Symptom | Things to check |
 |---------|-----------------|
 | `Failed to find IMU module` | I²C wiring (SDA/SCL), 3V3 power, board address. |
-| `u-blox GNSS not detected` | UART wiring (note TX↔RX crossover), `GNSS_BAUD` / `FACTORY_GNSS_BAUD`, module power. The sketch will attempt to auto-configure the baud rate. |
+| `u-blox GNSS not detected` | UART wiring (note TX↔RX crossover), module power. The sketch will attempt to auto-configure the baud rate. |
 | Few or no satellites | Move outdoors / near a window; lower `BLE_TX_POWER`; give it a cold-start minute. |
 | App won't connect | Confirm `DEVICE_ID` is valid (10 digits, first digit 0–3); make sure no other client is already connected. |
 | Build fails with a `static_assert` message | Read the message — it names the offending `config.h` value and the allowed range. |
 
 ---
 
-## Credits
+## Acknowledgment & Origins
 
-This project is a major evolution of earlier work by [**Anchit Chandra Sekhar**](https://github.com/anchit92). Changes in this version include bug fixes, externalized configuration, a BLE transmit-power control, startup gyro calibration, and modularization of the codebase.
+Gnimu began as a derivative codebase based on [**Anchit Chandra Sekhar's RaceBox mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided the foundational logic and initial inspiration, Gnimu has been completely overhauled from its original single-file Arduino sketch architecture.
 
-Protocol details follow the *RaceBox BLE Protocol Description* (rev 8), [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
+**Key evolutions include:**
+- Modular Architecture: Refactored into a highly modular codebase for improved maintainability.
+- Externalized Configuration: Moved away from in-line constants to standard `config.h` approach.
+- Performance & Structure: Extensive cleanup and optimization of the core logic.
+
+I am grateful to the original author for the initial implementation that made this project possible.
+
+Protocol details follow the *RaceBox BLE Protocol Description (rev 8)*, [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
 
 ---
 
