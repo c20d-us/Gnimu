@@ -22,7 +22,7 @@ static SFE_UBLOX_GNSS myGNSS;
 static HardwareSerial gnssSerial(2);
 
 // --- PVT data and state ---
-static UBX_NAV_PVT_data_t cachedPVT;
+static UBX_NAV_PVT_data_t latestPVT;
 static bool newEpochAvailable = false;
 
 // --- Struct to hold the constellation configuration from config.h---
@@ -35,8 +35,8 @@ struct Constellations {
 // The callback function triggered automatically by checkCallbacks()
 // when a new UBX-NAV-PVT packet has been constructed.
 static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
-  // Copy the new PVT data our local cache
-  memcpy(&cachedPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
+  // Copy the new PVT data our local copy
+  memcpy(&latestPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
   newEpochAvailable = true;
 }
 
@@ -114,6 +114,7 @@ static void enableConstellations() {
   }
 }
 
+// Initialize the GNSS module.
 void gnssBegin() {
   // Make sure we can connect to the GNSS module at the target baud rate.
   // If we can't connect, halt with an error message.
@@ -150,20 +151,21 @@ void gnssBegin() {
   enableConstellations();
 }
 
+// Consume the cached PVT data if available, returning nullptr if no new data.
 const UBX_NAV_PVT_data_t *gnssConsumePvt() {
   if (!newEpochAvailable) {
     return nullptr; // No new data since last time
   } else {
     newEpochAvailable = false; // "Consume" the flag
-    return &cachedPVT;         // Return the fresh data
+    return &latestPVT;         // Return the fresh data
   }
 }
 
-bool gnssHeadingValid() {
-  // Convenience wrapper around getHeadVehValid()
-  return myGNSS.getHeadVehValid();
-}
+// Convenience wrapper around getHeadVehValid()
+bool gnssHeadingValid() { return myGNSS.getHeadVehValid(); }
 
+// Poll the GNSS module for new data, parsing any complete packets and
+// firing registered callbacks when a new PVT epoch is available.
 void gnssPoll() {
   // Pump the UART and parse incoming bytes into complete packets
   myGNSS.checkUblox();

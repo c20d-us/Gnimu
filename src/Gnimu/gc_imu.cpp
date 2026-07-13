@@ -43,6 +43,13 @@ static ImuAxis gyroAxes[3] = {
 // debug reporting both read it today).
 static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 
+// A single raw IMU sample, split into per-axis arrays indexed [0]=X, [1]=Y,
+// [2]=Z, matching accelAxes/gyroAxes.
+struct ImuRawSample {
+  float accel[3];
+  float gyro[3];
+};
+
 // Convert a scaled sensor value (gyro in centi-deg/sec, accel in milli-g) to
 // the protocol's int16_t, saturating at the representable ±32767 limit rather
 // than overflowing. A wrapped overflow would flip sign (i.e., reporting a hard
@@ -58,6 +65,17 @@ static int16_t toProtocolInt16(double value) {
   return (int16_t)value;
 }
 
+// Read the IMU and return the raw accel/gyro values for this instant.
+static ImuRawSample readImuRaw() {
+  sensors_event_t a, g, temp;
+  myIMU.getEvent(&a, &g, &temp);
+  return {
+      {a.acceleration.x, a.acceleration.y, a.acceleration.z},
+      {g.gyro.x, g.gyro.y, g.gyro.z},
+  };
+}
+
+// Initialize the IMU, including setting up the sensor ranges and seed values.
 void imuBegin() {
   if (!myIMU.begin()) {
     Serial.println("❌ Failed to find the IMU module - halting");
@@ -70,37 +88,31 @@ void imuBegin() {
   myIMU.setAccelerometerRange(ACCEL_RANGE);
   myIMU.setGyroRange(GYRO_RANGE);
   myIMU.setFilterBandwidth(FILTER_BANDWIDTH);
-  sensors_event_t a, g, temp;
-  myIMU.getEvent(&a, &g, &temp);
 
   // Seed each axis with a real first reading rather than leaving it at its
   // zero-baseline default. Otherwise the first update() would see a huge
   // artificial jump (e.g. gravity on the Z axis) that gets latched into the
   // window's peak deviation and misreported as a genuine transient in the
   // very first transmitted frame.
-  float accelSeed[3] = {a.acceleration.x, a.acceleration.y, a.acceleration.z};
-  float gyroSeed[3] = {g.gyro.x, g.gyro.y, g.gyro.z};
+  ImuRawSample seed = readImuRaw();
   for (int i = 0; i < 3; i++) {
-    accelAxes[i].reset(accelSeed[i]);
-    gyroAxes[i].reset(gyroSeed[i]);
+    accelAxes[i].reset(seed.accel[i]);
+    gyroAxes[i].reset(seed.gyro[i]);
   }
 }
 
+// Poll the IMU and update the axis filters at our configured sample rate.
 void imuPoll() {
   static unsigned long lastImuReadMs = 0;
   static unsigned long lastTransmitReadMs = 0;
 
-  // Update all six axis filters at the fast sampling rate.
+  // Update all six axis filters if it's time to sample.
   if (millis() - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
     lastImuReadMs = millis();
-    sensors_event_t a, g, temp;
-    myIMU.getEvent(&a, &g, &temp);
-
-    float accelRaw[3] = {a.acceleration.x, a.acceleration.y, a.acceleration.z};
-    float gyroRaw[3] = {g.gyro.x, g.gyro.y, g.gyro.z};
+    ImuRawSample raw = readImuRaw();
     for (int i = 0; i < 3; i++) {
-      accelAxes[i].update(accelRaw[i]);
-      gyroAxes[i].update(gyroRaw[i]);
+      accelAxes[i].update(raw.accel[i]);
+      gyroAxes[i].update(raw.gyro[i]);
     }
   }
 
