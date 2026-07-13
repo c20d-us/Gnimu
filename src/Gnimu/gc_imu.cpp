@@ -15,6 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "gc_imu.h"
+#include "ImuAxis.h"
 #include "config.h"
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -22,9 +23,25 @@
 // --- IMU ---
 static Adafruit_MPU6050 myIMU;
 
-// Storage for the filtered values
-static float filteredAx = 0, filteredAy = 0, filteredAz = 0;
-static float filteredGx = 0, filteredGy = 0, filteredGz = 0;
+// Three axes each for accelerometer and gyroscope, indexed [0]=X, [1]=Y,
+// [2]=Z. Arrays let imuBegin()/imuPoll() drive all three axes of a sensor
+// with one loop instead of one line per axis.
+static ImuAxis accelAxes[3] = {
+    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
+    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
+    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
+};
+static ImuAxis gyroAxes[3] = {
+    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
+    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
+    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
+};
+
+// Latest values decimated to the transmission rate, refreshed by imuPoll().
+// Kept as a plain cache so imuReadProtocolUnits() stays a cheap, side-effect
+// free accessor safe to call from multiple places (BLE packet send and serial
+// debug reporting both read it today).
+static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 
 // Convert a scaled sensor value (gyro in centi-deg/sec, accel in milli-g) to
 // the protocol's int16_t, saturating at the representable ±32767 limit rather
@@ -56,46 +73,60 @@ void imuBegin() {
   sensors_event_t a, g, temp;
   myIMU.getEvent(&a, &g, &temp);
 
-  // Initialize filters with the first real reading so they don't start at zero
-  filteredAx = a.acceleration.x;
-  filteredAy = a.acceleration.y;
-  filteredAz = a.acceleration.z;
-  filteredGx = g.gyro.x;
-  filteredGy = g.gyro.y;
-  filteredGz = g.gyro.z;
-}
-
-void imuPoll() {
-  static unsigned long lastAccelReadMs = 0;
-  // Update Accelerometer readings at fixed interval
-  if (millis() - lastAccelReadMs >= ACCEL_SAMPLE_INTERVAL_MS) {
-    lastAccelReadMs = millis();
-    sensors_event_t a, g, temp;
-    myIMU.getEvent(&a, &g, &temp);
-
-    // Apply Exponential Moving Average filter
-    filteredAx =
-        (ACCEL_ALPHA * a.acceleration.x) + ((1.0 - ACCEL_ALPHA) * filteredAx);
-    filteredAy =
-        (ACCEL_ALPHA * a.acceleration.y) + ((1.0 - ACCEL_ALPHA) * filteredAy);
-    filteredAz =
-        (ACCEL_ALPHA * a.acceleration.z) + ((1.0 - ACCEL_ALPHA) * filteredAz);
-
-    filteredGx = (GYRO_ALPHA * g.gyro.x) + ((1.0 - GYRO_ALPHA) * filteredGx);
-    filteredGy = (GYRO_ALPHA * g.gyro.y) + ((1.0 - GYRO_ALPHA) * filteredGy);
-    filteredGz = (GYRO_ALPHA * g.gyro.z) + ((1.0 - GYRO_ALPHA) * filteredGz);
+  // Seed each axis with a real first reading rather than leaving it at its
+  // zero-baseline default. Otherwise the first update() would see a huge
+  // artificial jump (e.g. gravity on the Z axis) that gets latched into the
+  // window's peak deviation and misreported as a genuine transient in the
+  // very first transmitted frame.
+  float accelSeed[3] = {a.acceleration.x, a.acceleration.y, a.acceleration.z};
+  float gyroSeed[3] = {g.gyro.x, g.gyro.y, g.gyro.z};
+  for (int i = 0; i < 3; i++) {
+    accelAxes[i].reset(accelSeed[i]);
+    gyroAxes[i].reset(gyroSeed[i]);
   }
 }
 
-ImuProtocolUnits imuReadProtocolUnits() {
-  ImuProtocolUnits u;
-  // Convert accelerometer to milli-g (1g = 9.80665 m/s^2)
-  u.gX = toProtocolInt16(filteredAx * 1000.0 / 9.80665);
-  u.gY = toProtocolInt16(filteredAy * 1000.0 / 9.80665);
-  u.gZ = toProtocolInt16(filteredAz * 1000.0 / 9.80665);
-  // Convert gyro to centi-deg/sec
-  u.rX = toProtocolInt16(filteredGx * 180.0 / M_PI * 100.0);
-  u.rY = toProtocolInt16(filteredGy * 180.0 / M_PI * 100.0);
-  u.rZ = toProtocolInt16(filteredGz * 180.0 / M_PI * 100.0);
-  return u;
+void imuPoll() {
+  static unsigned long lastImuReadMs = 0;
+  static unsigned long lastTransmitReadMs = 0;
+
+  // Update all six axis filters at the fast sampling rate.
+  if (millis() - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
+    lastImuReadMs = millis();
+    sensors_event_t a, g, temp;
+    myIMU.getEvent(&a, &g, &temp);
+
+    float accelRaw[3] = {a.acceleration.x, a.acceleration.y, a.acceleration.z};
+    float gyroRaw[3] = {g.gyro.x, g.gyro.y, g.gyro.z};
+    for (int i = 0; i < 3; i++) {
+      accelAxes[i].update(accelRaw[i]);
+      gyroAxes[i].update(gyroRaw[i]);
+    }
+  }
+
+  // Decimate to the transmission rate on a fixed cadence, regardless of BLE
+  // connection state. This is what drains each axis's transient window; if it
+  // only ran while connected, the window would silently accumulate deviations
+  // for as long as the device stayed disconnected and dump a stale "peak"
+  // into the first packet after reconnecting.
+  if (millis() - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
+    lastTransmitReadMs = millis();
+
+    float accelFiltered[3], gyroFiltered[3];
+    for (int i = 0; i < 3; i++) {
+      accelFiltered[i] = accelAxes[i].read();
+      gyroFiltered[i] = gyroAxes[i].read();
+    }
+
+    // Convert accelerometer to milli-g (1g = 9.80665 m/s^2)
+    latestUnits.gX = toProtocolInt16(accelFiltered[0] * 1000.0 / 9.80665);
+    latestUnits.gY = toProtocolInt16(accelFiltered[1] * 1000.0 / 9.80665);
+    latestUnits.gZ = toProtocolInt16(accelFiltered[2] * 1000.0 / 9.80665);
+    // Convert gyro to centi-deg/sec
+    latestUnits.rX = toProtocolInt16(gyroFiltered[0] * 180.0 / M_PI * 100.0);
+    latestUnits.rY = toProtocolInt16(gyroFiltered[1] * 180.0 / M_PI * 100.0);
+    latestUnits.rZ = toProtocolInt16(gyroFiltered[2] * 180.0 / M_PI * 100.0);
+  }
 }
+
+ImuProtocolUnits imuReadProtocolUnits() { return latestUnits; }

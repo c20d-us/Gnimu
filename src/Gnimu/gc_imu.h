@@ -32,10 +32,14 @@ struct ImuProtocolUnits {
 // Halts with a serial message if the chip isn't found.
 void imuBegin();
 
-// Poll the IMU at a fixed interval and update the smoothed accel/gyro
-// values. Self-throttles to ACCEL_SAMPLE_INTERVAL_MS, so it is safe to call
-// every loop().
+// Poll the IMU and advance its filters. Self-throttles internally on two
+// cadences, so it is safe to call every loop():
+//   - IMU_SAMPLE_INTERVAL_MS: reads the sensor and updates each axis filter.
+//   - IMU_TRANSMIT_INTERVAL_MS: decimates each axis down to the transmission
+//     rate and caches the result, independent of BLE connection state.
 void imuPoll();
 
-// Retrieve the current filtered IMU values in RaceBox protocol units.
+// Retrieve the most recent transmission-rate IMU values in RaceBox protocol
+// units. Cheap accessor with no side effects - safe to call any number of
+// times per frame.
 ImuProtocolUnits imuReadProtocolUnits();

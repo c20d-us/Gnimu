@@ -20,7 +20,7 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 ## What it does
 
 - Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at up to **25 Hz**.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz with integrated data smoothing.
+- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, smooths it with a transient-aware filter, and decimates it to the 25Hz transmission rate — see [IMU smoothing](#imu-smoothing).
 - Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client at or near 25Hz.
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
 - Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
@@ -176,15 +176,25 @@ All user-tunable settings live in [`src/Gnimu/config.h`](src/Gnimu/config.h), gr
 | Setting | Purpose |
 |---------|---------|
 | `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
-| `MODEL`, `FIRMWARE_VERSION`, `HARDWARE_VERSION`, `MANUFACTURER` | Values reported via the BLE Device Information Service. |
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `ONBOARD_LED_PIN` | Hardware pin assignments. |
 | `GNSS_BAUD` | Serial baud rates. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
 | `MAX_NAVIGATION_RATE` | GNSS update rate in Hz (1–25). |
-| `ENABLE_GNSS_*` | Per-constellation toggles (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports. |
-| `ACCEL_ALPHA`, `GYRO_ALPHA` | IMU data EMA smoothing (exponential moving average) strength. |
+| `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
+| `ACCEL_ALPHA`, `GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
+| `ACCEL_TRANSIENT_THRESHOLD`, `GYRO_TRANSIENT_THRESHOLD` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
 
 Several values are checked with `static_assert` at compile time, so an invalid configuration fails the build with a clear message instead of misbehaving on the device.
+
+### IMU smoothing
+
+Raw accelerometer and gyroscope samples are read at 100Hz and run through a per-axis filter (one instance each for accel X/Y/Z and gyro X/Y/Z) before being decimated to the 25Hz transmission rate:
+
+- Each axis tracks an EMA (exponential moving average) baseline (`ACCEL_ALPHA` / `GYRO_ALPHA`) for a smooth, low-noise signal.
+- Within each transmission window, the axis also tracks the largest raw deviation from that baseline.
+- If the deviation exceeds `ACCEL_TRANSIENT_THRESHOLD` / `GYRO_TRANSIENT_THRESHOLD`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
+
+This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `config.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
 
 ### A note on BLE power and GNSS lock
 
@@ -221,11 +231,12 @@ With the BLE power level set to -12db, I have seen simultaneuous lock on as many
 
 ## Acknowledgment & Origins
 
-Gnimu began as a derivative codebase based on [**Anchit Chandra Sekhar's RaceBox mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided the foundational logic and initial inspiration, Gnimu has been completely overhauled from its original single-file Arduino sketch architecture.
+Gnimu began as a derivative of [**Anchit Chandra Sekhar's RaceBox mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided the foundational logic and initial inspiration, Gnimu has been completely overhauled from its original single-file Arduino sketch architecture.
 
 **Key evolutions include:**
 - Modular Architecture: Refactored into a highly modular codebase for improved maintainability.
 - Externalized Configuration: Moved away from in-line constants to standard `config.h` approach.
+- Transient-aware EMA smoothing: Applies exponential moving average (EMA) smoothing to IMU data, with transient thresholding to capture and integrate high-deviation signals that would otherwise be missed.
 - Performance & Structure: Extensive cleanup and optimization of the core logic.
 
 I am grateful to the original author for the initial implementation that made this project possible.

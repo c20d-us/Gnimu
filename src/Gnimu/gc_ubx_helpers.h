@@ -16,6 +16,7 @@
 
 #pragma once
 #include <Arduino.h>
+#include <type_traits>
 
 // ============================================================================
 // UBX Packet Construction Helpers
@@ -23,14 +24,32 @@
 // Stateless helpers for building u-blox UBX-format binary messages.
 // ============================================================================
 
-// Write a little-endian integer into buffer at the given offset.
-// Overloaded for each width/signedness used by the RaceBox payload.
-void writeLittleEndian(uint8_t *buffer, int offset, uint32_t value);
-void writeLittleEndian(uint8_t *buffer, int offset, int32_t value);
-void writeLittleEndian(uint8_t *buffer, int offset, uint16_t value);
-void writeLittleEndian(uint8_t *buffer, int offset, int16_t value);
-void writeLittleEndian(uint8_t *buffer, int offset, uint8_t value);
-void writeLittleEndian(uint8_t *buffer, int offset, int8_t value);
+// Write a little-endian integer into buffer at the given offset. Templated
+// over the six fixed-width integer types used by the RaceBox payload; the
+// static_assert acts as a whitelist so a call with an unsanctioned type (e.g.
+// a bare uint64_t or size_t) fails to compile instead of silently writing the
+// wrong number of bytes into a buffer sized for a narrower field.
+//
+// The value is reinterpreted as its same-width unsigned twin (a well-defined
+// 2's-complement bit copy) before shifting, which avoids the
+// implementation-defined behavior of right-shifting a negative signed value
+// directly. Bytes are written explicitly (least-significant first) rather
+// than via memcpy, so the output is little-endian on ANY host CPU regardless
+// of the machine's native byte order.
+template <typename T>
+void writeLittleEndian(uint8_t *buffer, int offset, T value) {
+  static_assert(
+      std::is_same<T, uint32_t>::value || std::is_same<T, int32_t>::value ||
+          std::is_same<T, uint16_t>::value || std::is_same<T, int16_t>::value ||
+          std::is_same<T, uint8_t>::value || std::is_same<T, int8_t>::value,
+      "writeLittleEndian only supports uint8/16/32_t and "
+      "int8/16/32_t.");
+  using UnsignedT = typename std::make_unsigned<T>::type;
+  UnsignedT bits = static_cast<UnsignedT>(value);
+  for (size_t i = 0; i < sizeof(T); i++) {
+    buffer[offset + i] = static_cast<uint8_t>(bits >> (8 * i));
+  }
+}
 
 // A struct to hold the UBX checksum values (ckA and ckB).
 struct UbxChecksum {

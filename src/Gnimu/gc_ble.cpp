@@ -101,26 +101,23 @@ void bleBegin() {
   // --- Device Information Service ---
   BLEService *pDeviceInfo =
       pServer->createService("0000180a-0000-1000-8000-00805f9b34fb");
-  // Model
-  BLECharacteristic *pModel = pDeviceInfo->createCharacteristic(
-      "00002a24-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pModel->setValue(MODEL);
-  // Serial number - the 10-digit device ID from config.h
-  BLECharacteristic *pSerial = pDeviceInfo->createCharacteristic(
-      "00002a25-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pSerial->setValue(DEVICE_ID);
-  // Firmware revision
-  BLECharacteristic *pFirm = pDeviceInfo->createCharacteristic(
-      "00002a26-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pFirm->setValue(FIRMWARE_VERSION);
-  // Hardware revision
-  BLECharacteristic *pHardware = pDeviceInfo->createCharacteristic(
-      "00002a27-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pHardware->setValue(HARDWARE_VERSION);
-  // Manufacturer
-  BLECharacteristic *pManufacturer = pDeviceInfo->createCharacteristic(
-      "00002a29-0000-1000-8000-00805f9b34fb", BLECharacteristic::PROPERTY_READ);
-  pManufacturer->setValue(MANUFACTURER);
+
+  struct DeviceInfoField {
+    const char *uuid;
+    const char *value;
+  };
+  const DeviceInfoField deviceInfoFields[] = {
+      {"00002a24-0000-1000-8000-00805f9b34fb", MODEL},        // Model
+      {"00002a25-0000-1000-8000-00805f9b34fb", DEVICE_ID},    // Serial number
+      {"00002a29-0000-1000-8000-00805f9b34fb", MANUFACTURER}, // Manufacturer
+      {"00002a26-0000-1000-8000-00805f9b34fb", FIRMWARE_VERSION}, // Firmware
+      {"00002a27-0000-1000-8000-00805f9b34fb", HARDWARE_VERSION}, // Hardware
+  };
+  for (const auto &field : deviceInfoFields) {
+    pDeviceInfo
+        ->createCharacteristic(field.uuid, BLECharacteristic::PROPERTY_READ)
+        ->setValue(field.value);
+  }
   pDeviceInfo->start();
 
   // --- Start advertising ---
