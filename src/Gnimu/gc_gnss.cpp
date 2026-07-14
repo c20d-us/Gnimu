@@ -87,6 +87,7 @@ static bool connectAndConfigureBaud(uint32_t targetBaud) {
     gnssSerial.end();
     delay(100);
   }
+  return false; // Swept everything and never connected
 }
 
 static void enableConstellations() {
