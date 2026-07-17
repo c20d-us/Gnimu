@@ -166,26 +166,26 @@ static void telemetrySerialReport() {
     float gnssRate = gnssEpochCount / elapsed;
     // Additional satellite info for debugging: number of satellites, fix type,
     // horizontal accuracy, and lat/lon
-    uint8_t sats = 0;
-    uint8_t fix = 0;
-    uint32_t hAcc = 0;
+    uint8_t sats = 0, fix = 0;
+    uint32_t hAcc = 0, tAcc = 0;
     double lat = 0.0, lon = 0.0;
     if (pvt != nullptr) {
       sats = pvt->numSV;
       fix = pvt->fixType;
       hAcc = pvt->hAcc;
+      tAcc = pvt->tAcc;
       lat = pvt->lat * 1e-7;
       lon = pvt->lon * 1e-7;
     }
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
-
     // Print out the informational report
-    Serial.printf("BLE Rate: %.2f Hz | GNSS Rate: %.2f Hz | SV: %u | Fix: %u | "
-                  "HAcc: %u mm | Lat: %.7f Lon: %.7f | milliG: X=%d Y=%d Z=%d "
-                  "| centiDeg/s: X=%d Y=%d Z=%d\n",
-                  bleRate, gnssRate, sats, fix, hAcc, lat, lon, imu.gX, imu.gY,
-                  imu.gZ, imu.rX, imu.rY, imu.rZ);
+    Serial.printf(
+        "BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | TAcc: %uns | HAcc: "
+        "%umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d "
+        "Z=%d | centiDeg/s: X=%d Y=%d Z=%d\n",
+        bleRate, gnssRate, sats, fix, tAcc, hAcc, lat, lon, imu.gX, imu.gY,
+        imu.gZ, imu.rX, imu.rY, imu.rZ);
 
     // Reset packet and epoch counts for the next report
     bleSentPacketCount = 0;

@@ -46,7 +46,7 @@
 // ============================================================================
 
 #define SV_MINELEV 15    // in deg; ignore SVs below this angle (anti-multipath)
-#define GNSS_BAUD 460800 // in bps; 9600, 38400, 57600, 115200, 230400, 460800
+#define GNSS_BAUD 115200 // in bps; 9600, 38400, 57600, 115200, 230400, 460800
 #define MAX_NAVIGATION_RATE 25 // in Hz; max supported by RaceBox Mini protocol
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
