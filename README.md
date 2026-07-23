@@ -43,7 +43,11 @@ src/
   ESP32/          Gnimu ESP32 firmware, README, and diagnostic tools
   nRF52840/       Gnimu nRF52840 firmware, README, and diagnostic tools
   universal/      Sketches that aren't tied to either platform
+tools/
+  check_common.sh Verifies the modules shared by both variants are identical
 ```
+
+Several modules are deliberately duplicated between the two variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the other variant and run `tools/check_common.sh` to confirm they still match.
 
 ---
 

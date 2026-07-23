@@ -86,12 +86,14 @@
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-#define IMU_ACCEL_OFFSET_X_G 0.0f
-#define IMU_ACCEL_OFFSET_Y_G 0.0f
-#define IMU_ACCEL_OFFSET_Z_G 0.0f
-#define IMU_GYRO_OFFSET_X_DPS 0.0f
-#define IMU_GYRO_OFFSET_Y_DPS 0.0f
-#define IMU_GYRO_OFFSET_Z_DPS 0.0f
+// Bench-calibrated 2026-07-23 (average of 4 imu_calibration runs; per-run
+// spread was < 0.001g accel / < 0.03dps gyro).
+#define IMU_ACCEL_OFFSET_X_G -0.015826f
+#define IMU_ACCEL_OFFSET_Y_G -0.001984f
+#define IMU_ACCEL_OFFSET_Z_G +0.025455f
+#define IMU_GYRO_OFFSET_X_DPS +0.596595f
+#define IMU_GYRO_OFFSET_Y_DPS -1.487012f
+#define IMU_GYRO_OFFSET_Z_DPS +0.671001f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
