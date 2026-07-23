@@ -22,7 +22,7 @@
 #include <BLEUtils.h>
 
 // --- BLE state - private to this file ---
-static const String deviceName = String(MODEL) + " " + DEVICE_ID;
+static const String deviceName = String(RACEBOX_MODEL) + " " + DEVICE_ID;
 
 static BLEServer *pServer = NULL;
 static BLECharacteristic *pCharacteristicTx = NULL;
@@ -37,10 +37,10 @@ static void updateLed() {
     static unsigned long lastBlinkMs = 0;
     if (millis() - lastBlinkMs > LED_BLINK_INTERVAL_MS) {
       lastBlinkMs = millis();
-      digitalWrite(ONBOARD_LED_PIN, !digitalRead(ONBOARD_LED_PIN));
+      digitalWrite(LED_ONBOARD_PIN, !digitalRead(LED_ONBOARD_PIN));
     }
   } else {
-    digitalWrite(ONBOARD_LED_PIN, HIGH);
+    digitalWrite(LED_ONBOARD_PIN, HIGH);
   }
 }
 
@@ -49,7 +49,7 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
     deviceConnected = true;
     // Request a larger MTU to fit an 88-byte packet + headers in one go
-    pServer->updatePeerMTU(pServer->getConnId(), BLE_MTU_SIZE);
+    pServer->updatePeerMTU(pServer->getConnId(), BLE_MTU_BYTES);
     connectTimeMs = millis();
     Serial.println("✅ BLE Client connected & MTU update requested");
   }
@@ -70,7 +70,7 @@ class RxCharacteristicCallbacks : public BLECharacteristicCallbacks {
 };
 
 void bleBegin() {
-  pinMode(ONBOARD_LED_PIN, OUTPUT);
+  pinMode(LED_ONBOARD_PIN, OUTPUT);
   BLEDevice::init(deviceName.c_str());
   BLEDevice::setPower(BLE_TX_POWER);
   {
@@ -107,11 +107,11 @@ void bleBegin() {
     const char *value;
   };
   const DeviceInfoField deviceInfoFields[] = {
-      {"00002a24-0000-1000-8000-00805f9b34fb", MODEL},        // Model
-      {"00002a25-0000-1000-8000-00805f9b34fb", DEVICE_ID},    // Serial number
-      {"00002a29-0000-1000-8000-00805f9b34fb", MANUFACTURER}, // Manufacturer
-      {"00002a26-0000-1000-8000-00805f9b34fb", FIRMWARE_VERSION}, // Firmware
-      {"00002a27-0000-1000-8000-00805f9b34fb", HARDWARE_VERSION}, // Hardware
+      {"00002a24-0000-1000-8000-00805f9b34fb", RACEBOX_MODEL},
+      {"00002a25-0000-1000-8000-00805f9b34fb", DEVICE_ID}, // Serial number
+      {"00002a29-0000-1000-8000-00805f9b34fb", RACEBOX_MANUFACTURER},
+      {"00002a26-0000-1000-8000-00805f9b34fb", RACEBOX_FIRMWARE_VERSION},
+      {"00002a27-0000-1000-8000-00805f9b34fb", RACEBOX_HARDWARE_VERSION},
   };
   for (const auto &field : deviceInfoFields) {
     pDeviceInfo

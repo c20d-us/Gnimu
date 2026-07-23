@@ -16,9 +16,28 @@
 
 #pragma once
 
+// This file has two top-level sections:
+//   1. TUNABLES - values you should expect to change: thresholds, timing,
+//      smoothing, sensor/feature choices, per-build calibration, and the
+//      wiring choices you made yourself (which GPIO you routed a signal to).
+//   2. SUPPORTING CONSTANTS - values fixed by the RaceBox protocol or derived
+//      from other constants. Changing them without changing the matching part
+//      of the system (or the protocol) will break compatibility.
+// Within each section, entries are grouped by subsystem (Device Identity, IMU,
+// GNSS, BLE, LED, Reporting, Battery, Protocol), in the same order in both
+// sections. Every define is prefixed with the subsystem it belongs to, and
+// every value that carries a unit is suffixed with it (_MS, _HZ, _G, _DPS,
+// _MPS2, _RADPS, _DEG, _BYTES, _PERCENT, _PIN).
+
 // ============================================================================
-// --- DEVICE IDENTITY ---
 // ============================================================================
+// SECTION 1: TUNABLES
+// ============================================================================
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// --- Device Identity ---
+// ----------------------------------------------------------------------------
 
 // Change DEVICE_ID to personalize your device.
 // It is a STRING of exactly 10 digits. Quote it, so that leading zeros are kept
@@ -28,27 +47,62 @@
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
 #define DEVICE_ID "0008675309" // Customize for uniqueness
-#define FIRMWARE_VERSION "3.3" // Compatibility requirement - don't change
-#define HARDWARE_VERSION "1"   // Compatibility requirement - don't change
-#define MANUFACTURER "RaceBox" // Compatibility requirement - don't change
-#define MODEL "RaceBox Mini"   // Compatibility requirement - don't change
 
-// ============================================================================
-// --- HARDWARE PINS ---
-// ============================================================================
+// ----------------------------------------------------------------------------
+// --- IMU (MPU-6050) ---
+// ----------------------------------------------------------------------------
 
-#define GNSS_RX_PIN 16    // Change if your specific ESP32 board differs
-#define GNSS_TX_PIN 17    // Change if your specific ESP32 board differs
-#define ONBOARD_LED_PIN 2 // Change if your specific ESP32 board differs
+#define IMU_SAMPLE_INTERVAL_MS 10 // in ms; 10 == 100Hz sample rate
 
-// ============================================================================
-// --- GNSS SETTINGS ---
-// ============================================================================
+// Sensor full-scale ranges and the built-in low-pass bandwidth (Adafruit
+// MPU6050 enum tokens).
+#define IMU_ACCEL_RANGE_G MPU6050_RANGE_4_G        // 4g, ample for auto-x
+#define IMU_GYRO_RANGE_DPS MPU6050_RANGE_500_DEG   // 500 deg/s for auto-x
+#define IMU_FILTER_BANDWIDTH_HZ MPU6050_BAND_21_HZ // built-in low-pass filter
 
-#define SV_MINELEV 15    // in deg; ignore SVs below this angle (anti-multipath)
-#define GNSS_BAUD 115200 // in bps; 9600, 38400, 57600, 115200, 230400, 460800
-#define MAX_NAVIGATION_RATE 25 // in Hz; max supported by RaceBox Mini protocol
+// ImuAxis smoothing rates and transient thresholds.
+// The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
+// window's peak must exceed before it gets blended into the transmitted value
+// instead of the plain EMA baseline. These are PLACEHOLDER starting points only
+// - the right value depends on this specific car's vibration floor
+// (engine/tire/kerb noise) versus genuine events, and must be tuned empirically
+// against real track data per axis.
+#define IMU_ACCEL_ALPHA 0.2f // EMA smoothing: 1.0 = raw, 0.1 = heavy
+#define IMU_GYRO_ALPHA 0.2f  // EMA smoothing: 1.0 = raw, 0.1 = heavy
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 2.0f // in m/s^2 (~0.2g)
+#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // in rad/s (~28.6 deg/s)
+
+// --- Per-axis zero-point offsets (raw sensor frame) ---
+// Subtracted from each raw axis inside gc_imu's readImuRaw(), correcting the
+// chip's intrinsic bias before any smoothing or protocol conversion. Units
+// match the Adafruit MPU6050 driver's native output: m/s^2 for accel, rad/s
+// for gyro. The accel Z offset is a bias ONLY - gravity is not included (the
+// calibration sketch removes 9.80665 m/s^2 before reporting), so a level board
+// still reads ~1g on Z after correction.
+//
+// Defaults are 0 = no correction. To calibrate a specific board, run the
+// src/IMU_Calibration sketch and paste its printed #define lines over these.
+// Typical magnitudes on a healthy chip: accel < ~0.8 m/s^2 (the Z axis
+// usually runs highest), gyro < ~0.1 rad/s.
+#define IMU_ACCEL_OFFSET_X_MPS2 +0.367034f
+#define IMU_ACCEL_OFFSET_Y_MPS2 +0.055432f
+#define IMU_ACCEL_OFFSET_Z_MPS2 -0.676274f
+#define IMU_GYRO_OFFSET_X_RADPS -0.080341f
+#define IMU_GYRO_OFFSET_Y_RADPS +0.003458f
+#define IMU_GYRO_OFFSET_Z_RADPS -0.009113f
+
+// ----------------------------------------------------------------------------
+// --- GNSS (u-blox) ---
+// ----------------------------------------------------------------------------
+
+#define GNSS_BAUD 115200 // in bps; 9600/38400/57600/115200/230400/460800
+#define GNSS_MAX_NAVIGATION_RATE_HZ 25 // max for RaceBox Mini protocol
+#define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
+
+// GNSS UART wiring - which ESP32 GPIOs you routed the receiver's TX/RX to.
+#define GNSS_RX_PIN 16 // change to match your board/wiring
+#define GNSS_TX_PIN 17 // change to match your board/wiring
 
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
@@ -58,41 +112,16 @@
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
       {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
-      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, true},                            \
+      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, false},                           \
       {"GLONASS", SFE_UBLOX_GNSS_ID_GLONASS, false},                           \
       {"BeiDou", SFE_UBLOX_GNSS_ID_BEIDOU, false},                             \
       {"QZSS", SFE_UBLOX_GNSS_ID_QZSS, false},                                 \
       {"SBAS", SFE_UBLOX_GNSS_ID_SBAS, false},                                 \
   }
 
-// ============================================================================
-// --- IMU SETTINGS ---
-// ============================================================================
-
-#define IMU_SAMPLE_INTERVAL_MS 10           // in ms; 10 == 100Hz sample rate
-#define ACCEL_RANGE MPU6050_RANGE_4_G       // 4g range is sufficient for auto-x
-#define GYRO_RANGE MPU6050_RANGE_500_DEG    // 500deg/s is sufficient for auto-x
-#define FILTER_BANDWIDTH MPU6050_BAND_21_HZ // built-in low-pass filter setting
-
-// Decimate the IMU stream down to the transmission rate.
-// Derived from MAX_NAVIGATION_RATE so the two can't drift out of sync.
-#define IMU_TRANSMIT_INTERVAL_MS (1000 / MAX_NAVIGATION_RATE)
-
-// ImuAxis smoothing rates and transient thresholds.
-// The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
-// window's peak must exceed before it gets blended into the transmitted value
-// instead of the plain EMA baseline. These are PLACEHOLDER starting points only
-// - the right value depends on this specific car's vibration floor
-// (engine/tire/kerb noise) versus genuine events, and must be tuned empirically
-// against real track data per axis.
-#define ACCEL_ALPHA 0.2f               // EMA smoothing: 1.0 = raw, 0.1 = heavy
-#define GYRO_ALPHA 0.2f                // EMA smoothing: 1.0 = raw, 0.1 = heavy
-#define ACCEL_TRANSIENT_THRESHOLD 2.0f // in m/s^2 (~0.2g)
-#define GYRO_TRANSIENT_THRESHOLD 0.5f  // in rad/s (~28.6 deg/s)
-
-// ============================================================================
-// --- BLE SETTINGS ---
-// ============================================================================
+// ----------------------------------------------------------------------------
+// --- BLE ---
+// ----------------------------------------------------------------------------
 
 // BLE Transmit Power
 // Select one of the following levels by assigning it to BLE_TX_POWER.
@@ -109,25 +138,59 @@
 //   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
 #define BLE_TX_POWER ESP_PWR_LVL_N12
 
-#define BLE_MTU_SIZE 128 // in bytes; must be >= 91 to carry an 88-byte notify
-#define BLE_READVERTISE_DELAY_MS 500 // in ms; delay before BLE re-advertising
-#define LED_BLINK_INTERVAL_MS 1000   // in ms; LED blink rate when disconnected
+#define BLE_MTU_BYTES 128 // must be >= 91 to carry an 88-byte notify
+#define BLE_READVERTISE_DELAY_MS 500 // in ms; delay before re-advertising
 
-// ============================================================================
-// --- SERIAL REPORTING TIMING ---
-// ============================================================================
+// ----------------------------------------------------------------------------
+// --- LED (onboard status LED) ---
+// ----------------------------------------------------------------------------
+
+#define LED_ONBOARD_PIN 2 // onboard status LED; change to match your board
+#define LED_BLINK_INTERVAL_MS 1000 // in ms; blink rate while disconnected
+
+// ----------------------------------------------------------------------------
+// --- Reporting (serial diagnostics) ---
+// ----------------------------------------------------------------------------
 
 #define STATS_REPORT_INTERVAL_MS 1000 // in ms; serial stats reporting interval
 
 // ============================================================================
-// --- PROTOCOL CONSTANTS ---
-// These match the RaceBox BLE protocol and should not be changed.
+// ============================================================================
+// SECTION 2: SUPPORTING CONSTANTS
+// These are protocol requirements or values derived from other constants.
+// Changing them without also changing the matching part of the system (or the
+// RaceBox protocol) will break the firmware.
+// ============================================================================
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// --- IMU (MPU-6050) ---
+// ----------------------------------------------------------------------------
+
+// Decimate the IMU stream down to the transmission rate. Derived from
+// GNSS_MAX_NAVIGATION_RATE_HZ so the two can't drift out of sync.
+#define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_MAX_NAVIGATION_RATE_HZ)
+
+// ----------------------------------------------------------------------------
+// --- Battery ---
+// ----------------------------------------------------------------------------
+
+// No battery circuit on this build - the RaceBox protocol still carries a
+// battery byte, so we report a constant full charge.
+#define BATTERY_REPORT_PERCENT 100
+
+// ----------------------------------------------------------------------------
+// --- Protocol (RaceBox BLE protocol) ---
+// These match the RaceBox BLE protocol and should not be changed.
+// ----------------------------------------------------------------------------
+
+#define RACEBOX_MODEL "RaceBox Mini"       // Compatibility requirement
+#define RACEBOX_MANUFACTURER "RaceBox"     // Compatibility requirement
+#define RACEBOX_HARDWARE_VERSION "1"       // Compatibility requirement
+#define RACEBOX_FIRMWARE_VERSION "3.3"     // Compatibility requirement
 #define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BATTERY_REPORT_PERCENT 100 // No battery circuit - always report 100%
 
 // ============================================================================
 // --- COMPILE-TIME VALIDATION ---
@@ -185,13 +248,13 @@ static_assert(uuid_format::isValid(RACEBOX_CHARACTERISTIC_RX_UUID),
 
 // Enforce valid, distinct ESP32 GPIO numbers for the three assigned pins.
 static_assert(GNSS_RX_PIN >= 0 && GNSS_RX_PIN <= 39 && GNSS_TX_PIN >= 0 &&
-                  GNSS_TX_PIN <= 39 && ONBOARD_LED_PIN >= 0 &&
-                  ONBOARD_LED_PIN <= 39,
-              "ERROR: GNSS_RX_PIN, GNSS_TX_PIN, and ONBOARD_LED_PIN must be "
+                  GNSS_TX_PIN <= 39 && LED_ONBOARD_PIN >= 0 &&
+                  LED_ONBOARD_PIN <= 39,
+              "ERROR: GNSS_RX_PIN, GNSS_TX_PIN, and LED_ONBOARD_PIN must be "
               "valid ESP32 GPIO numbers (0-39).");
-static_assert(GNSS_RX_PIN != GNSS_TX_PIN && GNSS_RX_PIN != ONBOARD_LED_PIN &&
-                  GNSS_TX_PIN != ONBOARD_LED_PIN,
-              "ERROR: GNSS_RX_PIN, GNSS_TX_PIN, and ONBOARD_LED_PIN must all "
+static_assert(GNSS_RX_PIN != GNSS_TX_PIN && GNSS_RX_PIN != LED_ONBOARD_PIN &&
+                  GNSS_TX_PIN != LED_ONBOARD_PIN,
+              "ERROR: GNSS_RX_PIN, GNSS_TX_PIN, and LED_ONBOARD_PIN must all "
               "be different pins.");
 
 // Enforce a GNSS_BAUD the firmware actually knows how to detect and switch
@@ -206,25 +269,28 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
               "(9600, 38400, 57600, 115200, 230400, 460800).");
 
 // Enforce navigation rate limit
-static_assert(MAX_NAVIGATION_RATE > 0 && MAX_NAVIGATION_RATE <= 25,
-              "ERROR: MAX_NAVIGATION_RATE must be between 1 and 25 Hz.");
+static_assert(GNSS_MAX_NAVIGATION_RATE_HZ > 0 &&
+                  GNSS_MAX_NAVIGATION_RATE_HZ <= 25,
+              "ERROR: GNSS_MAX_NAVIGATION_RATE_HZ must be between 1 and 25.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
-static_assert(SV_MINELEV >= 0 && SV_MINELEV <= 90,
-              "ERROR: SV_MINELEV must be between 0 and 90 degrees.");
+static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
+              "ERROR: GNSS_SV_MINELEV_DEG must be between 0 and 90 degrees.");
 
 // Enforce sane EMA alpha range
-static_assert(ACCEL_ALPHA > 0.0f && ACCEL_ALPHA <= 1.0f,
-              "ERROR: ACCEL_ALPHA must be in the range (0.0, 1.0]");
-static_assert(GYRO_ALPHA > 0.0f && GYRO_ALPHA <= 1.0f,
-              "ERROR: GYRO_ALPHA must be in the range (0.0, 1.0]");
+static_assert(IMU_ACCEL_ALPHA > 0.0f && IMU_ACCEL_ALPHA <= 1.0f,
+              "ERROR: IMU_ACCEL_ALPHA must be in the range (0.0, 1.0]");
+static_assert(IMU_GYRO_ALPHA > 0.0f && IMU_GYRO_ALPHA <= 1.0f,
+              "ERROR: IMU_GYRO_ALPHA must be in the range (0.0, 1.0]");
 
 // Enforce positive transient thresholds (a zero/negative threshold would
 // disable transient blending entirely; see ImuAxis::read()).
-static_assert(ACCEL_TRANSIENT_THRESHOLD > 0.0f,
-              "ERROR: ACCEL_TRANSIENT_THRESHOLD must be greater than 0.");
-static_assert(GYRO_TRANSIENT_THRESHOLD > 0.0f,
-              "ERROR: GYRO_TRANSIENT_THRESHOLD must be greater than 0.");
+static_assert(
+    IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 > 0.0f,
+    "ERROR: IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 must be greater than 0.");
+static_assert(
+    IMU_GYRO_TRANSIENT_THRESHOLD_RADPS > 0.0f,
+    "ERROR: IMU_GYRO_TRANSIENT_THRESHOLD_RADPS must be greater than 0.");
 
 // Enforce a positive sample interval, and a transmit interval that's at
 // least as long as it. Otherwise a transmit window could contain zero fresh
@@ -240,10 +306,10 @@ static_assert(IMU_TRANSMIT_INTERVAL_MS >= IMU_SAMPLE_INTERVAL_MS,
 
 // Enforce MTU large enough for an 88-byte notify plus the 3-byte ATT header,
 // and no larger than the maximum ATT MTU defined by the BLE spec.
-static_assert(BLE_MTU_SIZE >= 91,
-              "ERROR: BLE_MTU_SIZE must be >= 91 to carry an 88-byte notify.");
-static_assert(BLE_MTU_SIZE <= 517,
-              "ERROR: BLE_MTU_SIZE must be <= 517, the maximum ATT MTU "
+static_assert(BLE_MTU_BYTES >= 91,
+              "ERROR: BLE_MTU_BYTES must be >= 91 to carry an 88-byte notify.");
+static_assert(BLE_MTU_BYTES <= 517,
+              "ERROR: BLE_MTU_BYTES must be <= 517, the maximum ATT MTU "
               "defined by the Bluetooth Low Energy spec.");
 
 // Enforce positive timing intervals (a zero or negative value here would

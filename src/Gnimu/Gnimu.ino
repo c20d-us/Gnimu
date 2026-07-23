@@ -25,7 +25,11 @@
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  // A short fixed settle lets the terminal catch up so the startup banner and
+  // init logs are actually seen. Tune/remove if you want a faster boot and
+  // don't rely on the startup output.
+  delay(2000);
+
   Serial.println("🚀 Gnimu starting up...");
 
   gnssBegin();

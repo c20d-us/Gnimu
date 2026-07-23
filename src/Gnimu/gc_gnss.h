@@ -18,7 +18,7 @@
 
 #pragma once
 #include <Arduino.h>
-#include <SparkFun_u-blox_GNSS_Arduino_Library.h> // for UBX_NAV_PVT_data_t
+#include <SparkFun_u-blox_GNSS_v3.h> // for UBX_NAV_PVT_data_t
 
 // ============================================================================
 // GNSS module - u-blox receiver on Serial2

@@ -27,14 +27,14 @@ static Adafruit_MPU6050 myIMU;
 // [2]=Z. Arrays let imuBegin()/imuPoll() drive all three axes of a sensor
 // with one loop instead of one line per axis.
 static ImuAxis accelAxes[3] = {
-    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
-    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
-    ImuAxis(ACCEL_ALPHA, ACCEL_TRANSIENT_THRESHOLD),
+    ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2),
+    ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2),
+    ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2),
 };
 static ImuAxis gyroAxes[3] = {
-    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
-    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
-    ImuAxis(GYRO_ALPHA, GYRO_TRANSIENT_THRESHOLD),
+    ImuAxis(IMU_GYRO_ALPHA, IMU_GYRO_TRANSIENT_THRESHOLD_RADPS),
+    ImuAxis(IMU_GYRO_ALPHA, IMU_GYRO_TRANSIENT_THRESHOLD_RADPS),
+    ImuAxis(IMU_GYRO_ALPHA, IMU_GYRO_TRANSIENT_THRESHOLD_RADPS),
 };
 
 // Latest values decimated to the transmission rate, refreshed by imuPoll().
@@ -65,13 +65,20 @@ static int16_t toProtocolInt16(double value) {
   return (int16_t)value;
 }
 
-// Read the IMU and return the raw accel/gyro values for this instant.
+// Read the IMU and return the raw accel (m/s^2) / gyro (rad/s) values for this
+// instant, with each axis's per-chip zero-point offset (IMU_ACCEL/
+// IMU_GYRO_OFFSET_*, from config.h) subtracted so the bias is removed before
+// any smoothing or protocol scaling. Offsets are in the same native units as
+// the readings.
 static ImuRawSample readImuRaw() {
   sensors_event_t a, g, temp;
   myIMU.getEvent(&a, &g, &temp);
   return {
-      {a.acceleration.x, a.acceleration.y, a.acceleration.z},
-      {g.gyro.x, g.gyro.y, g.gyro.z},
+      {a.acceleration.x - IMU_ACCEL_OFFSET_X_MPS2,
+       a.acceleration.y - IMU_ACCEL_OFFSET_Y_MPS2,
+       a.acceleration.z - IMU_ACCEL_OFFSET_Z_MPS2},
+      {g.gyro.x - IMU_GYRO_OFFSET_X_RADPS, g.gyro.y - IMU_GYRO_OFFSET_Y_RADPS,
+       g.gyro.z - IMU_GYRO_OFFSET_Z_RADPS},
   };
 }
 
@@ -85,9 +92,9 @@ void imuBegin() {
 
   // IMU started, proceed with configuration
   Serial.println("✅ IMU Accelerometer/Gyro enabled.");
-  myIMU.setAccelerometerRange(ACCEL_RANGE);
-  myIMU.setGyroRange(GYRO_RANGE);
-  myIMU.setFilterBandwidth(FILTER_BANDWIDTH);
+  myIMU.setAccelerometerRange(IMU_ACCEL_RANGE_G);
+  myIMU.setGyroRange(IMU_GYRO_RANGE_DPS);
+  myIMU.setFilterBandwidth(IMU_FILTER_BANDWIDTH_HZ);
 
   // Seed each axis with a real first reading rather than leaving it at its
   // zero-baseline default. Otherwise the first update() would see a huge

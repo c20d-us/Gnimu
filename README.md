@@ -149,7 +149,7 @@ Photos of the reference build, from loose components to the finished, enclosed u
 - **ESP32 board support** — install the `esp32` package by Espressif via the Boards Manager.
 - Libraries (install via Library Manager):
   - **Adafruit MPU6050** (pulls in Adafruit Unified Sensor + Adafruit BusIO)
-  - **SparkFun u-blox GNSS Arduino Library**
+  - **SparkFun u-blox GNSS v3**
   - BLE support is built into the ESP32 Arduino core — no extra install needed.
 
 ---

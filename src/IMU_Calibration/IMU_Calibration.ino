@@ -4,45 +4,89 @@
 
 Adafruit_MPU6050 mpu;
 
-const int NUM_SAMPLES = 5000;
-const unsigned long WARMUP_MS = 20 * 60 * 1000; // 20 minutes in ms
+const int NUM_SAMPLES = 10000;
+const uint32_t WARMUP_MINS = 5; // Minutes to warm up before sampling
+const uint32_t WARMUP_MS = WARMUP_MINS * 60UL * 1000UL;
+
+// Phases of the utility. Everything runs from loop() as a small state machine
+// so we never block for minutes at a time (a long blocking setup() on the ESP32
+// invites watchdog/brownout resets) and so prompts stay visible no matter when
+// the Serial Monitor attaches after the board's auto-reset.
+enum Phase { PROMPT, WARMING, DONE };
+Phase phase = PROMPT;
+
+uint32_t warmupStart = 0;
+uint32_t lastMinute = 0xFFFFFFFF; // sentinel: no minute printed yet
+uint32_t lastPromptMs = 0;
+
+// Drain the serial input; return true if a 'c' was seen.
+bool sawStartKey() {
+  bool found = false;
+  while (Serial.available() > 0) {
+    if (Serial.read() == 'c')
+      found = true;
+  }
+  return found;
+}
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10);
-
-  Serial.println("--- MPU-6050 Bench Calibration Utility ---");
-  Serial.println("Goal: Calculate stable offsets for Accel and Gyro.");
-  Serial.println("Instructions:");
-  Serial.println("1. Mount device on a perfectly level surface.");
-  Serial.println("2. Let the device warm up (system will wait 20 mins).");
-  Serial.println("3. Type 'c' in the Serial Monitor to start calibration.");
+  // Harmless on UART-bridge boards (Serial is always truthy there); gives a
+  // native-USB monitor a brief chance to attach.
+  uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 3000) {
+  }
 
   if (!mpu.begin()) {
-    Serial.println("Failed to find MPU6050 chip");
-    while (1) { delay(10); }
-  }
-
-  // Warmup phase
-  Serial.print("Warming up... ");
-  unsigned long start = millis();
-  while (millis() - start < WARMUP_MS) {
-    if ((millis() - start) % 60000 < 100) { // Print every minute
-      Serial.print((millis() - start) / 60000);
-      Serial.print(" ");
+    // Reprint continuously: on this board the first line is easily missed in
+    // the gap before the monitor re-attaches after reset.
+    while (1) {
+      Serial.println("Failed to find MPU6050 chip");
+      delay(1000);
     }
-    delay(1000);
   }
-  Serial.println("\nWarmup complete.");
-  Serial.println("Press 'c' to begin 5,000-sample calibration...");
 }
 
 void loop() {
-  if (Serial.available() > 0) {
-    char input = Serial.read();
-    if (input == 'c') {
-      performCalibration();
+  switch (phase) {
+  case PROMPT:
+    // Reprint every 2 s so the instructions are guaranteed to be caught,
+    // regardless of when the monitor attached after reset.
+    if (millis() - lastPromptMs >= 2000) {
+      lastPromptMs = millis();
+      Serial.println();
+      Serial.println("--- MPU-6050 Bench Calibration Utility ---");
+      Serial.println("Goal: stable Accel and Gyro offsets.");
+      Serial.println("1. Mount the device on a perfectly level surface.");
+      Serial.printf("2. Press 'c' to warm up (%u min) and calibrate.\n",
+                    WARMUP_MINS);
     }
+    if (sawStartKey()) {
+      phase = WARMING;
+      warmupStart = millis();
+      lastMinute = 0xFFFFFFFF;
+      Serial.printf("\nWarming up for %u minutes... ", WARMUP_MINS);
+    }
+    break;
+
+  case WARMING: {
+    uint32_t elapsed = millis() - warmupStart;
+    uint32_t minute = elapsed / 60000UL;
+    if (minute != lastMinute) { // prints 0,1,2,... exactly once each
+      lastMinute = minute;
+      Serial.printf("%u ", minute);
+    }
+    if (elapsed >= WARMUP_MS) {
+      Serial.println("\nWarmup complete.");
+      performCalibration(); // blocks through sampling; that is fine
+      phase = DONE;
+    }
+    delay(50); // keep the loop cool and yielding
+    break;
+  }
+
+  case DONE:
+    break;
   }
 }
 
@@ -63,7 +107,8 @@ void performCalibration() {
     sum_gy += g.gyro.y;
     sum_gz += g.gyro.z;
 
-    if (i % 500 == 0) Serial.print("."); // Progress indicator
+    if (i % 500 == 0)
+      Serial.print("."); // Progress indicator
   }
 
   // Calculate averages
@@ -75,16 +120,15 @@ void performCalibration() {
   float off_gz = sum_gz / NUM_SAMPLES;
 
   Serial.println("\n\n--- CALIBRATION RESULTS ---");
-  Serial.println("Copy these constants into your main code:");
+  Serial.println(
+      "Paste these #define lines over the matching ones in config.h:");
   Serial.println("-------------------------------------------");
-  Serial.printf("const float ACCEL_OFFSET_X = %.6f;\n", off_ax);
-  Serial.printf("const float ACCEL_OFFSET_Y = %.6f;\n", off_ay);
-  Serial.printf("const float ACCEL_OFFSET_Z = %.6f;\n", off_az);
-  Serial.printf("const float GYRO_OFFSET_X  = %.6f;\n", off_gx);
-  Serial.printf("const float GYRO_OFFSET_Y  = %.6f;\n", off_gy);
-  Serial.printf("const float GYRO_OFFSET_Z  = %.6f;\n", off_gz);
+  Serial.printf("#define IMU_ACCEL_OFFSET_X_MPS2 %+.6ff\n", off_ax);
+  Serial.printf("#define IMU_ACCEL_OFFSET_Y_MPS2 %+.6ff\n", off_ay);
+  Serial.printf("#define IMU_ACCEL_OFFSET_Z_MPS2 %+.6ff\n", off_az);
+  Serial.printf("#define IMU_GYRO_OFFSET_X_RADPS %+.6ff\n", off_gx);
+  Serial.printf("#define IMU_GYRO_OFFSET_Y_RADPS %+.6ff\n", off_gy);
+  Serial.printf("#define IMU_GYRO_OFFSET_Z_RADPS %+.6ff\n", off_gz);
   Serial.println("-------------------------------------------");
   Serial.println("System halted. Power cycle to re-run.");
-
-  while (1) { delay(100); } // Stop
 }

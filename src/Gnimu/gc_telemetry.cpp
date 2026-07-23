@@ -23,6 +23,7 @@
 #include <string.h>
 
 // --- Internal counters and a private pointer to the latest PVT data ---
+static unsigned long bootTimeMs = 0;
 static unsigned long lastReportMs = 0;
 static unsigned int bleSentPacketCount = 0;
 static unsigned int gnssEpochCount = 0;
@@ -180,12 +181,13 @@ static void telemetrySerialReport() {
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
     // Print out the informational report
-    Serial.printf(
-        "BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | TAcc: %uns | HAcc: "
-        "%umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d "
-        "Z=%d | centiDeg/s: X=%d Y=%d Z=%d\n",
-        bleRate, gnssRate, sats, fix, tAcc, hAcc, lat, lon, imu.gX, imu.gY,
-        imu.gZ, imu.rX, imu.rY, imu.rZ);
+    Serial.printf("RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | "
+                  "TAcc: %uns | HAcc: "
+                  "%umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d "
+                  "Z=%d | centiDeg/s: X=%d Y=%d Z=%d\n",
+                  (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate,
+                  sats, fix, tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ,
+                  imu.rX, imu.rY, imu.rZ);
 
     // Reset packet and epoch counts for the next report
     bleSentPacketCount = 0;
@@ -196,8 +198,8 @@ static void telemetrySerialReport() {
   }
 }
 
-// --- Simple startup - nothing really to do here ---
-void telemetryBegin() { return; }
+// Simple startup - just prime the boot time and report timer.
+void telemetryBegin() { bootTimeMs, lastReportMs = millis(); }
 
 // On each new GNSS epoch, count it and (when connected) send a packet.
 // Always try to send informational report over serial.
