@@ -18,19 +18,25 @@
 
 // Settings live in config.h
 // Hardware & protocol logic lives in the ble, gnss, imu, and telemetry modules
+#include "config.h"
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
+#include "g_log.h"
 #include "g_telemetry.h"
 
 void setup() {
+#if LOG_ENABLED
+  // Wait up to 3s for the serial port so the startup banner and init logs
+  // aren't dropped while the terminal is still attaching. Harmless on
+  // UART-bridge boards (Serial is always truthy there); gives a native-USB
+  // monitor a brief chance to attach. Skipped entirely in silent builds.
   Serial.begin(115200);
-  // A short fixed settle lets the terminal catch up so the startup banner and
-  // init logs are actually seen. Tune/remove if you want a faster boot and
-  // don't rely on the startup output.
-  delay(2000);
-
-  Serial.println("🚀 Gnimu starting up...");
+  uint32_t t0 = millis();
+  while (!Serial && millis() - t0 < 3000) {
+  }
+#endif
+  LOG_PRINTLN("🚀 Gnimu starting up...");
 
   gnssBegin();
   imuBegin();

@@ -16,14 +16,14 @@
 
 #include "g_ble.h"
 #include "config.h"
+#include "g_log.h"
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
 // BLE state
-static const String deviceName = String(RACEBOX_MODEL) + " " + DEVICE_ID;
-
+static const char deviceName[] = RACEBOX_MODEL " " DEVICE_ID;
 static BLEServer *pServer = NULL;
 static BLECharacteristic *pCharacteristicTx = NULL;
 static BLECharacteristic *pCharacteristicRx = NULL;
@@ -51,11 +51,11 @@ class ServerCallbacks : public BLEServerCallbacks {
     // Request a larger MTU to fit an 88-byte packet + headers in one go
     pServer->updatePeerMTU(pServer->getConnId(), BLE_MTU_BYTES);
     connectTimeMs = millis();
-    Serial.println("✅ BLE Client connected & MTU update requested");
+    LOG_PRINTLN("✅ BLE Client connected & MTU update requested");
   }
   void onDisconnect(BLEServer *pServer) {
     deviceConnected = false;
-    Serial.println("❌ BLE Client disconnected");
+    LOG_PRINTLN("❌ BLE Client disconnected");
   }
 };
 
@@ -64,24 +64,23 @@ class RxCharacteristicCallbacks : public BLECharacteristicCallbacks {
     // Zero heap allocation. We just check if any bytes arrived.
     size_t rxLen = pCharacteristic->getLength();
     if (rxLen > 0) {
-      Serial.printf("📨 Received %d bytes from app (ignored)\n", rxLen);
+      LOG_PRINTF("📨 Received %d bytes from app (ignored)\n", rxLen);
     }
   }
 };
 
 void bleBegin() {
   pinMode(LED_ONBOARD_PIN, OUTPUT);
-  BLEDevice::init(deviceName.c_str());
+  BLEDevice::init(deviceName);
   BLEDevice::setPower(BLE_TX_POWER);
   {
     int requestedDbm = (BLE_TX_POWER * 3) - 12;
     int actualDbm = BLEDevice::getPower();
     if (actualDbm == requestedDbm) {
-      Serial.printf("✅ BLE TX power set to %d dBm.\n", actualDbm);
+      LOG_PRINTF("✅ BLE TX power set to %d dBm.\n", actualDbm);
     } else {
-      Serial.printf(
-          "⚠️  BLE TX power mismatch - requested %d dBm, got %d dBm.\n",
-          requestedDbm, actualDbm);
+      LOG_PRINTF("⚠️  BLE TX power mismatch - requested %d dBm, got %d dBm.\n",
+                 requestedDbm, actualDbm);
     }
   }
   pServer = BLEDevice::createServer();
@@ -127,12 +126,12 @@ void bleBegin() {
   pAdvertising->addServiceUUID("0000180a-0000-1000-8000-00805f9b34fb");
   pAdvertising->setScanResponse(true);
   BLEDevice::startAdvertising();
-  Serial.println("📡 BLE advertising started.");
+  LOG_PRINTLN("📡 BLE advertising started.");
 }
 
 bool bleIsConnected() {
   // Give the connection a short pause to ensure that MTU negotiation completes.
-  return deviceConnected && (millis() - connectTimeMs > 100);
+  return deviceConnected && (millis() - connectTimeMs > BLE_CONNECT_SETTLE_MS);
 }
 
 void bleSendPacket(uint8_t *data, size_t len) {
@@ -166,10 +165,10 @@ void bleUpdate() {
   if (reAdvertisePending &&
       millis() - disconnectMs >= BLE_READVERTISE_DELAY_MS) {
     if (BLEDevice::getAdvertising()->start()) {
-      Serial.println("📡 BLE re-advertising started.");
+      LOG_PRINTLN("📡 BLE re-advertising started.");
       reAdvertisePending = false;
     } else {
-      Serial.println("⚠️  BLE re-advertising failed to start - will retry.");
+      LOG_PRINTLN("⚠️  BLE re-advertising failed to start - will retry.");
       disconnectMs = millis();
     }
   }

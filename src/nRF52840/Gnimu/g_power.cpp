@@ -46,8 +46,8 @@ static void ledPinsOff() {
   digitalWrite(LED_BLUE_PIN, HIGH);
 }
 
-// Switch-sense settings and state.
-static const unsigned long SWITCH_POLL_INTERVAL_MS = 50;
+// Switch-sense cache - refreshed every POWER_SWITCH_POLL_INTERVAL_MS
+// (config.h).
 static bool switchOnCached = true; // optimistic default until powerBegin runs
 static unsigned long switchLastPollMs = 0;
 
@@ -84,7 +84,7 @@ bool powerUsbPresent() {
 // Return true if the power switch is on (battery is physically in the circuit).
 bool powerSwitchOn() {
   const unsigned long nowMs = millis();
-  if ((nowMs - switchLastPollMs) >= SWITCH_POLL_INTERVAL_MS) {
+  if ((nowMs - switchLastPollMs) >= POWER_SWITCH_POLL_INTERVAL_MS) {
     switchLastPollMs = nowMs;
     switchOnCached = switchReadOnce();
   }

@@ -26,11 +26,8 @@
 // Current state
 static SystemState current = STATE_RUNNING;
 
-// Switch-off debounce anchor. A floating/unwired switch-sense pin, and even a
-// wired divider under EMI, can produce transient OFF readings; require the
-// OFF to be sustained for SWITCH_OFF_DEBOUNCE_MS before entering BATTERY_WAIT
-// so a noise spike can't reset a happily-running device. Switch-ON is instant.
-static const unsigned long SWITCH_OFF_DEBOUNCE_MS = 500;
+// Switch-off debounce anchor - see STATE_SWITCH_OFF_DEBOUNCE_MS in config.h
+// for the rationale. Switch-ON is instant.
 static unsigned long switchOffSinceMs = 0;
 
 // True unless the switch has been read OFF continuously for >= debounce.
@@ -42,7 +39,7 @@ static bool switchOnDebounced(unsigned long nowMs) {
   }
   if (switchOffSinceMs == 0)
     switchOffSinceMs = nowMs;
-  return (nowMs - switchOffSinceMs) < SWITCH_OFF_DEBOUNCE_MS;
+  return (nowMs - switchOffSinceMs) < STATE_SWITCH_OFF_DEBOUNCE_MS;
 }
 
 // LIGHT_SLEEP tracking
@@ -187,8 +184,11 @@ void stateUpdate() {
           "RUNNING -> DEEP_SLEEP (voltage cutoff)."); // no return
     }
     // Priority 2: switch flipped off. Debounced against noise spikes.
+    // Break after the transition (as the LIGHT_SLEEP case does) so no
+    // lower-priority check can overwrite the new state on the same pass.
     if (!switchOnDebounced(nowMs)) {
       enterBatteryWait();
+      break;
     }
 #if STATE_CHARGE_ONLY_ON_USB
     // Priority 3: USB plugged in -> drop to CHARGE_ONLY so the charger gets
@@ -198,6 +198,7 @@ void stateUpdate() {
     // plug-in transitions us.
     if (powerUsbPresent()) {
       enterChargeOnly();
+      break;
     }
 #endif
     // Priority 4: idleElapsed -> LIGHT_SLEEP. bleDisconnectedSinceMs tracks

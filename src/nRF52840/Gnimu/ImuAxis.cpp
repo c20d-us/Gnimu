@@ -26,7 +26,8 @@ ImuAxis::ImuAxis(float alpha, float transientThreshold) {
 
 // Update the filter.
 void ImuAxis::update(float rawValue) {
-  // Check deviation against the current baselinebefore folding in thissample.
+  // Check deviation against the current baseline before folding in this
+  // sample.
   float currentDeviation = fabs(rawValue - smoothedValue_);
   if (currentDeviation > maxDeviation_) {
     maxDeviation_ = currentDeviation;
@@ -63,7 +64,7 @@ float ImuAxis::read() {
     valueToSend = smoothedValue_ + (w * (peakDeviationValue_ - smoothedValue_));
   }
 
-  // Reset window metrics for the next 40ms cycle
+  // Reset window metrics for the next transmit window
   maxDeviation_ = 0.0f;
   peakDeviationValue_ = smoothedValue_;
 

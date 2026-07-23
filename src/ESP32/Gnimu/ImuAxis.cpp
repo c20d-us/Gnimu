@@ -1,3 +1,19 @@
+// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #include "ImuAxis.h"
 #include <math.h> // For fabs()
 
@@ -10,7 +26,8 @@ ImuAxis::ImuAxis(float alpha, float transientThreshold) {
 
 // Update the filter.
 void ImuAxis::update(float rawValue) {
-  // Check deviation against the current baselinebefore folding in thissample.
+  // Check deviation against the current baseline before folding in this
+  // sample.
   float currentDeviation = fabs(rawValue - smoothedValue_);
   if (currentDeviation > maxDeviation_) {
     maxDeviation_ = currentDeviation;
@@ -47,7 +64,7 @@ float ImuAxis::read() {
     valueToSend = smoothedValue_ + (w * (peakDeviationValue_ - smoothedValue_));
   }
 
-  // Reset window metrics for the next 40ms cycle
+  // Reset window metrics for the next transmit window
   maxDeviation_ = 0.0f;
   peakDeviationValue_ = smoothedValue_;
 

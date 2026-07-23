@@ -21,7 +21,9 @@
 #include <bluefruit.h>
 
 // BLE state - private to this file
-static const String deviceName = String(RACEBOX_MODEL) + " " + DEVICE_ID;
+// Adjacent string literals concatenate at compile time - no heap, no
+// static-init-order concerns.
+static const char deviceName[] = RACEBOX_MODEL " " DEVICE_ID;
 
 // Nordic UART Service. Its UUIDs are exactly the RaceBox service/Tx/Rx UUIDs
 // (RACEBOX_*_UUID in config.h), so BLEUart implements the RaceBox transport
@@ -77,7 +79,13 @@ static void rxCallback(uint16_t conn_handle) {
     return;
   LOG_PRINT("📨 Received BLE command: ");
   while (bleuart.available()) {
-    LOG_PRINTF("0x%02X ", (uint8_t)bleuart.read());
+    // The read must live OUTSIDE the LOG macro: in silent builds the macro
+    // (and its arguments) vanish at preprocessor level, and losing the
+    // read() side effect here would leave the buffer forever non-empty -
+    // an infinite loop inside a BLE callback.
+    const uint8_t b = (uint8_t)bleuart.read();
+    (void)b; // silence the unused warning in silent builds
+    LOG_PRINTF("0x%02X ", b);
   }
   LOG_PRINTLN();
 }
@@ -104,12 +112,11 @@ void bleBegin() {
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
 
   Bluefruit.begin(); // 1 peripheral, 0 central (defaults)
-  Bluefruit.setName(deviceName.c_str());
+  Bluefruit.setName(deviceName);
   Bluefruit.setTxPower(BLE_TX_POWER_ADV_DBM);
   LOG_PRINTF("✅ BLE TX power set to %d dBm (advertising).\n",
              BLE_TX_POWER_ADV_DBM);
-  // We'll drive the RGB LED from g_led once that module exists; stop
-  // Bluefruit toggling the onboard LED in the meantime.
+  // g_led owns the RGB LED; stop Bluefruit toggling the onboard LED itself.
   Bluefruit.autoConnLed(false);
   Bluefruit.Periph.setConnectCallback(connectCallback);
   Bluefruit.Periph.setDisconnectCallback(disconnectCallback);

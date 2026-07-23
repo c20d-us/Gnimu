@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,26 +15,31 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
+#include "config.h"
 #include <Arduino.h>
-#include <SparkFun_u-blox_GNSS_v3.h> // for UBX_NAV_PVT_data_t
 
 // ============================================================================
-// GNSS module - u-blox receiver on Serial2
+// Logging shim. One-for-one macro replacements for Serial.print/println/
+// printf/flush, gated by the single LOG_ENABLED flag (config.h).
 //
-// Owns the receiver object and its serial port internally.
-// Callers interact only through the small read-only interface below.
+// Preprocessor-level, not function calls: with logging disabled, each macro
+// expands to nothing at all - the call AND its arguments vanish before the
+// compiler ever sees them.
 // ============================================================================
 
-// Bring up the receiver and configure the GNSS.
-// Call once in setup().
-void gnssBegin();
+#if LOG_ENABLED
 
-// Pumps the GNSS UART and triggers a callback if a new epoch has arrived.
-// Sets the appropriate navigation frequency based on BLE connection state.
-// Call every loop().
-void gnssPoll();
+#define LOG_PRINT(...) Serial.print(__VA_ARGS__)
+#define LOG_PRINTLN(...) Serial.println(__VA_ARGS__)
+// ##__VA_ARGS__ swallows the preceding comma when fmt is the only argument.
+#define LOG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+#define LOG_FLUSH() Serial.flush()
 
-// Fetches a pointer to the most recent PVT data.
-// Returns a valid pointer to the PVT if a new epoch has arrived since the last
-// call, otherwise returns nullptr.
-const UBX_NAV_PVT_data_t *gnssConsumePvt();
+#else
+
+#define LOG_PRINT(...)
+#define LOG_PRINTLN(...)
+#define LOG_PRINTF(...)
+#define LOG_FLUSH()
+
+#endif // LOG_ENABLED

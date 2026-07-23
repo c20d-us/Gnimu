@@ -229,13 +229,22 @@ void imuDisarmWake() {
 }
 
 // Poll the IMU and update the axis filters at our configured sample rate.
+// Both cadences below are deadline-anchored (the anchor advances by the
+// interval, not to "now"), so per-loop latency doesn't stretch every period
+// and quietly drop the real rates below their configured values. If the loop
+// ever falls more than one full interval behind, the anchor resyncs to now
+// rather than firing a rapid catch-up burst.
 void imuPoll() {
   static unsigned long lastImuReadMs = 0;
   static unsigned long lastTransmitReadMs = 0;
+  const unsigned long nowMs = millis();
 
   // Update all six axis filters if it's time to sample.
-  if (millis() - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
-    lastImuReadMs = millis();
+  if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
+    lastImuReadMs += IMU_SAMPLE_INTERVAL_MS;
+    if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
+      lastImuReadMs = nowMs; // fell > 1 interval behind - resync
+    }
     ImuRawSample raw = readImuRaw();
     for (int i = 0; i < 3; i++) {
       accelAxes[i].update(raw.accel[i]);
@@ -248,8 +257,11 @@ void imuPoll() {
   // only ran while connected, the window would silently accumulate deviations
   // for as long as the device stayed disconnected and dump a stale "peak"
   // into the first packet after reconnecting.
-  if (millis() - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
-    lastTransmitReadMs = millis();
+  if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
+    lastTransmitReadMs += IMU_TRANSMIT_INTERVAL_MS;
+    if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
+      lastTransmitReadMs = nowMs; // fell > 1 interval behind - resync
+    }
 
     float accelFiltered[3], gyroFiltered[3];
     for (int i = 0; i < 3; i++) {

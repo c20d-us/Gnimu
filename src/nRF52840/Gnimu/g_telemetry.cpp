@@ -22,9 +22,6 @@
 #include "g_imu.h"
 #include "g_log.h"
 #include "g_ubx_helpers.h"
-#include <chrono>
-#include <cstdint>
-#include <string.h>
 
 // Internal counters and a private pointer to the latest PVT data
 static unsigned long bootTimeMs = 0;
@@ -42,8 +39,10 @@ static void sendPacket() {
     return;
   }
 
+  // The 80-byte payload is built in place inside the packet buffer (it
+  // occupies bytes 6..85), so no separate staging buffer or copy is needed.
   uint8_t packet[88] = {0};
-  uint8_t payload[80] = {0};
+  uint8_t *payload = packet + 6;
 
   ImuProtocolUnits imu = imuReadProtocolUnits();
 
@@ -86,12 +85,17 @@ static void sendPacket() {
   // Offset 21: Fix Status Flags
   uint8_t fixStatusFlags = 0;
 
-  if (pvt->fixType == 3) {
-    fixStatusFlags |= (1 << 0); // Bit 0: valid fix
+  // Bit 0: valid fix - a 3D fix that the receiver also reports as within its
+  // DOP/accuracy masks (gnssFixOK), the strictest read of "valid".
+  if (pvt->fixType == 3 && pvt->flags.bits.gnssFixOK) {
+    fixStatusFlags |= (1 << 0);
   }
 
-  if (gnssHeadingValid()) {
-    fixStatusFlags |= (1 << 5); // Bit 5: valid heading
+  // Bit 5: valid heading. Read from the SAME PVT snapshot being transmitted
+  // (not a library getter), so it can neither block nor describe a different
+  // epoch than the rest of this packet.
+  if (pvt->flags.bits.headVehValid) {
+    fixStatusFlags |= (1 << 5);
   }
   writeLittleEndian(payload, 21, fixStatusFlags);
 
@@ -148,7 +152,6 @@ static void sendPacket() {
   packet[3] = 0x01; // Message ID: RaceBox Data Message
   packet[4] = 80;   // Payload size
   packet[5] = 0;
-  memcpy(packet + 6, payload, 80);
 
   // Calculate payload checksum and add to packet
   UbxChecksum checksum = calculateChecksum(payload, 80, 0xFF, 0x01);
@@ -160,12 +163,15 @@ static void sendPacket() {
   bleSentPacketCount++;
 }
 
-// Periodically print packet rate and GNSS/IMU debug stats over serial
+// Periodically print packet rate and GNSS/IMU debug stats over serial.
+// The whole body compiles away in silent builds (LOG_ENABLED 0) - not just
+// the print itself, but the rate math and bookkeeping that feed it.
 static void telemetrySerialReport() {
+#if LOG_ENABLED
   const unsigned long now = millis();
 
   if ((now - lastReportMs) >= LOG_STATS_INTERVAL_MS) {
-    float elapsed = (now - lastReportMs) / 1000.0;
+    float elapsed = (now - lastReportMs) / 1000.0f;
     float bleRate = bleSentPacketCount / elapsed;
     float gnssRate = gnssEpochCount / elapsed;
     // Additional satellite info for debugging: number of satellites, fix type,
@@ -206,10 +212,11 @@ static void telemetrySerialReport() {
     // Update the last report timestamp
     lastReportMs = now;
   }
+#endif // LOG_ENABLED
 }
 
 // Simple startup - just prime the boot time and report timer.
-void telemetryBegin() { bootTimeMs, lastReportMs = millis(); }
+void telemetryBegin() { bootTimeMs = lastReportMs = millis(); }
 
 // On each new GNSS epoch, count it and (when connected) send a packet.
 // Always try to send informational report over serial.

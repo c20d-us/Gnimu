@@ -48,9 +48,6 @@ void gnssPoll();
 // call, otherwise returns nullptr.
 const UBX_NAV_PVT_data_t *gnssConsumePvt();
 
-// True if the receiver currently reports a valid vehicle heading.
-bool gnssHeadingValid();
-
 // Put the receiver into RXM-PMREQ backup mode (LIGHT_SLEEP entry): rail
 // stays on, ~uA draw, BBR/ephemeris retained.
 void gnssSleep();

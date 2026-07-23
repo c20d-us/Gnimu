@@ -24,7 +24,7 @@
 //      from other constants. Changing them without changing the matching part
 //      of the system (or the protocol) will break compatibility.
 // Within each section, entries are grouped by subsystem (Device Identity, IMU,
-// GNSS, BLE, LED, Reporting, Battery, Protocol), in the same order in both
+// GNSS, BLE, LED, Logging, Battery, Protocol), in the same order in both
 // sections. Every define is prefixed with the subsystem it belongs to, and
 // every value that carries a unit is suffixed with it (_MS, _HZ, _G, _DPS,
 // _MPS2, _RADPS, _DEG, _BYTES, _PERCENT, _PIN).
@@ -83,6 +83,21 @@
 #define IMU_GYRO_OFFSET_Y_RADPS +0.003458f
 #define IMU_GYRO_OFFSET_Z_RADPS -0.009113f
 
+// --- Axis orientation (installed mounting) ---
+// Corrects the sensor's raw axes into the vehicle frame. What varies per
+// BUILD is how the MPU-6050 module sits in your enclosure. These four values
+// correct for different orientations. This model assumes the module is
+// mounted FLAT, with sensor Z vehicle-vertical, and covers all 8 flat-mount
+// variants (any 90-degree yaw rotation, right-side-up or upside-down). It
+// does NOT cover mounting the board on any edge. The defaults (no swap, all
+// +1) leave the raw sensor frame untouched.
+// Vehicle forward/lateral assignment (which of X/Y is which, and their
+// final signs) still needs an in-car drive test once mounted.
+#define IMU_SWAP_XY false // true if raw X axis is lateral, not longitudinal
+#define IMU_SIGN_X +1.0f
+#define IMU_SIGN_Y +1.0f
+#define IMU_SIGN_Z +1.0f
+
 // ----------------------------------------------------------------------------
 // --- GNSS (u-blox) ---
 // ----------------------------------------------------------------------------
@@ -90,7 +105,10 @@
 // No need for greater than 115200; higher can reduce PVT rate.
 #define GNSS_BAUD 115200 // one of 9600/38400/57600/115200/230400/460800
 #define GNSS_MAX_NAVIGATION_RATE_HZ 25 // max for RaceBox Mini protocol
-#define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
+// PVT rate while no BLE client is connected - keeps the receiver ticking (and
+// the fix warm) without the full 25Hz load when nobody is listening.
+#define GNSS_IDLE_NAV_RATE_HZ 1
+#define GNSS_SV_MINELEV_DEG 0 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // GNSS UART wiring - which ESP32 GPIOs you routed the receiver's TX/RX to.
@@ -134,6 +152,11 @@
 #define BLE_MTU_BYTES 128            // must be >= 91 to carry an 88-byte notify
 #define BLE_READVERTISE_DELAY_MS 500 // delay before re-advertising
 
+// How long after a client connects before bleIsConnected() reports true.
+// Gives the MTU negotiation a moment to finish so the first notify isn't
+// sent against the default 23-byte MTU and chunked.
+#define BLE_CONNECT_SETTLE_MS 100
+
 // ----------------------------------------------------------------------------
 // --- LED (onboard status LED) ---
 // ----------------------------------------------------------------------------
@@ -142,10 +165,19 @@
 #define LED_BLINK_INTERVAL_MS 1000 // blink rate while disconnected
 
 // ----------------------------------------------------------------------------
-// --- Reporting (serial diagnostics) ---
+// --- Logging ---
 // ----------------------------------------------------------------------------
 
-#define STATS_REPORT_INTERVAL_MS 1000 // serial stats reporting interval
+// Master switch for all Serial diagnostic output.
+// 1 = normal verbose output
+// 0 = silent
+// Every LOG_PRINT / LOG_PRINTLN / LOG_PRINTF / LOG_FLUSH call is a
+// preprocessor-level no-op, both the call AND its arguments vanish before the
+// compiler sees them. Turning this off eliminates a small amount of
+// once-per-second stats-printf loop-latency.
+#define LOG_ENABLED 1
+
+#define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
 // ============================================================================
 // ============================================================================
@@ -265,6 +297,10 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
 static_assert(GNSS_MAX_NAVIGATION_RATE_HZ > 0 &&
                   GNSS_MAX_NAVIGATION_RATE_HZ <= 25,
               "ERROR: GNSS_MAX_NAVIGATION_RATE_HZ must be between 1 and 25.");
+static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&
+                  GNSS_IDLE_NAV_RATE_HZ <= GNSS_MAX_NAVIGATION_RATE_HZ,
+              "ERROR: GNSS_IDLE_NAV_RATE_HZ must be between 1 and "
+              "GNSS_MAX_NAVIGATION_RATE_HZ.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
@@ -311,10 +347,24 @@ static_assert(BLE_MTU_BYTES <= 517,
 // effectively never fire).
 static_assert(BLE_READVERTISE_DELAY_MS > 0,
               "ERROR: BLE_READVERTISE_DELAY_MS must be greater than 0.");
+static_assert(BLE_CONNECT_SETTLE_MS > 0,
+              "ERROR: BLE_CONNECT_SETTLE_MS must be greater than 0.");
 static_assert(LED_BLINK_INTERVAL_MS > 0,
               "ERROR: LED_BLINK_INTERVAL_MS must be greater than 0.");
-static_assert(STATS_REPORT_INTERVAL_MS > 0,
-              "ERROR: STATS_REPORT_INTERVAL_MS must be greater than 0.");
+static_assert(LOG_STATS_INTERVAL_MS > 0,
+              "ERROR: LOG_STATS_INTERVAL_MS must be greater than 0.");
+
+// Logging feature flag: strictly 0 or 1.
+static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,
+              "ERROR: LOG_ENABLED must be 0 or 1.");
+
+// Enforce each axis sign is a true sign, not a scale factor
+static_assert(IMU_SIGN_X == 1.0f || IMU_SIGN_X == -1.0f,
+              "ERROR: IMU_SIGN_X must be exactly +1.0f or -1.0f.");
+static_assert(IMU_SIGN_Y == 1.0f || IMU_SIGN_Y == -1.0f,
+              "ERROR: IMU_SIGN_Y must be exactly +1.0f or -1.0f.");
+static_assert(IMU_SIGN_Z == 1.0f || IMU_SIGN_Z == -1.0f,
+              "ERROR: IMU_SIGN_Z must be exactly +1.0f or -1.0f.");
 
 // Enforce a valid reported battery percentage (transmitted as a raw byte)
 static_assert(BATTERY_REPORT_PERCENT >= 0 && BATTERY_REPORT_PERCENT <= 100,

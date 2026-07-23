@@ -23,7 +23,7 @@
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static Uart &gnssSerial = Serial1;
 
-// PVT data cache and eopch state
+// PVT data cache and epoch state
 static UBX_NAV_PVT_data_t latestPVT;
 static bool newEpochAvailable = false;
 
@@ -130,8 +130,6 @@ static void setConstellations() {
 
 // Set the navigation frequency based on BLE client connection state.
 static void setNavFreq() {
-  // Navigation frequency to use when Gnimu is idle (no BLE clients connected).
-  const uint8_t idleNavFreq = 1;
   // The current navigation frequency, updated as BLE clients
   // connect/disconnect.
   static uint8_t currentNavFreq = 0;
@@ -139,7 +137,7 @@ static void setNavFreq() {
   // Check to see if there is a BLE client connected, and adjust the navigation
   // frequency accordingly.
   const uint8_t desiredNavFreq =
-      bleIsConnected() ? GNSS_NAV_RATE_HZ : idleNavFreq;
+      bleIsConnected() ? GNSS_NAV_RATE_HZ : GNSS_IDLE_NAV_RATE_HZ;
   if (currentNavFreq != desiredNavFreq) {
     if (myGNSS.setNavigationFrequency(desiredNavFreq, VAL_LAYER_RAM_BBR)) {
       currentNavFreq = desiredNavFreq;
@@ -166,7 +164,7 @@ void gnssBegin() {
   // If we can't connect, halt with an error message.
   if (!connectAndConfigureBaud()) {
     LOG_PRINTLN("❌ u-blox GNSS not detected at any standard baud rate.");
-    LOG_PRINTLN("X Check your wiring.");
+    LOG_PRINTLN("❌ Check your wiring.");
     while (1)
       delay(100); // Halt
   }
@@ -183,7 +181,7 @@ void gnssBegin() {
   if (myGNSS.setAopCfg(1, 0, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTLN("✅ AssistNow Autonomous enabled.");
   } else {
-    LOG_PRINTLN("X Failed to enable AssistNow Autonomous.");
+    LOG_PRINTLN("❌ Failed to enable AssistNow Autonomous.");
   }
 
   // Set the GNSS dynamic model
@@ -227,9 +225,6 @@ void gnssBegin() {
 // Release the UART peripheral. After this call D6/D7 are plain GPIO again,
 // so powerHoldPeripheralsOff() can drive D6 LOW to cut the RX back-feed path.
 void gnssEnd() { gnssSerial.end(); }
-
-// Convenience wrapper around getHeadVehValid()
-bool gnssHeadingValid() { return myGNSS.getHeadVehValid(); }
 
 // GNSS module poller - called every loop().
 // Prompts firing of registered callback when a new PVT epoch is available.

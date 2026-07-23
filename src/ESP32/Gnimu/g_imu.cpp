@@ -17,6 +17,7 @@
 #include "g_imu.h"
 #include "ImuAxis.h"
 #include "config.h"
+#include "g_log.h"
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
@@ -46,9 +47,25 @@ static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 // A single raw IMU sample, split into per-axis arrays indexed [0]=X, [1]=Y,
 // [2]=Z, matching accelAxes/gyroAxes.
 struct ImuRawSample {
-  float accel[3];
-  float gyro[3];
+  float accel[3]; // m/s^2 (Adafruit MPU6050 native units)
+  float gyro[3];  // rad/s (Adafruit MPU6050 native units)
 };
+
+// ============================================================================
+// Axis remap - installed orientation. Maps the sensor frame into the vehicle
+// frame; the mounting correction itself (IMU_SWAP_XY, IMU_SIGN_X/Y/Z) lives
+// in config.h - see the comment there for its flat-mount-only scope.
+// ============================================================================
+static void remapAxes(float triple[3]) {
+  if (IMU_SWAP_XY) {
+    float t = triple[0];
+    triple[0] = triple[1];
+    triple[1] = t;
+  }
+  triple[0] *= IMU_SIGN_X;
+  triple[1] *= IMU_SIGN_Y;
+  triple[2] *= IMU_SIGN_Z;
+}
 
 // Convert a scaled sensor value (gyro in centi-deg/sec, accel in milli-g) to
 // the protocol's int16_t, saturating at the representable ±32767 limit rather
@@ -57,41 +74,46 @@ struct ImuRawSample {
 // range at ±500 °/s; the accelerometer stays well within it even at the max ±g
 // but goes through here too so all six fields follow one consistent, safe
 // pattern.
-static int16_t toProtocolInt16(double value) {
-  if (value > 32767.0)
+static int16_t toProtocolInt16(float value) {
+  if (value > 32767.0f)
     return 32767;
-  if (value < -32768.0)
+  if (value < -32768.0f)
     return -32768;
   return (int16_t)value;
 }
 
 // Read the IMU and return the raw accel (m/s^2) / gyro (rad/s) values for this
-// instant, with each axis's per-chip zero-point offset (IMU_ACCEL/
-// IMU_GYRO_OFFSET_*, from config.h) subtracted so the bias is removed before
-// any smoothing or protocol scaling. Offsets are in the same native units as
-// the readings.
+// instant, zero-corrected and remapped into the vehicle frame.
+//
+// Order matters: per-chip zero-point offsets (IMU_*_OFFSET_*) are subtracted
+// FIRST, in the sensor's raw axis frame. That keeps the offsets intrinsic to
+// the chip so they don't need to change if the mounting orientation flips
+// IMU_SWAP_XY / IMU_SIGN_*. The mounting remap runs AFTER the correction.
 static ImuRawSample readImuRaw() {
   sensors_event_t a, g, temp;
   myIMU.getEvent(&a, &g, &temp);
-  return {
-      {a.acceleration.x - IMU_ACCEL_OFFSET_X_MPS2,
-       a.acceleration.y - IMU_ACCEL_OFFSET_Y_MPS2,
-       a.acceleration.z - IMU_ACCEL_OFFSET_Z_MPS2},
-      {g.gyro.x - IMU_GYRO_OFFSET_X_RADPS, g.gyro.y - IMU_GYRO_OFFSET_Y_RADPS,
-       g.gyro.z - IMU_GYRO_OFFSET_Z_RADPS},
-  };
+  ImuRawSample s;
+  s.accel[0] = a.acceleration.x - IMU_ACCEL_OFFSET_X_MPS2;
+  s.accel[1] = a.acceleration.y - IMU_ACCEL_OFFSET_Y_MPS2;
+  s.accel[2] = a.acceleration.z - IMU_ACCEL_OFFSET_Z_MPS2;
+  s.gyro[0] = g.gyro.x - IMU_GYRO_OFFSET_X_RADPS;
+  s.gyro[1] = g.gyro.y - IMU_GYRO_OFFSET_Y_RADPS;
+  s.gyro[2] = g.gyro.z - IMU_GYRO_OFFSET_Z_RADPS;
+  remapAxes(s.accel);
+  remapAxes(s.gyro);
+  return s;
 }
 
 // Initialize the IMU, including setting up the sensor ranges and seed values.
 void imuBegin() {
   if (!myIMU.begin()) {
-    Serial.println("❌ Failed to find the IMU module - halting");
+    LOG_PRINTLN("❌ Failed to find the IMU module - halting");
     while (1)
       delay(100);
   }
 
   // IMU started, proceed with configuration
-  Serial.println("✅ IMU Accelerometer/Gyro enabled.");
+  LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");
   myIMU.setAccelerometerRange(IMU_ACCEL_RANGE_G);
   myIMU.setGyroRange(IMU_GYRO_RANGE_DPS);
   myIMU.setFilterBandwidth(IMU_FILTER_BANDWIDTH_HZ);
@@ -109,13 +131,22 @@ void imuBegin() {
 }
 
 // Poll the IMU and update the axis filters at our configured sample rate.
+// Both cadences below are deadline-anchored (the anchor advances by the
+// interval, not to "now"), so per-loop latency doesn't stretch every period
+// and quietly drop the real rates below their configured values. If the loop
+// ever falls more than one full interval behind, the anchor resyncs to now
+// rather than firing a rapid catch-up burst.
 void imuPoll() {
   static unsigned long lastImuReadMs = 0;
   static unsigned long lastTransmitReadMs = 0;
+  const unsigned long nowMs = millis();
 
   // Update all six axis filters if it's time to sample.
-  if (millis() - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
-    lastImuReadMs = millis();
+  if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
+    lastImuReadMs += IMU_SAMPLE_INTERVAL_MS;
+    if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
+      lastImuReadMs = nowMs; // fell > 1 interval behind - resync
+    }
     ImuRawSample raw = readImuRaw();
     for (int i = 0; i < 3; i++) {
       accelAxes[i].update(raw.accel[i]);
@@ -128,8 +159,11 @@ void imuPoll() {
   // only ran while connected, the window would silently accumulate deviations
   // for as long as the device stayed disconnected and dump a stale "peak"
   // into the first packet after reconnecting.
-  if (millis() - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
-    lastTransmitReadMs = millis();
+  if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
+    lastTransmitReadMs += IMU_TRANSMIT_INTERVAL_MS;
+    if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
+      lastTransmitReadMs = nowMs; // fell > 1 interval behind - resync
+    }
 
     float accelFiltered[3], gyroFiltered[3];
     for (int i = 0; i < 3; i++) {
@@ -137,14 +171,18 @@ void imuPoll() {
       gyroFiltered[i] = gyroAxes[i].read();
     }
 
-    // Convert accelerometer to milli-g (1g = 9.80665 m/s^2)
-    latestUnits.gX = toProtocolInt16(accelFiltered[0] * 1000.0 / 9.80665);
-    latestUnits.gY = toProtocolInt16(accelFiltered[1] * 1000.0 / 9.80665);
-    latestUnits.gZ = toProtocolInt16(accelFiltered[2] * 1000.0 / 9.80665);
-    // Convert gyro to centi-deg/sec
-    latestUnits.rX = toProtocolInt16(gyroFiltered[0] * 180.0 / M_PI * 100.0);
-    latestUnits.rY = toProtocolInt16(gyroFiltered[1] * 180.0 / M_PI * 100.0);
-    latestUnits.rZ = toProtocolInt16(gyroFiltered[2] * 180.0 / M_PI * 100.0);
+    // Convert accelerometer to milli-g (1g = 9.80665 m/s^2) and gyro to
+    // centi-deg/sec. All-float math: the constant factors fold at compile
+    // time and the ESP32's FPU is single-precision only, so double math here
+    // would fall back to (slow) software emulation.
+    const float mps2ToMilliG = 1000.0f / 9.80665f;
+    const float radpsToCentiDeg = (180.0f / (float)M_PI) * 100.0f;
+    latestUnits.gX = toProtocolInt16(accelFiltered[0] * mps2ToMilliG);
+    latestUnits.gY = toProtocolInt16(accelFiltered[1] * mps2ToMilliG);
+    latestUnits.gZ = toProtocolInt16(accelFiltered[2] * mps2ToMilliG);
+    latestUnits.rX = toProtocolInt16(gyroFiltered[0] * radpsToCentiDeg);
+    latestUnits.rY = toProtocolInt16(gyroFiltered[1] * radpsToCentiDeg);
+    latestUnits.rZ = toProtocolInt16(gyroFiltered[2] * radpsToCentiDeg);
   }
 }
 

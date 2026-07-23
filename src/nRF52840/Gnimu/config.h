@@ -155,7 +155,10 @@
 // reconfigures + saves-to-flash if the receiver is ever found at a different
 // rate.
 #define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 25   // max supported by RaceBox Mini protocol
+#define GNSS_NAV_RATE_HZ 25 // max supported by RaceBox Mini protocol
+// PVT rate while no BLE client is connected - keeps the receiver ticking (and
+// the fix warm) without the full 25Hz load when nobody is listening.
+#define GNSS_IDLE_NAV_RATE_HZ 1
 #define GNSS_SV_MINELEV_DEG 0 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
@@ -279,6 +282,10 @@
 #define POWER_SWITCH_SENSE_PIN A4         // Set to your selected GPIO pin
 #define POWER_SWITCH_OFF_THRESHOLD_MV 800 // pin mv above this == switch OFF
 
+// How often powerSwitchOn() refreshes its cached switch-sense reading. Reads
+// between refreshes return the cache, keeping the per-loop cost to a compare.
+#define POWER_SWITCH_POLL_INTERVAL_MS 50
+
 // ----------------------------------------------------------------------------
 // --- State ---
 // ----------------------------------------------------------------------------
@@ -311,6 +318,13 @@
 #define STATE_IDLE_TIMEOUT_MIN 30
 #define STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN 180
 #define STATE_LIGHT_SLEEP_TIMEOUT_MIN 360
+
+// --- Switch-off debounce ---
+// A floating/unwired switch-sense pin, and even a wired divider under EMI,
+// can produce transient OFF readings; require the OFF to be sustained this
+// long before entering BATTERY_WAIT so a noise spike can't reset a
+// happily-running device. Switch-ON is instant.
+#define STATE_SWITCH_OFF_DEBOUNCE_MS 500
 
 // ----------------------------------------------------------------------------
 // --- LED (onboard RGB status LED) ---
@@ -544,6 +558,10 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
 // Enforce navigation rate limit
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
+static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&
+                  GNSS_IDLE_NAV_RATE_HZ <= GNSS_NAV_RATE_HZ,
+              "ERROR: GNSS_IDLE_NAV_RATE_HZ must be between 1 and "
+              "GNSS_NAV_RATE_HZ.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
@@ -683,6 +701,14 @@ static_assert(POWER_SWITCH_OFF_THRESHOLD_MV > 0 &&
                   POWER_SWITCH_OFF_THRESHOLD_MV < 3000,
               "ERROR: POWER_SWITCH_OFF_THRESHOLD_MV must be within the ADC "
               "range (0, 3000).");
+
+// Switch-sense timing sanity: a positive poll cadence, and a debounce long
+// enough to span several polls so it actually filters noise.
+static_assert(POWER_SWITCH_POLL_INTERVAL_MS > 0,
+              "ERROR: POWER_SWITCH_POLL_INTERVAL_MS must be greater than 0.");
+static_assert(STATE_SWITCH_OFF_DEBOUNCE_MS >= POWER_SWITCH_POLL_INTERVAL_MS,
+              "ERROR: STATE_SWITCH_OFF_DEBOUNCE_MS must be >= "
+              "POWER_SWITCH_POLL_INTERVAL_MS.");
 
 // LED blink timing sanity.
 static_assert(LED_BLINK_INTERVAL_MS > 0,
