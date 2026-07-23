@@ -424,6 +424,12 @@
 // --- Battery ---
 // ----------------------------------------------------------------------------
 
+// This build has a real battery gauge (VBAT sensing + fuel gauge in
+// g_battery): the shared telemetry module includes the battery segment in the
+// serial stats line. (0 on builds without battery hardware, e.g. the ESP32
+// variant, whose g_battery is a constant stub.)
+#define BATTERY_HAS_GAUGE 1
+
 // --- Voltage-sense scaling ---
 // Recovered VBAT = ADC_volts * (R_TOP + R_BOTTOM) / R_BOTTOM.
 // Values are the XIAO nRF52840's onboard divider.
@@ -752,3 +758,7 @@ static_assert(IMU_WAKE_DUR <= 15, "ERROR: IMU_WAKE_DUR must be 0..15.");
 // Logging feature flag: strictly 0 or 1.
 static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,
               "ERROR: LOG_ENABLED must be 0 or 1.");
+
+// Battery-gauge feature flag: strictly 0 or 1.
+static_assert(BATTERY_HAS_GAUGE == 0 || BATTERY_HAS_GAUGE == 1,
+              "ERROR: BATTERY_HAS_GAUGE must be 0 or 1.");

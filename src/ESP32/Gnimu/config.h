@@ -204,6 +204,11 @@
 // battery byte, so we report a constant full charge.
 #define BATTERY_REPORT_PERCENT 100
 
+// This build has no battery gauge: the shared telemetry module omits the
+// battery segment from the serial stats line, and g_battery is a constant
+// stub. (1 on builds with real VBAT sensing, e.g. the nRF52840 variant.)
+#define BATTERY_HAS_GAUGE 0
+
 // ----------------------------------------------------------------------------
 // --- Protocol (RaceBox BLE protocol) ---
 // These match the RaceBox BLE protocol and should not be changed.
@@ -369,3 +374,7 @@ static_assert(IMU_SIGN_Z == 1.0f || IMU_SIGN_Z == -1.0f,
 // Enforce a valid reported battery percentage (transmitted as a raw byte)
 static_assert(BATTERY_REPORT_PERCENT >= 0 && BATTERY_REPORT_PERCENT <= 100,
               "ERROR: BATTERY_REPORT_PERCENT must be between 0 and 100.");
+
+// Battery-gauge feature flag: strictly 0 or 1.
+static_assert(BATTERY_HAS_GAUGE == 0 || BATTERY_HAS_GAUGE == 1,
+              "ERROR: BATTERY_HAS_GAUGE must be 0 or 1.");

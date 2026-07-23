@@ -16,6 +16,7 @@
 
 #include "g_telemetry.h"
 #include "config.h"
+#include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
@@ -133,9 +134,8 @@ static void sendPacket() {
   }
   writeLittleEndian(payload, 66, latLonFlags);
 
-  // Offset 67: Battery status (1 byte)
-  // Report 100% to avoid low battery warnings.
-  writeLittleEndian(payload, 67, (uint8_t)BATTERY_REPORT_PERCENT);
+  // Offset 67: Battery status (1 byte) - bit 7 = charging, bits 0-6 = percent.
+  writeLittleEndian(payload, 67, batteryProtocolByte());
 
   // Offset 68-78: IMU data
   writeLittleEndian(payload, 68, imu.gX);
@@ -189,14 +189,34 @@ static void telemetrySerialReport() {
     }
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
-    // Print out the informational report
-    LOG_PRINTF("RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | "
-               "TAcc: %uns | HAcc: "
-               "%umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d "
-               "Z=%d | centiDeg/s: X=%d Y=%d Z=%d\n",
-               (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate,
-               sats, fix, tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX,
-               imu.rY, imu.rZ);
+
+#if BATTERY_HAS_GAUGE
+    // Battery voltage/percent/charging for debugging
+    const BatteryStatus bat = batteryGetStatus();
+
+    // Print out the informational report. Voltage is the honest measurement;
+    // SoC is deliberately omitted from serial output because the voltage->%
+    // lookup is masked by charge/TPS draw and can swing 10+% between plugged
+    // and unplugged - misleading in the console. The percent still drives the
+    // BLE Battery Service + LED thresholds where consumers expect a 0-100 %.
+    LOG_PRINTF(
+        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
+        "centiDeg/s: X=%d Y=%d Z=%d | Batt: %.2fV%s\n",
+        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
+        bat.voltage, bat.charging ? "⚡" : "");
+#else
+    // No battery gauge on this build - the same report minus the Batt segment
+    // (the battery byte in the packet itself still carries the constant
+    // percent via batteryProtocolByte()).
+    LOG_PRINTF(
+        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
+        "centiDeg/s: X=%d Y=%d Z=%d\n",
+        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ);
+#endif
 
     // Reset packet and epoch counts for the next report
     bleSentPacketCount = 0;

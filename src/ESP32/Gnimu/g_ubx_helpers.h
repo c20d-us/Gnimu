@@ -21,7 +21,9 @@
 // ============================================================================
 // UBX Packet Construction Helpers
 //
-// Stateless helpers for building u-blox UBX-format binary messages.
+// Stateless helpers for building u-blox UBX-format binary messages (the same
+// envelope the RaceBox Data Message rides on). These touch no globals - they
+// only act on the buffers/values passed in - so they live cleanly on their own.
 // ============================================================================
 
 // Write a little-endian integer into buffer at the given offset. Templated

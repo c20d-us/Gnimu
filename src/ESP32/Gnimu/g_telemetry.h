@@ -22,7 +22,7 @@
 //
 // Packs the latest GNSS + IMU data into a RaceBox packet, hands the packet off
 // to the BLE module for sending, and prints periodic serial stats. Consumes the
-// imu / gnss / ble / ubx_helpers module interfaces.
+// imu / gnss / ble / ubx_helpers module interfaces; owns no hardware itself.
 // ============================================================================
 
 // Call once in setup() after the other modules are up.

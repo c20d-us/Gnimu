@@ -189,6 +189,8 @@ static void telemetrySerialReport() {
     }
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
+
+#if BATTERY_HAS_GAUGE
     // Battery voltage/percent/charging for debugging
     const BatteryStatus bat = batteryGetStatus();
 
@@ -204,6 +206,17 @@ static void telemetrySerialReport() {
         (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
         tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
         bat.voltage, bat.charging ? "⚡" : "");
+#else
+    // No battery gauge on this build - the same report minus the Batt segment
+    // (the battery byte in the packet itself still carries the constant
+    // percent via batteryProtocolByte()).
+    LOG_PRINTF(
+        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
+        "centiDeg/s: X=%d Y=%d Z=%d\n",
+        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ);
+#endif
 
     // Reset packet and epoch counts for the next report
     bleSentPacketCount = 0;
