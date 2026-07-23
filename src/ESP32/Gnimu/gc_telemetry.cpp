@@ -22,7 +22,7 @@
 #include "gc_ubx_helpers.h"
 #include <string.h>
 
-// --- Internal counters and a private pointer to the latest PVT data ---
+// Internal counters and a private pointer to the latest PVT data
 static unsigned long bootTimeMs = 0;
 static unsigned long lastReportMs = 0;
 static unsigned int bleSentPacketCount = 0;

@@ -17,15 +17,15 @@
 #include "gc_gnss.h"
 #include "config.h"
 
-// --- GNSS state ---
+// GNSS state
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static HardwareSerial gnssSerial(2);
 
-// --- PVT data and state ---
+// PVT data and state
 static UBX_NAV_PVT_data_t latestPVT;
 static bool newEpochAvailable = false;
 
-// --- Struct to hold the constellation configuration from config.h---
+// Struct to hold the constellation configuration from config.h
 struct Constellations {
   const char *name;
   sfe_ublox_gnss_ids_e id;
@@ -142,21 +142,21 @@ void gnssBegin() {
   delay(500);
   drainSerial();
 
-  // --- Set the GNSS dynamic model ---
+  // Set the GNSS dynamic model
   if (myGNSS.setDynamicModel(GNSS_DYNAMIC_MODEL)) {
     Serial.printf("✅ GNSS dynamic model set to %d.\n", GNSS_DYNAMIC_MODEL);
   } else {
     Serial.println("❌ Failed to set GNSS dynamic model.");
   }
 
-  // --- Turn off NMEA messages - we want UBX only ---
+  // Turn off NMEA messages - we want UBX only
   if (myGNSS.setUART1Output(COM_TYPE_UBX)) {
     Serial.println("✅ NMEA messages disabled.");
   } else {
     Serial.println("❌ Failed to disable NMEA messages.");
   }
 
-  // --- Set the minimum elevation of satellites to track (anti-multipath) ---
+  // Set the minimum elevation of satellites to track (anti-multipath)
   if (myGNSS.setVal8(UBLOX_CFG_NAVSPG_INFIL_MINELEV, GNSS_SV_MINELEV_DEG)) {
     Serial.printf("✅ GNSS minimum SV elevation set to %d deg.\n",
                   GNSS_SV_MINELEV_DEG);
@@ -164,10 +164,10 @@ void gnssBegin() {
     Serial.println("❌ Failed to set GNSS minimum elevation.");
   }
 
-  // --- Constellation setup ---
+  // Constellation setup
   enableConstellations();
 
-  // --- Set the GNSS update rate to GNSS_MAX_NAVIGATION_RATE_HZ Hz ---
+  // Set the GNSS update rate to GNSS_MAX_NAVIGATION_RATE_HZ Hz
   if (myGNSS.setNavigationFrequency(GNSS_MAX_NAVIGATION_RATE_HZ)) {
     Serial.printf("✅ GNSS update rate set to %d Hz.\n",
                   GNSS_MAX_NAVIGATION_RATE_HZ);
@@ -175,9 +175,9 @@ void gnssBegin() {
     Serial.println("❌ Failed to set GNSS update rate.");
   }
 
-  // --- Register the PVT callback and enable automatic PVT output LAST, once
+  // Register the PVT callback and enable automatic PVT output LAST, once
   // the module is fully configured. setAutoPVTcallbackPtr() implicitly enables
-  // AutoPVT, so no separate setAutoPVT(true) call is needed. ---
+  // AutoPVT, so no separate setAutoPVT(true) call is needed.
   if (myGNSS.setAutoPVTcallbackPtr(&pvtCallback)) {
     Serial.println("✅ PVT callback registered; auto PVT output enabled.");
   } else {

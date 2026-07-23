@@ -21,7 +21,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
-// --- BLE state - private to this file ---
+// BLE state
 static const String deviceName = String(RACEBOX_MODEL) + " " + DEVICE_ID;
 
 static BLEServer *pServer = NULL;
@@ -31,7 +31,7 @@ static unsigned long connectTimeMs = 0;
 static volatile bool deviceConnected = false;
 static volatile bool oldDeviceConnected = false;
 
-// --- Drive the onboard LED: solid when connected, blink when disconnected ---
+// Drive the onboard LED: solid when connected, blink when disconnected
 static void updateLed() {
   if (!deviceConnected) {
     static unsigned long lastBlinkMs = 0;
@@ -44,7 +44,7 @@ static void updateLed() {
   }
 }
 
-// --- BLE Callbacks ---
+// BLE Callbacks
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
     deviceConnected = true;
@@ -87,7 +87,7 @@ void bleBegin() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
-  // --- Create RaceBox Service ---
+  // Create RaceBox Service
   BLEService *pService = pServer->createService(RACEBOX_SERVICE_UUID);
   pCharacteristicTx = pService->createCharacteristic(
       RACEBOX_CHARACTERISTIC_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
@@ -98,7 +98,7 @@ void bleBegin() {
   pCharacteristicRx->setCallbacks(new RxCharacteristicCallbacks());
   pService->start();
 
-  // --- Device Information Service ---
+  // Device Information Service
   BLEService *pDeviceInfo =
       pServer->createService("0000180a-0000-1000-8000-00805f9b34fb");
 
@@ -120,7 +120,7 @@ void bleBegin() {
   }
   pDeviceInfo->start();
 
-  // --- Start advertising ---
+  // Start advertising
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(RACEBOX_SERVICE_UUID);
   // Advertise Device Information Service so apps can discover the device

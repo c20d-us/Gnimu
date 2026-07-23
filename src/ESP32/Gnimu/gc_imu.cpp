@@ -20,7 +20,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
-// --- IMU ---
+// IMU
 static Adafruit_MPU6050 myIMU;
 
 // Three axes each for accelerometer and gyroscope, indexed [0]=X, [1]=Y,

@@ -52,10 +52,10 @@
 // --- IMU (MPU-6050) ---
 // ----------------------------------------------------------------------------
 
-#define IMU_SAMPLE_INTERVAL_MS 10 // in ms; 10 == 100Hz sample rate
+#define IMU_SAMPLE_INTERVAL_MS 10 // 10 == 100Hz sample rate
 
-// Sensor full-scale ranges and the built-in low-pass bandwidth (Adafruit
-// MPU6050 enum tokens).
+// Sensor full-scale ranges and the built-in low-pass bandwidth
+// (Adafruit MPU6050 enum tokens).
 #define IMU_ACCEL_RANGE_G MPU6050_RANGE_4_G        // 4g, ample for auto-x
 #define IMU_GYRO_RANGE_DPS MPU6050_RANGE_500_DEG   // 500 deg/s for auto-x
 #define IMU_FILTER_BANDWIDTH_HZ MPU6050_BAND_21_HZ // built-in low-pass filter
@@ -63,14 +63,11 @@
 // ImuAxis smoothing rates and transient thresholds.
 // The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
 // window's peak must exceed before it gets blended into the transmitted value
-// instead of the plain EMA baseline. These are PLACEHOLDER starting points only
-// - the right value depends on this specific car's vibration floor
-// (engine/tire/kerb noise) versus genuine events, and must be tuned empirically
-// against real track data per axis.
+// instead of the plain EMA baseline.
 #define IMU_ACCEL_ALPHA 0.2f // EMA smoothing: 1.0 = raw, 0.1 = heavy
 #define IMU_GYRO_ALPHA 0.2f  // EMA smoothing: 1.0 = raw, 0.1 = heavy
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 2.0f // in m/s^2 (~0.2g)
-#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // in rad/s (~28.6 deg/s)
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 2.0f // ~0.2g
+#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // ~28.6 deg/s
 
 // --- Per-axis zero-point offsets (raw sensor frame) ---
 // Subtracted from each raw axis inside gc_imu's readImuRaw(), correcting the
@@ -79,11 +76,6 @@
 // for gyro. The accel Z offset is a bias ONLY - gravity is not included (the
 // calibration sketch removes 9.80665 m/s^2 before reporting), so a level board
 // still reads ~1g on Z after correction.
-//
-// Defaults are 0 = no correction. To calibrate a specific board, run the
-// src/IMU_Calibration sketch and paste its printed #define lines over these.
-// Typical magnitudes on a healthy chip: accel < ~0.8 m/s^2 (the Z axis
-// usually runs highest), gyro < ~0.1 rad/s.
 #define IMU_ACCEL_OFFSET_X_MPS2 +0.367034f
 #define IMU_ACCEL_OFFSET_Y_MPS2 +0.055432f
 #define IMU_ACCEL_OFFSET_Z_MPS2 -0.676274f
@@ -95,7 +87,8 @@
 // --- GNSS (u-blox) ---
 // ----------------------------------------------------------------------------
 
-#define GNSS_BAUD 115200 // in bps; 9600/38400/57600/115200/230400/460800
+// No need for greater than 115200; higher can reduce PVT rate.
+#define GNSS_BAUD 115200 // one of 9600/38400/57600/115200/230400/460800
 #define GNSS_MAX_NAVIGATION_RATE_HZ 25 // max for RaceBox Mini protocol
 #define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
@@ -107,7 +100,7 @@
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
 // from. Enabling too many can reduce the update rate below 25Hz.
-// For North American use you should include GPS and Galileo.
+// For North American use you should always include GPS.
 // Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
@@ -138,21 +131,21 @@
 //   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
 #define BLE_TX_POWER ESP_PWR_LVL_N12
 
-#define BLE_MTU_BYTES 128 // must be >= 91 to carry an 88-byte notify
-#define BLE_READVERTISE_DELAY_MS 500 // in ms; delay before re-advertising
+#define BLE_MTU_BYTES 128            // must be >= 91 to carry an 88-byte notify
+#define BLE_READVERTISE_DELAY_MS 500 // delay before re-advertising
 
 // ----------------------------------------------------------------------------
 // --- LED (onboard status LED) ---
 // ----------------------------------------------------------------------------
 
 #define LED_ONBOARD_PIN 2 // onboard status LED; change to match your board
-#define LED_BLINK_INTERVAL_MS 1000 // in ms; blink rate while disconnected
+#define LED_BLINK_INTERVAL_MS 1000 // blink rate while disconnected
 
 // ----------------------------------------------------------------------------
 // --- Reporting (serial diagnostics) ---
 // ----------------------------------------------------------------------------
 
-#define STATS_REPORT_INTERVAL_MS 1000 // in ms; serial stats reporting interval
+#define STATS_REPORT_INTERVAL_MS 1000 // serial stats reporting interval
 
 // ============================================================================
 // ============================================================================
@@ -175,7 +168,7 @@
 // --- Battery ---
 // ----------------------------------------------------------------------------
 
-// No battery circuit on this build - the RaceBox protocol still carries a
+// No battery circuit on this build. The RaceBox protocol still carries a
 // battery byte, so we report a constant full charge.
 #define BATTERY_REPORT_PERCENT 100
 
@@ -184,10 +177,10 @@
 // These match the RaceBox BLE protocol and should not be changed.
 // ----------------------------------------------------------------------------
 
-#define RACEBOX_MODEL "RaceBox Mini"       // Compatibility requirement
-#define RACEBOX_MANUFACTURER "RaceBox"     // Compatibility requirement
-#define RACEBOX_HARDWARE_VERSION "1"       // Compatibility requirement
-#define RACEBOX_FIRMWARE_VERSION "3.3"     // Compatibility requirement
+#define RACEBOX_MODEL "RaceBox Mini"   // Compatibility requirement
+#define RACEBOX_MANUFACTURER "RaceBox" // Compatibility requirement
+#define RACEBOX_HARDWARE_VERSION "1"   // Compatibility requirement
+#define RACEBOX_FIRMWARE_VERSION "3.3" // Compatibility requirement
 #define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
