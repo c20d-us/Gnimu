@@ -17,8 +17,8 @@
 // ============================================================================
 // PROVISIONING TOOL (also doubles as a diagnostic): QSPI flash + LittleFS
 //
-// REQUIRED ONE-TIME STEP before gp_storage / the GNSS DB warm-start feature
-// works on a given board. The main firmware (gp_storage.cpp) deliberately
+// REQUIRED ONE-TIME STEP before g_storage / the GNSS DB warm-start feature
+// works on a given board. The main firmware (g_storage.cpp) deliberately
 // NEVER formats flash on its own - a mount failure there just means
 // persistent storage is unavailable for that boot (GNSS falls back to a
 // cold start every time), not a prompt to silently erase whatever is on
@@ -27,10 +27,10 @@
 //
 // Run this once on any new board, and again if the QSPI chip is ever
 // swapped for a different part (the P25Q16H device table below would also
-// need updating in that case - see gp_storage.cpp's matching comment).
+// need updating in that case - see g_storage.cpp's matching comment).
 //
 // Exercises the same Adafruit_SPIFlash + Adafruit_LittleFS stack that
-// gp_storage.cpp uses in the main firmware, on its own so we can validate
+// g_storage.cpp uses in the main firmware, on its own so we can validate
 // the storage layer in isolation before trusting the whole GNSS DB
 // persistence path to it.
 //
@@ -509,7 +509,7 @@ void setup() {
   }
 
   Serial.println("\n=== Gnimu - storage (QSPI+LittleFS) diagnostic ===");
-  Serial.println("Uses the same stack as gp_storage.cpp in the main firmware.");
+  Serial.println("Uses the same stack as g_storage.cpp in the main firmware.");
   Serial.println();
 
   runPhase1();

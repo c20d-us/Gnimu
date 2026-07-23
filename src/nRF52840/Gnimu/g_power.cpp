@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_power.h"
+#include "g_power.h"
 #include "config.h"
-#include "gp_log.h"
+#include "g_log.h"
 
 // Drive the GNSS TPS63020 EN pin to its "disabled" level. Must be OUTPUT for
 // the write to take effect. An INPUT pin lets the TPS's own EN pullup win.
@@ -35,7 +35,7 @@ static void gnssTxIdleLow() {
 }
 
 // Turn the RGB LED off via direct pin drives (active-low: HIGH = off). Used
-// before gp_led has initialized, and as the final word before DEEP_SLEEP's
+// before g_led has initialized, and as the final word before DEEP_SLEEP's
 // permanent halt.
 static void ledPinsOff() {
   pinMode(LED_RED_PIN, OUTPUT);

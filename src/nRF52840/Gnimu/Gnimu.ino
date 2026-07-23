@@ -20,15 +20,15 @@
 // battery/power/state/ble/gnss/imu/led/telemetry modules. This top-level
 // sketch orchestrates lifecycles per the state machine (DESIGN §5).
 #include "config.h"
-#include "gp_battery.h"
-#include "gp_ble.h"
-#include "gp_gnss.h"
-#include "gp_imu.h"
-#include "gp_led.h"
-#include "gp_log.h"
-#include "gp_power.h"
-#include "gp_state.h"
-#include "gp_telemetry.h"
+#include "g_battery.h"
+#include "g_ble.h"
+#include "g_gnss.h"
+#include "g_imu.h"
+#include "g_led.h"
+#include "g_log.h"
+#include "g_power.h"
+#include "g_state.h"
+#include "g_telemetry.h"
 
 void setup() {
   // Prologue: unconditionally hold every peripheral control pin in its safe

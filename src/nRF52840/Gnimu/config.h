@@ -78,7 +78,7 @@
 #define IMU_ACCEL_BANDWIDTH_HZ 50 // anti-alias filter: one of 50, 100, 200, 400
 
 // --- Per-chip zero-point offsets (raw sensor frame) ---
-// Subtracted from each raw axis inside gp_imu's readImuRaw() BEFORE the
+// Subtracted from each raw axis inside g_imu's readImuRaw() BEFORE the
 // mounting remap runs, so these values are intrinsic to the chip and do not
 // need to change if IMU_SWAP_XY / IMU_SIGN_* change. Units match the LSM6DS3
 // native units (g for accel, deg/s for gyro).
@@ -246,7 +246,7 @@
 #define BATTERY_EMA_ALPHA 0.2f
 
 // --- Discharge curve (resting volts -> percent), high to low ---
-// A macro (not an array) so the table lives here while gp_battery.cpp owns
+// A macro (not an array) so the table lives here while g_battery.cpp owns
 // the single instance: it expands to an initializer list of
 // {voltage, percent} pairs. Must be sorted high voltage -> low.
 //
@@ -339,7 +339,7 @@
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
-// Separate, much slower cadence for LIGHT_SLEEP's own heartbeat (gp_state) -
+// Separate, much slower cadence for LIGHT_SLEEP's own heartbeat (g_state) -
 // LOG_STATS_INTERVAL_MS's 1 Hz is right for live telemetry monitoring, but
 // LIGHT_SLEEP can last hours (up to STATE_LIGHT_SLEEP_TIMEOUT_MIN), and
 // nothing else logs while asleep - without this there's no way to tell it's
@@ -359,7 +359,7 @@
 // --- SAADC (shared nRF52840 ADC peripheral) ---
 // ----------------------------------------------------------------------------
 
-// nRF ADC config that gp_power applies to the shared SAADC (used by both the
+// nRF ADC config that g_power applies to the shared SAADC (used by both the
 // VBAT sampler and the switch-sense read). The internal 3.0V reference
 // gives a clean full-scale for a 1S LiPo.
 #define SAADC_RESOLUTION_BITS 12

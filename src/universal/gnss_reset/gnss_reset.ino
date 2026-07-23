@@ -28,7 +28,7 @@
 // Use this when you want a guaranteed-clean receiver with no leftover state
 // from prior runs - e.g. after debugging a config-persistence issue, or
 // before handing off a board. It is NOT part of the normal boot flow:
-// gp_gnss.cpp's gnssBegin() already sets every runtime option with
+// g_gnss.cpp's gnssBegin() already sets every runtime option with
 // VAL_LAYER_RAM (RAM-only, never persisted), so a factory reset should not be
 // needed in ordinary operation. See the gnss-first-command-ack-bug memory /
 // DESIGN.md for the persistence bug this tool was built to recover from.
@@ -95,7 +95,7 @@ void setup() {
   }
 
   // Give the receiver a moment to fully wake up, then drain any backlog
-  // before issuing the reset - same lesson as gp_gnss.cpp's gnssBegin().
+  // before issuing the reset - same lesson as g_gnss.cpp's gnssBegin().
   delay(500);
   while (gnssSerial.available()) {
     gnssSerial.read();

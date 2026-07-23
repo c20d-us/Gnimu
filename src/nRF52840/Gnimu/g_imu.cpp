@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_imu.h"
+#include "g_imu.h"
 #include "ImuAxis.h"
 #include "config.h"
-#include "gp_log.h"
+#include "g_log.h"
 #include <LSM6DS3.h>
 
 // IMU driver. I2C at IMU_I2C_ADDRESS (0x6A).

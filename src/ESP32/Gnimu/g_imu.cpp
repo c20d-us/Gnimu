@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gc_imu.h"
+#include "g_imu.h"
 #include "ImuAxis.h"
 #include "config.h"
 #include <Adafruit_MPU6050.h>

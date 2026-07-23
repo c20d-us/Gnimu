@@ -22,7 +22,7 @@
 // paste-ready #define lines for config.h. Independent of IMU_SWAP_XY /
 // IMU_SIGN_* - the offsets stay valid across mounting changes.
 //
-// Units match what gp_imu.cpp / config.h use:
+// Units match what g_imu.cpp / config.h use:
 //   * accel:  g       (LSM6DS3 native, x1000 to milli-g downstream)
 //   * gyro:   deg/s   (LSM6DS3 native, x100 to centi-deg/s downstream)
 // Accel Z is calibrated with the LED face pointing +Z UP on a level surface,
@@ -94,7 +94,7 @@ static void imuBringUp() {
   }
 
   // BDU on: prevents torn 16-bit reads from skewing an offset that has to be
-  // trusted to the last mV. Same setting as gp_imu.cpp uses in production.
+  // trusted to the last mV. Same setting as g_imu.cpp uses in production.
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL3_C,
                       LSM6DS3_ACC_GYRO_BDU_BLOCK_UPDATE |
                           LSM6DS3_ACC_GYRO_IF_INC_ENABLED);

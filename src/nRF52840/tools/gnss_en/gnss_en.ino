@@ -17,7 +17,7 @@
 // ============================================================================
 // DIAGNOSTIC: GNSS rail EN-pad cutoff check (+ RX back-feed test)
 //
-// Answers the open hardware question that gp_battery.cpp's low-voltage cutoff
+// Answers the open hardware question that g_battery.cpp's low-voltage cutoff
 // and the planned GNSS idle-cutoff both rely on: does driving GNSS_EN_PIN (D8)
 // LOW actually DISCONNECT the TPS63020 output rail?
 //

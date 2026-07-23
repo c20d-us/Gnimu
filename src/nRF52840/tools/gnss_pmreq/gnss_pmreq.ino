@@ -57,7 +57,7 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
-// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as gp_gnss.cpp.
+// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as g_gnss.cpp.
 static Uart &gnssSerial = Serial1;
 static const uint8_t GNSS_TX_PIN = D6; // XIAO TX -> GNSS RX
 

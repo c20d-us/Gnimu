@@ -70,7 +70,7 @@
 #define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // ~28.6 deg/s
 
 // --- Per-axis zero-point offsets (raw sensor frame) ---
-// Subtracted from each raw axis inside gc_imu's readImuRaw(), correcting the
+// Subtracted from each raw axis inside g_imu's readImuRaw(), correcting the
 // chip's intrinsic bias before any smoothing or protocol conversion. Units
 // match the Adafruit MPU6050 driver's native output: m/s^2 for accel, rad/s
 // for gyro. The accel Z offset is a bias ONLY - gravity is not included (the
@@ -252,7 +252,7 @@ static_assert(GNSS_RX_PIN != GNSS_TX_PIN && GNSS_RX_PIN != LED_ONBOARD_PIN &&
 
 // Enforce a GNSS_BAUD the firmware actually knows how to detect and switch
 // to. Keep this list in sync with the fallback baud rates in
-// connectAndConfigureBaud() (gc_gnss.cpp) - an unswept value here risks
+// connectAndConfigureBaud() (g_gnss.cpp) - an unswept value here risks
 // telling the module to save an unrecoverable baud rate to flash.
 static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
                   GNSS_BAUD == 115200 || GNSS_BAUD == 230400 ||

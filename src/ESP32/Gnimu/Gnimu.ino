@@ -18,10 +18,10 @@
 
 // Settings live in config.h
 // Hardware & protocol logic lives in the ble, gnss, imu, and telemetry modules
-#include "gc_ble.h"
-#include "gc_gnss.h"
-#include "gc_imu.h"
-#include "gc_telemetry.h"
+#include "g_ble.h"
+#include "g_gnss.h"
+#include "g_imu.h"
+#include "g_telemetry.h"
 
 void setup() {
   Serial.begin(115200);

@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_gnss.h"
+#include "g_gnss.h"
 #include "config.h"
-#include "gp_ble.h"
-#include "gp_log.h"
+#include "g_ble.h"
+#include "g_log.h"
 
 // GNSS state
 static SFE_UBLOX_GNSS_SERIAL myGNSS;

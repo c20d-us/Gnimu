@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gc_telemetry.h"
+#include "g_telemetry.h"
 #include "config.h"
-#include "gc_ble.h"
-#include "gc_gnss.h"
-#include "gc_imu.h"
-#include "gc_ubx_helpers.h"
+#include "g_ble.h"
+#include "g_gnss.h"
+#include "g_imu.h"
+#include "g_ubx_helpers.h"
 #include <string.h>
 
 // Internal counters and a private pointer to the latest PVT data

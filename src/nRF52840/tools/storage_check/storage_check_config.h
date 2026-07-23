@@ -26,7 +26,7 @@
 // chip; if you do, also update the matching section in the main firmware's
 // src/nRF52840/Gnimu/config.h ("STORAGE (QSPI FLASH)"). This file intentionally
 // duplicates rather than shares that config - diagnostics stay isolated
-// from firmware by design (see gp_storage.cpp's module comment) - but the
+// from firmware by design (see g_storage.cpp's module comment) - but the
 // macro names match 1:1 so the two are easy to diff when updating for a
 // new chip.
 //

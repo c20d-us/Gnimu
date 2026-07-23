@@ -21,17 +21,17 @@
 // Gnimu state machine
 //
 // Owns the SystemState enum + the transition table. Consumes:
-//   - powerUsbPresent()                (gp_power)
-//   - powerSwitchOn()                  (gp_power)
-//   - batteryCutoffRequested()         (gp_battery)
-//   - bleIsConnected()                 (gp_ble)
-//   - imuWakeTriggered()               (gp_imu)
+//   - powerUsbPresent()                (g_power)
+//   - powerSwitchOn()                  (g_power)
+//   - batteryCutoffRequested()         (g_battery)
+//   - bleIsConnected()                 (g_ble)
+//   - imuWakeTriggered()               (g_imu)
 // Actuates:
-//   - gnssEnd()/gnssSleep()/gnssWake() (gp_gnss)
-//   - imuArmWake()/imuDisarmWake()     (gp_imu)
-//   - powerHoldPeripheralsOff()        (gp_power)
-//   - powerGnssRailOn()/Off()          (gp_power)
-//   - powerEnterDeepSleep()            (gp_power)
+//   - gnssEnd()/gnssSleep()/gnssWake() (g_gnss)
+//   - imuArmWake()/imuDisarmWake()     (g_imu)
+//   - powerHoldPeripheralsOff()        (g_power)
+//   - powerGnssRailOn()/Off()          (g_power)
+//   - powerEnterDeepSleep()            (g_power)
 //   - NVIC_SystemReset()
 // ============================================================================
 
@@ -59,5 +59,5 @@ SystemState stateBegin();
 // Advance the state machine. Call every loop().
 void stateUpdate();
 
-// The current live state (for gp_led + diagnostics to observe).
+// The current live state (for g_led + diagnostics to observe).
 SystemState stateCurrent();

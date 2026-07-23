@@ -44,7 +44,7 @@
 //
 // CTRL1_XL_VAL's full-scale (FS_XL) should match the RUNNING-mode range
 // (IMU_ACCEL_RANGE_G in config.h), not be dropped further for "extra
-// low-power" - lesson from gp_imu.cpp's imuArmWake(): since that's a live
+// low-power" - lesson from g_imu.cpp's imuArmWake(): since that's a live
 // mode switch on an already-running chip (not a cold power-on, unlike this
 // standalone sketch), changing FS_XL creates a persistent scale mismatch in
 // the wake-up detector's raw-code threshold comparison that reliably
@@ -53,7 +53,7 @@
 //
 // All the tunables above are #defines at the top - start here, watch how
 // sensitive it feels, and adjust before porting the final values into
-// config.h / gp_imu.cpp.
+// config.h / g_imu.cpp.
 //
 // Requires: XIAO nRF52840 Sense + USB only (onboard LSM6DS3TR-C + INT1, no
 // wiring needed).

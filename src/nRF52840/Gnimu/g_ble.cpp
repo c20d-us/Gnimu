@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_ble.h"
+#include "g_ble.h"
 #include "config.h"
-#include "gp_battery.h"
-#include "gp_log.h"
+#include "g_battery.h"
+#include "g_log.h"
 #include <bluefruit.h>
 
 // BLE state - private to this file
@@ -108,7 +108,7 @@ void bleBegin() {
   Bluefruit.setTxPower(BLE_TX_POWER_ADV_DBM);
   LOG_PRINTF("✅ BLE TX power set to %d dBm (advertising).\n",
              BLE_TX_POWER_ADV_DBM);
-  // We'll drive the RGB LED from gp_led once that module exists; stop
+  // We'll drive the RGB LED from g_led once that module exists; stop
   // Bluefruit toggling the onboard LED in the meantime.
   Bluefruit.autoConnLed(false);
   Bluefruit.Periph.setConnectCallback(connectCallback);
@@ -145,7 +145,7 @@ void bleSendPacket(uint8_t *data, size_t len) {
 
 void bleUpdate() {
   // Keep the Battery service in step with the cell, but only on a real change
-  // (avoids a needless notify every loop). LED lives in gp_led now.
+  // (avoids a needless notify every loop). LED lives in g_led now.
   const uint8_t pct = batteryGetStatus().percent;
   if (pct != lastBasPercent) {
     blebas.write(pct);

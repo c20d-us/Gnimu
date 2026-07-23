@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_led.h"
+#include "g_led.h"
 #include "config.h"
-#include "gp_battery.h"
-#include "gp_ble.h"
-#include "gp_state.h"
+#include "g_battery.h"
+#include "g_ble.h"
+#include "g_state.h"
 
 // Drive the RGB LED, honoring the active-LOW wiring.
 static void setLed(bool r, bool g, bool b) {

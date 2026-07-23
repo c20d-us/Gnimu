@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gc_ble.h"
+#include "g_ble.h"
 #include "config.h"
 #include <BLE2902.h>
 #include <BLEDevice.h>

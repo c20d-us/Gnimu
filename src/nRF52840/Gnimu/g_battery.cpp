@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_battery.h"
+#include "g_battery.h"
 #include "config.h"
-#include "gp_log.h"
-#include "gp_power.h"
+#include "g_log.h"
+#include "g_power.h"
 
 // Cached battery state
 static BatteryStatus status = {0.0f, 0, false, false, false, false};

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_ubx_helpers.h"
+#include "g_ubx_helpers.h"
 
 // Calculate the payload's checksum using the UBX checksum algorithm (an 8-bit
 // Fletcher checksum). Return the checksum as a UbxChecksum struct.

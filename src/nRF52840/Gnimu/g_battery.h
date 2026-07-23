@@ -20,12 +20,12 @@
 // ============================================================================
 // Battery module - VBAT voltage sense, state-of-charge fuel gauge, and the
 // voltage-only side of the low-voltage cutoff (batteryCutoffRequested()).
-// Pure measurement, contains no policy. The state machine (gp_state) decides
+// Pure measurement, contains no policy. The state machine (g_state) decides
 // when to act on the cutoff request; the rail actions (System OFF etc.) live
-// in gp_power.
+// in g_power.
 //
 // The ADC configuration (resolution + reference + TACQ) is shared with the
-// switch-sense read in gp_power. It is applied by powerBegin() and must be
+// switch-sense read in g_power. It is applied by powerBegin() and must be
 // called before batteryBegin().
 // ============================================================================
 
@@ -59,7 +59,7 @@ BatteryStatus batteryGetStatus();
 
 // True when the fresh sampler peak has been below BATTERY_CUTOFF_V for at
 // least BATTERY_CUTOFF_DEBOUNCE_MS. Voltage-only, no knowledge of USB.//
-// gp_state applies the USB gate before entering DEEP_SLEEP.
+// g_state applies the USB gate before entering DEEP_SLEEP.
 bool batteryCutoffRequested();
 
 // The RaceBox protocol battery byte for payload offset 67:

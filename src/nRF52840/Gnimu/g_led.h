@@ -19,7 +19,7 @@
 
 // ============================================================================
 // Status LED module - drives the XIAO's onboard RGB LED to reflect system
-// state. Consumes stateCurrent() (gp_state) plus the observable battery and
+// state. Consumes stateCurrent() (g_state) plus the observable battery and
 // connection state (batteryGetStatus() / bleIsConnected()).
 //
 // Priority, highest first:

@@ -20,12 +20,12 @@
 // ============================================================================
 // Power module - rail mechanisms and rail/switch sensing.
 //
-// Owns the primitives the state machine (gp_state) actuates:
+// Owns the primitives the state machine (g_state) actuates:
 //   - USB/VBUS presence
 //   - Slide-switch position via the A4 divider (load-independent presence)
 //   - GNSS EN + TX drive (rail on/off + phantom back-feed prevention)
 //   - IMU power pin drive
-//   - LED pin drive when gp_led isn't yet initialized (boot / halt)
+//   - LED pin drive when g_led isn't yet initialized (boot / halt)
 //   - powerHoldPeripheralsOff() - unconditional held-off entry action for
 //     boot, BATTERY_WAIT, and DEEP_SLEEP; drives peripheral controls directly
 //     so it can run before any other module has begun.

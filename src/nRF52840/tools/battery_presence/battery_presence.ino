@@ -18,7 +18,7 @@
 // DIAGNOSTIC: battery presence (switch-sense)
 //
 // Reads the slide switch's spare-pole divider tap on A4, the authoritative
-// battery-present signal shipped in gp_power.cpp. The 510k/510k divider taps
+// battery-present signal shipped in g_power.cpp. The 510k/510k divider taps
 // ~2 V (half of the ~4.2 V node) when the switch is OFF, and is pulled to
 // ~0 V when ON.
 //

@@ -37,7 +37,7 @@
 //     cell's true resting voltage. THIS is the number you want for
 //     `BATTERY_DISCHARGE_CURVE`'s 100% anchor.
 //
-// Mirrors gp_battery.cpp's actual sampling method (SAADC config, divider
+// Mirrors g_battery.cpp's actual sampling method (SAADC config, divider
 // enable/disable, peak-of-N per reading) so results are directly comparable
 // to what the real firmware would report - not a different measurement.
 //
@@ -62,7 +62,7 @@
 
 using namespace Adafruit_LittleFS_Namespace;
 
-// --- GNSS rail hold-off (mirrors gp_power.cpp's powerHoldPeripheralsOff()) ---
+// --- GNSS rail hold-off (mirrors g_power.cpp's powerHoldPeripheralsOff()) ---
 // The TPS63020's EN pad has its own onboard pullup, so the GNSS rail defaults
 // to ENABLED when this pin is left floating - without this, the ~30 mA GNSS
 // load would run the whole test and contaminate every VBAT reading. D6 must
@@ -88,7 +88,7 @@ static void gnssRailOff() {
 // delay in seeing it change.
 static const uint8_t USB_INDICATOR_LED_PIN = LED_GREEN;
 
-// --- VBAT divider + SAADC config (mirrors config.h / gp_battery.cpp) ---
+// --- VBAT divider + SAADC config (mirrors config.h / g_battery.cpp) ---
 #ifdef PIN_VBAT
 #define BATTERY_ADC_PIN PIN_VBAT
 #else
@@ -215,13 +215,13 @@ static bool historyMinMaxSince(unsigned long sinceMs, uint16_t *minMv,
 }
 
 // --- VBAT sampler: enable divider, take BATTERY_SAMPLE_COUNT paced reads,
-// keep the peak (matches gp_battery.cpp's peak-for-SoC rationale), disable
+// keep the peak (matches g_battery.cpp's peak-for-SoC rationale), disable
 // divider. Blocking (~60ms) - negligible next to any of this tool's sample
 // intervals. ---
 static uint16_t readVbatMv(bool usb) {
   digitalWrite(BATTERY_ADC_ENABLE_PIN, LOW); // active-low: connect divider
 
-  // gp_battery.cpp never needs an explicit settle delay here because its
+  // g_battery.cpp never needs an explicit settle delay here because its
   // poll cadence (250ms) never leaves the divider disabled for more than a
   // fraction of a second. This tool disables it for up to 5 MINUTES between
   // reads during the charging phase - after that long floating, the divider
@@ -321,7 +321,7 @@ void setup() {
 
   if (!InternalFS.begin()) {
     // First-time use on this board (or a corrupt filesystem) - format once.
-    // Safe here (unlike gp_storage's firmware policy): this is a dedicated
+    // Safe here (unlike g_storage's firmware policy): this is a dedicated
     // bench tool, not production code that must never silently destroy data.
     if (Serial) {
       Serial.println("InternalFS mount failed - formatting...");

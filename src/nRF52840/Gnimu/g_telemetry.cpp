@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "gp_telemetry.h"
+#include "g_telemetry.h"
 #include "config.h"
-#include "gp_battery.h"
-#include "gp_ble.h"
-#include "gp_gnss.h"
-#include "gp_imu.h"
-#include "gp_log.h"
-#include "gp_ubx_helpers.h"
+#include "g_battery.h"
+#include "g_ble.h"
+#include "g_gnss.h"
+#include "g_imu.h"
+#include "g_log.h"
+#include "g_ubx_helpers.h"
 #include <chrono>
 #include <cstdint>
 #include <string.h>
