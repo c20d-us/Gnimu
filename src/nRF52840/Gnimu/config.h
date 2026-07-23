@@ -250,23 +250,19 @@
 // the single instance: it expands to an initializer list of
 // {voltage, percent} pairs. Must be sorted high voltage -> low.
 //
-// This is a *typical* single-cell LiPo resting-voltage curve at 5% steps,
-// anchored to the well-established points (4.20V full / ~3.7V nominal /
-// ~3.4V effectively dead). It is NOT a measurement of a specific cell. Two
-// caveats worth knowing: (1) the curve is nearly flat from ~80% to ~20%, so
-// voltage is a weak state-of-charge proxy in the middle regardless of table
-// resolution. Finer steps interpolate the ambiguity, they don't remove it.
-// (2) VBAT is read under load here, so it sits slightly below the resting
-// OCV these values assume (reads a bit pessimistic). For real accuracy,
-// characterize your own cell via a controlled discharge.
-// Refs: Adafruit "Li-Ion & LiPoly Battery Voltages"; Nordic DevZone
-// "State of Charge vs Open Circuit Voltage Lookup Table".
-#define BATTERY_DISCHARGE_CURVE                                                \
-  {{4.20f, 100}, {4.15f, 95}, {4.11f, 90}, {4.08f, 85}, {4.02f, 80},           \
-   {3.98f, 75},  {3.95f, 70}, {3.91f, 65}, {3.87f, 60}, {3.85f, 55},           \
-   {3.84f, 50},  {3.82f, 45}, {3.80f, 40}, {3.78f, 35}, {3.77f, 30},           \
-   {3.75f, 25},  {3.73f, 20}, {3.71f, 15}, {3.68f, 10}, {3.60f, 5},            \
-   {3.40f, 1},   {3.37f, 0}}
+// Deliberately simplified to just two endpoints - a straight line, not a
+// real LiPo discharge curve. 3.90V/100% is the actual measured resting
+// voltage of this specific 900mAh pack after a full charge (bench-logged via
+// src/tools/battery_log, 2026-07); 3.37V/0% matches BATTERY_CUTOFF_V exactly.
+// Both endpoints are real for THIS cell; the straight line between them is
+// not - real cells have a flat plateau through the middle of the range
+// (roughly 20-80% SoC often sits in a narrow ~3.7-3.85V band) with much
+// steeper drops near both ends, so displayed SoC% will read pessimistically
+// low through the middle of a discharge. Accepted trade-off for now: this
+// doesn't touch the low-voltage cutoff (a direct voltage compare against
+// BATTERY_CUTOFF_V, not derived from this curve), only the informational
+// display. Revisit with a real multi-point discharge-curve log later.
+#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.37f, 0}}
 
 // ----------------------------------------------------------------------------
 // --- Power ---
