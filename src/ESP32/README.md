@@ -19,15 +19,15 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## What it does
 
-- Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at up to **25 Hz**.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, smooths it with a transient-aware filter, and decimates it to the 25Hz transmission rate — see [IMU smoothing](#imu-smoothing).
+- Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at up to **25 Hz** while a BLE client is connected (throttled to 1Hz while idle to keep the fix warm without the full load).
+- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, subtracts per-chip zero-point offsets, smooths it with a transient-aware filter, and decimates it to the 25Hz transmission rate — see [IMU smoothing](#imu-smoothing).
 - Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client at or near 25Hz.
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
 - Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
 
 ```mermaid
 flowchart LR
-    GNSS["u-blox GNSS module"] -- "UART · 460800 baud" --> ESP32["ESP32"]
+    GNSS["u-blox GNSS module"] -- "UART · 115200 baud" --> ESP32["ESP32"]
     IMU["accel + gyro"] -- "I²C" --> ESP32
     ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
 ```
@@ -176,13 +176,18 @@ All user-tunable settings live in [`Gnimu/config.h`](Gnimu/config.h), grouped in
 | Setting | Purpose |
 |---------|---------|
 | `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
-| `GNSS_RX_PIN`, `GNSS_TX_PIN`, `ONBOARD_LED_PIN` | Hardware pin assignments. |
-| `GNSS_BAUD` | Serial baud rates. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
-| `MAX_NAVIGATION_RATE` | GNSS update rate in Hz (1–25). |
+| `GNSS_RX_PIN`, `GNSS_TX_PIN`, `LED_ONBOARD_PIN` | Hardware pin assignments. |
+| `GNSS_BAUD` | GNSS serial baud rate. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
+| `GNSS_MAX_NAVIGATION_RATE_HZ`, `GNSS_IDLE_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25) while a BLE client is connected, and the reduced rate used while nobody is listening. |
+| `GNSS_SV_MINELEV_DEG` | Ignore satellites below this elevation angle (anti-multipath). |
 | `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
-| `ACCEL_ALPHA`, `GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
-| `ACCEL_TRANSIENT_THRESHOLD`, `GYRO_TRANSIENT_THRESHOLD` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
+| `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
+| `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
+| `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2`, `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
+| `IMU_ACCEL_OFFSET_*_MPS2`, `IMU_GYRO_OFFSET_*_RADPS` | Per-chip zero-point corrections in the raw sensor frame, subtracted before smoothing. Measure once per board with [`tools/imu_calibration/`](tools/imu_calibration/imu_calibration.ino) and paste the printed values. |
+| `IMU_SWAP_XY`, `IMU_SIGN_X/Y/Z` | Mounting-orientation remap into the vehicle frame — covers any 90° yaw + right-side-up/upside-down flat mount. Defaults leave the sensor frame untouched. |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
+| `LOG_ENABLED` | Master switch for all serial diagnostic output. `0` = **silent build**: every `LOG_*` call vanishes at compile time and `setup()` skips the wait for the serial port. |
 
 Several values are checked with `static_assert` at compile time, so an invalid configuration fails the build with a clear message instead of misbehaving on the device.
 
@@ -190,9 +195,9 @@ Several values are checked with `static_assert` at compile time, so an invalid c
 
 Raw accelerometer and gyroscope samples are read at 100Hz and run through a per-axis filter (one instance each for accel X/Y/Z and gyro X/Y/Z) before being decimated to the 25Hz transmission rate:
 
-- Each axis tracks an EMA (exponential moving average) baseline (`ACCEL_ALPHA` / `GYRO_ALPHA`) for a smooth, low-noise signal.
+- Each axis tracks an EMA (exponential moving average) baseline (`IMU_ACCEL_ALPHA` / `IMU_GYRO_ALPHA`) for a smooth, low-noise signal.
 - Within each transmission window, the axis also tracks the largest raw deviation from that baseline.
-- If the deviation exceeds `ACCEL_TRANSIENT_THRESHOLD` / `GYRO_TRANSIENT_THRESHOLD`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
+- If the deviation exceeds `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2` / `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
 
 This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `config.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
 
