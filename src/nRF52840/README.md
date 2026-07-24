@@ -89,6 +89,13 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
   </tr>
   <tr>
     <td>
+        <strong><a href="https://www.amazon.com/dp/B0CNGJTKNK">USB-C right-angle adapter</a></strong>
+    </td>
+    <td>
+        USB-C right-angle adapter used to help mount the XIAO in the project box. The adapter and XIAO module are affixed to the project box's lid and held in place with hardening putty. The socket of the adapter is exposed on the side of the project box. I took this approach as the XIAO does not have integrated standoff mounting holes, and I wanted to be able to mount the module in a way to both expose the USB-C port as well as keep the reset button and module LED close enough to a surface of the box to be useful.
+    </td>
+  <tr>
+    <td>
         <strong><a href="https://www.amazon.com/dp/B0BQYPKRQS">Project box</a></strong>
     </td>
     <td>
