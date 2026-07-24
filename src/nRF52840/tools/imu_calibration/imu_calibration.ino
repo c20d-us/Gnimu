@@ -28,20 +28,21 @@
 // Accel Z is calibrated with the LED face pointing +Z UP on a level surface,
 // so gravity (1.0 g) is subtracted from the average before reporting.
 //
-// Method:
+// Method (fully hands-off - set the device down level before power-on):
 //   1. Warm up the IMU under normal operating settings (thermal stabilization).
-//   2. Wait for the user to type 'c' when the device is confirmed still + level.
-//   3. Average NUM_SAMPLES raw reads per axis at IMU_SAMPLE_INTERVAL_MS pacing.
-//   4. Print the six offsets. Copy them into config.h's IMU_*_OFFSET_* defines
-//      and reflash the main sketch.
+//   2. Run calibration sessions forever: average NUM_SAMPLES raw reads per
+//      axis at IMU_SAMPLE_INTERVAL_MS pacing, print the six offsets (plus
+//      deltas vs the previous session), wait SESSION_GAP_MS, repeat.
+//   3. Once consecutive sessions agree, copy the latest offsets into
+//      config.h's IMU_*_OFFSET_* defines and reflash the main sketch.
 //
 // Requires: XIAO nRF52840 Sense; level bench surface; USB for serial. The
-// device must be still throughout the sample window (accidental knocks skew
+// device must be still throughout each sample window (accidental knocks skew
 // the accel offsets more than the average can smooth away).
 // ============================================================================
 
-#include <Arduino.h>
 #include <Adafruit_TinyUSB.h> // Serial (USB CDC) needs TinyUSB linked
+#include <Arduino.h>
 #include <LSM6DS3.h>
 
 // ----------------------------------------------------------------------------
@@ -64,7 +65,8 @@
 // measurement. The MPU6050 was famously drifty and used ~20 min; the LSM6DS3
 // is far better in that regard but a few minutes is still cheap insurance.
 static const unsigned long WARMUP_MS = 5UL * 60UL * 1000UL; // 5 minutes
-static const int NUM_SAMPLES = 5000; // ~50 s at 100 Hz - excellent averaging
+static const int NUM_SAMPLES = 10000; // ~100 s at 100 Hz - excellent averaging
+static const unsigned long SESSION_GAP_MS = 60UL * 1000UL; // between sessions
 
 // LSM6DS3 driver on the shared I2C bus.
 static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
@@ -100,8 +102,20 @@ static void imuBringUp() {
                           LSM6DS3_ACC_GYRO_IF_INC_ENABLED);
 }
 
-static void performCalibration() {
-  Serial.println("\nStarting calibration - keep device perfectly still...");
+// Session results live at file scope (not passed as parameters) because the
+// Arduino preprocessor emits function prototypes above type definitions,
+// which breaks user types in signatures.
+struct CalOffsets {
+  float ax, ay, az;
+  float gx, gy, gz;
+};
+static CalOffsets curOff;
+static CalOffsets prevOff;
+
+static void performCalibration(int session) {
+  Serial.printf(
+      "\n=== Session %d: sampling - keep device perfectly still ===\n",
+      session);
 
   double sumAx = 0, sumAy = 0, sumAz = 0;
   double sumGx = 0, sumGy = 0, sumGz = 0;
@@ -120,37 +134,44 @@ static void performCalibration() {
     sumGy += myIMU.readFloatGyroY();
     sumGz += myIMU.readFloatGyroZ();
 
-    if (i > 0 && i % 500 == 0) {
+    if (i > 0 && i % 1000 == 0) {
       Serial.printf(" [%d/%d]", i, NUM_SAMPLES);
     }
   }
 
   // Averages. Accel Z has gravity subtracted (device is +Z-up on a level
   // surface, so its true value at rest is +1.0 g).
-  const float offAx = (float)(sumAx / NUM_SAMPLES);
-  const float offAy = (float)(sumAy / NUM_SAMPLES);
-  const float offAz = (float)(sumAz / NUM_SAMPLES) - 1.0f;
-  const float offGx = (float)(sumGx / NUM_SAMPLES);
-  const float offGy = (float)(sumGy / NUM_SAMPLES);
-  const float offGz = (float)(sumGz / NUM_SAMPLES);
+  curOff.ax = (float)(sumAx / NUM_SAMPLES);
+  curOff.ay = (float)(sumAy / NUM_SAMPLES);
+  curOff.az = (float)(sumAz / NUM_SAMPLES) - 1.0f;
+  curOff.gx = (float)(sumGx / NUM_SAMPLES);
+  curOff.gy = (float)(sumGy / NUM_SAMPLES);
+  curOff.gz = (float)(sumGz / NUM_SAMPLES);
+}
 
-  Serial.println("\n\n--- CALIBRATION RESULTS ---");
+static void printResults(int session) {
+  Serial.printf("\n\n--- SESSION %d RESULTS ---\n", session);
   Serial.println("Paste these lines into config.h's IMU-offsets section:");
   Serial.println("-------------------------------------------");
-  Serial.printf("#define IMU_ACCEL_OFFSET_X_G  %+.6ff\n", offAx);
-  Serial.printf("#define IMU_ACCEL_OFFSET_Y_G  %+.6ff\n", offAy);
-  Serial.printf("#define IMU_ACCEL_OFFSET_Z_G  %+.6ff\n", offAz);
-  Serial.printf("#define IMU_GYRO_OFFSET_X_DPS %+.6ff\n", offGx);
-  Serial.printf("#define IMU_GYRO_OFFSET_Y_DPS %+.6ff\n", offGy);
-  Serial.printf("#define IMU_GYRO_OFFSET_Z_DPS %+.6ff\n", offGz);
+  Serial.printf("#define IMU_ACCEL_OFFSET_X_G  %+.6ff\n", curOff.ax);
+  Serial.printf("#define IMU_ACCEL_OFFSET_Y_G  %+.6ff\n", curOff.ay);
+  Serial.printf("#define IMU_ACCEL_OFFSET_Z_G  %+.6ff\n", curOff.az);
+  Serial.printf("#define IMU_GYRO_OFFSET_X_DPS %+.6ff\n", curOff.gx);
+  Serial.printf("#define IMU_GYRO_OFFSET_Y_DPS %+.6ff\n", curOff.gy);
+  Serial.printf("#define IMU_GYRO_OFFSET_Z_DPS %+.6ff\n", curOff.gz);
   Serial.println("-------------------------------------------");
-  Serial.println("Sanity check: |accel| offsets are typically <0.1 g, gyro <5 deg/s.");
-  Serial.println("Values much larger than that suggest the device wasn't level or still.");
-  Serial.println("System halted. Power-cycle to re-run.");
-
-  while (1) {
-    delay(100);
+  if (session > 1) {
+    Serial.printf("Delta vs session %d:  accel %+.6f %+.6f %+.6f g\n",
+                  session - 1, curOff.ax - prevOff.ax, curOff.ay - prevOff.ay,
+                  curOff.az - prevOff.az);
+    Serial.printf("                      gyro  %+.6f %+.6f %+.6f dps\n",
+                  curOff.gx - prevOff.gx, curOff.gy - prevOff.gy,
+                  curOff.gz - prevOff.gz);
   }
+  Serial.println(
+      "Sanity check: |accel| offsets are typically <0.1 g, gyro <5 deg/s.");
+  Serial.println(
+      "Values much larger than that suggest the device wasn't level or still.");
 }
 
 // ----------------------------------------------------------------------------
@@ -161,13 +182,17 @@ void setup() {
   }
 
   Serial.println("=== Gnimu - IMU calibration ===");
-  Serial.println("Goal: measure per-axis zero-point offsets (raw sensor frame).");
-  Serial.println("Setup:");
-  Serial.println("  1. Mount the device on a level surface, LED face UP (+Z up).");
-  Serial.println("  2. Do not touch it once warmup starts.");
-  Serial.printf("  3. Wait for the %lu-minute warmup to complete.\n",
-                WARMUP_MS / 60000UL);
-  Serial.println("  4. Confirm device is still + level, then type 'c'.");
+  Serial.println(
+      "Goal: measure per-axis zero-point offsets (raw sensor frame).");
+  Serial.println("Fully hands-off:");
+  Serial.println(
+      "  1. Device must already be on a level surface, LED face UP (+Z up).");
+  Serial.println("  2. Do not touch it from here on.");
+  Serial.printf(
+      "  3. After a %lu-minute warmup, %d-sample sessions run forever\n",
+      WARMUP_MS / 60000UL, NUM_SAMPLES);
+  Serial.printf("     with %lu s between them. Power-cycle to stop.\n",
+                SESSION_GAP_MS / 1000UL);
 
   imuBringUp();
   Serial.println("✅ IMU up.");
@@ -184,14 +209,16 @@ void setup() {
     delay(500);
   }
   Serial.println("\nWarmup complete.");
-  Serial.println("Confirm the device is still + level, then type 'c' to start.");
 }
 
 void loop() {
-  if (Serial.available() > 0) {
-    const char c = Serial.read();
-    if (c == 'c' || c == 'C') {
-      performCalibration();
-    }
-  }
+  static int session = 0;
+
+  session++;
+  performCalibration(session);
+  printResults(session);
+  prevOff = curOff;
+
+  Serial.printf("Next session in %lu s...\n", SESSION_GAP_MS / 1000UL);
+  delay(SESSION_GAP_MS);
 }

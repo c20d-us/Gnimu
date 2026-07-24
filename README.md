@@ -4,9 +4,9 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#variants)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at or near 25Hz.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at or near 25Hz.
 
-It's a low-cost, hackable platform for experimenting with GNSS+IMU data logging, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
+It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
 
 I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
 
@@ -19,17 +19,17 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## Variants
 
-This repo hosts two builds of the same idea, targeting different microcontrollers and use cases. Both advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app works with either one.
+This repo hosts two builds of the same concept, targeting different microcontrollers and use patterns. Both advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app should work with either one.
 
 | | [**Gnimu ESP32**](src/ESP32/README.md) | [**Gnimu nRF52840**](src/nRF52840/README.md) |
 |---|---|---|
-| MCU | ESP32 dev board | Seeed XIAO nRF52840 Sense |
-| Power | USB, always-on | 3.7V LiPo battery, with charge/idle/sleep power states |
+| MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense |
+| Power | USB-powered | 3.7V LiPo battery or USB |
 | GNSS | HGLRC M100-5883 | HGLRC M100-5883 |
 | IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C |
 | Best for | A simple, always-plugged-in build | A portable, battery-powered build |
 
-Start with [`src/ESP32/README.md`](src/ESP32/README.md) or [`src/nRF52840/README.md`](src/nRF52840/README.md) depending on which hardware you're building — each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
+Start with [`src/ESP32/README.md`](src/ESP32/README.md) or [`src/nRF52840/README.md`](src/nRF52840/README.md) depending on which hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
 
 ---
 

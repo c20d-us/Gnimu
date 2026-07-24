@@ -87,13 +87,18 @@
 // src/tools/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
 // Bench-calibrated 2026-07-23 (average of 4 imu_calibration runs; per-run
-// spread was < 0.001g accel / < 0.03dps gyro).
-#define IMU_ACCEL_OFFSET_X_G -0.015826f
-#define IMU_ACCEL_OFFSET_Y_G -0.001984f
-#define IMU_ACCEL_OFFSET_Z_G +0.025455f
-#define IMU_GYRO_OFFSET_X_DPS +0.596595f
-#define IMU_GYRO_OFFSET_Y_DPS -1.487012f
-#define IMU_GYRO_OFFSET_Z_DPS +0.671001f
+// spread was < 0.001g accel / < 0.03dps gyro). Two further trims on top of
+// that, both from in-case full-firmware behavior the bench sketch can't see
+// (it only powers the IMU, not GNSS/BLE, so it misses production's
+// thermal/electrical load):
+//   * Z accel: +0.0075g (rest reading sat at 0.992-0.993g).
+//   * Z gyro:  +0.045dps (Gnimu Monitor yaw rate sat at +0.02..0.07dps).
+#define IMU_ACCEL_OFFSET_X_G +0.004967f
+#define IMU_ACCEL_OFFSET_Y_G +0.003585f
+#define IMU_ACCEL_OFFSET_Z_G +0.019085f
+#define IMU_GYRO_OFFSET_X_DPS +0.611464f
+#define IMU_GYRO_OFFSET_Y_DPS -1.458232f
+#define IMU_GYRO_OFFSET_Z_DPS +0.609842f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
@@ -299,7 +304,7 @@
 // When 0, USB presence is ignored and the device stays in RUNNING while plugged
 // in. Use this mode for bench development so a plugged-in device continues
 // streaming/serving BLE.
-#define STATE_CHARGE_ONLY_ON_USB 1
+#define STATE_CHARGE_ONLY_ON_USB 0
 
 // --- LIGHT_SLEEP timing (Phase 2) ---
 // Defensive power-shedding for a device left running with no BLE client
