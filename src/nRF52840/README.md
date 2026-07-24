@@ -165,7 +165,19 @@ Photos of the reference build.
       <img src="../../images/nRF52840/bench-testing.jpeg" alt="Bench testing on a breadboard" width="340"><br>
       <sub>Bench testing on a breadboard.</sub><br>&nbsp;
     </td>
-    <td align="center" valign="top" width="50%">&nbsp;
+    <td>
+        <img src="../../images/nRF52840/inside-view.jpeg" alt="Components wired and installed in case, held firm by hardening putty." width="340"><br>
+        <sub>Components wired and installed in case, held firm by hardening putty.</sub><br>&nbsp;
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="../../images/nRF52840/device-complete-right.jpeg" alt="The completed device, powered on." width="340"><br>
+      <sub>The completed device, powered on and showing USB port.</sub><br>&nbsp;
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="../../images/nRF52840/device-complete-left.jpeg" alt="The completed device, powered on." width="340"><br>
+      <sub>The completed device, powered on and showing slide switch.</sub><br>&nbsp;
     </td>
   </tr>
 </table>

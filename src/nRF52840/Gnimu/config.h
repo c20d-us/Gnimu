@@ -115,7 +115,7 @@
 // Vehicle forward/lateral assignment (which of X/Y is which, and their
 // final signs) still needs an in-car drive test once mounted.
 #define IMU_SWAP_XY false // true if raw X axis is lateral, not longitudinal
-#define IMU_SIGN_X +1.0f
+#define IMU_SIGN_X -1.0f
 #define IMU_SIGN_Y +1.0f
 #define IMU_SIGN_Z +1.0f
 
