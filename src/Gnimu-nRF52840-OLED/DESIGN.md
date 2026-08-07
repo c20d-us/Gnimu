@@ -1,6 +1,6 @@
-# Gnimu nRF52840-LCD — Design Notes
+# Gnimu nRF52840-OLED — Design Notes
 
-Design reference for **Gnimu nRF52840-LCD**, an evolution of the battery-powered [Gnimu nRF52840](../Gnimu-nRF52840/DESIGN.md) build that replaces the RGB status LED with a small OLED display — able to show richer state and GNSS-quality information than a blink pattern can carry.
+Design reference for **Gnimu nRF52840-OLED**, an evolution of the battery-powered [Gnimu nRF52840](../Gnimu-nRF52840/DESIGN.md) build that replaces the RGB status LED with a small OLED display — able to show richer state and GNSS-quality information than a blink pattern can carry.
 
 > **Status: pre-implementation.** This tree is currently a byte-for-byte fork of `nRF52840/Gnimu` (minus the tools sketches). No display code has been written yet — this document records the hardware and architecture decisions made ahead of that work, and the open questions still to resolve. See [Open items](#7-open-items).
 
@@ -59,7 +59,7 @@ Display uses the XIAO's **external I2C bus** (`Wire`, pins **D4 = SDA / D5 = SCL
 | **3V3** | Display **VCC** | Always-on regulated rail — see [§3](#3-power-architecture) for why not the TPS rail |
 | **GND** | Display **GND** | |
 
-Bench-confirmed on breadboard 2026-08-04 (both modules, [`oled_probe`](../tools/nRF52840-LCD/oled_probe/oled_probe.ino)): the panel runs correctly on this wiring at **I2C address 0x3C**. That address becomes a `config.h` constant when `g_display` lands.
+Bench-confirmed on breadboard 2026-08-04 (both modules, [`oled_probe`](../tools/nRF52840-OLED/oled_probe/oled_probe.ino)): the panel runs correctly on this wiring at **I2C address 0x3C**. That address becomes a `config.h` constant when `g_display` lands.
 
 ### The switch-sense pin has to move: A4 *is* SDA
 
@@ -139,7 +139,7 @@ Neither library's resource cost matters here. The 1KB framebuffer sits against 2
 
 ### Measured update cost
 
-Bench-measured 2026-08-04 at 400kHz via [`oled_bench`](../tools/nRF52840-LCD/oled_bench/oled_bench.ino). The reference budget is the **~5.5ms Serial1 RX window** from the base design — the ~64-byte UART buffer at `GNSS_BAUD` 115200 — since any blocking write longer than that drops NAV-PVT bytes and craters the observed rate.
+Bench-measured 2026-08-04 at 400kHz via [`oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino). The reference budget is the **~5.5ms Serial1 RX window** from the base design — the ~64-byte UART buffer at `GNSS_BAUD` 115200 — since any blocking write longer than that drops NAV-PVT bytes and craters the observed rate.
 
 | Transfer | Bytes | Time | vs. 5.5ms budget |
 |---|---|---|---|
@@ -168,7 +168,7 @@ Three conclusions:
 
 ### Screen layout
 
-**Settled 2026-08-04** on hardware via [`oled_layout`](../tools/nRF52840-LCD/oled_layout/oled_layout.ino), which renders every screen below with fake data. Layout at this size can't be judged on paper — legibility and density have to be looked at on the panel — so that sketch is the reference implementation, not this prose.
+**Settled 2026-08-04** on hardware via [`oled_layout`](../tools/nRF52840-OLED/oled_layout/oled_layout.ino), which renders every screen below with fake data. Layout at this size can't be judged on paper — legibility and density have to be looked at on the panel — so that sketch is the reference implementation, not this prose.
 
 **Structure: a persistent status bar over a per-state body.** The screen splits at y=12. The bar is identical everywhere the cell is in circuit; the body shows only what the current state can actually know. That per-state split is the thing the RGB LED could never do — it shows what's relevant *now* rather than encoding every condition into one blink pattern.
 
@@ -365,11 +365,11 @@ The scheme is platform-neutral and equally applicable to the base nRF52840 tree 
 ## 7. Open items
 
 - [ ] Decide: **fully replace the RGB LED, or keep it as a redundant peripheral-vision indicator** (e.g. for low-battery critical, glanceable while driving without reading text)? Not yet decided.
-- [x] **Bench bring-up on both modules (2026-08-04)** via [`oled_probe`](../tools/nRF52840-LCD/oled_probe/oled_probe.ino): both the white and blue units enumerate at **I2C address 0x3C** (not 0x3D — no per-board variation), come up on the XIAO's 3V3 rail over D4/D5, and render correctly. Geometry confirmed via the frame / corner-tick / crosshair pattern, so the panel is genuinely 128×64 and the `SSD1306_128X64_NONAME` controller variant is right. Fonts and the Open Iconic Bluetooth glyph both render. **White chosen** over blue — also the better bet for the outstanding sunlight-readability question, being the brighter panel. Note the bus was not separately characterized (pull-up values unmeasured); it simply works, which is sufficient unless more I2C devices are ever added.
-- [x] **Display library chosen: u8g2 (2026-08-04)** via [`oled_bench`](../tools/nRF52840-LCD/oled_bench/oled_bench.ino). `updateDisplayArea()` validated visually over 400 frames (no tearing or corruption outside the region) and measured affordable, while a full frame costs 31ms against the ~5.5ms GNSS RX budget — which rules out `Adafruit_SSD1306`, whose only path to the panel is `display()`. Numbers, cost model, and the three design consequences in [§5](#measured-update-cost).
+- [x] **Bench bring-up on both modules (2026-08-04)** via [`oled_probe`](../tools/nRF52840-OLED/oled_probe/oled_probe.ino): both the white and blue units enumerate at **I2C address 0x3C** (not 0x3D — no per-board variation), come up on the XIAO's 3V3 rail over D4/D5, and render correctly. Geometry confirmed via the frame / corner-tick / crosshair pattern, so the panel is genuinely 128×64 and the `SSD1306_128X64_NONAME` controller variant is right. Fonts and the Open Iconic Bluetooth glyph both render. **White chosen** over blue — also the better bet for the outstanding sunlight-readability question, being the brighter panel. Note the bus was not separately characterized (pull-up values unmeasured); it simply works, which is sufficient unless more I2C devices are ever added.
+- [x] **Display library chosen: u8g2 (2026-08-04)** via [`oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino). `updateDisplayArea()` validated visually over 400 frames (no tearing or corruption outside the region) and measured affordable, while a full frame costs 31ms against the ~5.5ms GNSS RX budget — which rules out `Adafruit_SSD1306`, whose only path to the panel is `display()`. Numbers, cost model, and the three design consequences in [§5](#measured-update-cost).
 - [ ] Bench-measure `DISPLAYOFF` sleep current, plus the all-pixels-on and controller-active baselines (§3). `oled_probe` modes 4/5/6 hold each state for a meter. **Deliberately deferred 2026-08-04** — not blocking any current work; needed only when the load-switch question in §3 is reopened.
 - [x] **Bright-light readability judged sufficient (2026-08-04)** — `oled_probe` mode `r` (large, sparse, max contrast) held next to a window in bright direct sun: **washed out but still legible**, and accepted as good enough for this use case. This retires the original risk that made OLED a questionable pick here. Caveat on the test conditions for the record: this was indoors through glass, not the harsher case of the unit sitting on a dashboard in unfiltered sun. If that turns out worse than acceptable in practice, the fallback is the Sharp Memory LCD noted in [§2](#display-alternatives-considered-and-not-chosen-for-v1) — a real but non-trivial change (SPI instead of I2C, plus VCOM drive).
-- [x] **On-screen layout designed and validated on hardware (2026-08-04)** — status bar over per-state bodies, five screens, 126×62 layout area with a positive-only pixel-shift gutter. Worst-case field widths and the full shift range both checked clean on the panel. Spec in [§5](#screen-layout); reference implementation in [`oled_layout`](../tools/nRF52840-LCD/oled_layout/oled_layout.ino).
+- [x] **On-screen layout designed and validated on hardware (2026-08-04)** — status bar over per-state bodies, five screens, 126×62 layout area with a positive-only pixel-shift gutter. Worst-case field widths and the full shift range both checked clean on the panel. Spec in [§5](#screen-layout); reference implementation in [`oled_layout`](../tools/nRF52840-OLED/oled_layout/oled_layout.ino).
 - [x] **Displayed fields mapped to data sources (2026-08-04)** — see [§5](#data-sources-for-the-displayed-fields). Everything the layout shows already exists except two items, both traps rather than work: the PVT rate is currently computed only inside `#if LOG_ENABLED` and so would read zero in a shipping silent build, and `gnssConsumePvt()` is consume-once, so `g_display` needs a non-consuming `gnssLatestPvt()` rather than racing `g_telemetry` for each epoch.
 - [x] **Both plumbing changes landed across all three trees (2026-08-04), compiles clean on each.** `gnssLatestPvt()` added to `g_gnss` (applied by hand to ESP32, whose `g_gnss` is platform-specific, with comment text lifted verbatim so the trees read identically), and PVT/BLE rate accounting hoisted into an unconditional `updateRates()` in `g_telemetry` behind getters. `g_telemetry.h`/`.cpp` are in `tools/check_common.sh`'s byte-identical set, so those copies are identical by construction and the check passes; `g_gnss.*` is not in that set, so its parity is deliberate rather than enforced — keep it in mind when either tree's GNSS interface changes again.
 - [x] **D4/D5 conflict found and resolved in config (2026-08-04) — A4 *is* SDA on this board.** The base design's switch-sense divider sits on A4, which `variant.h` defines as the same pin as `PIN_WIRE_SDA`. `POWER_SWITCH_SENSE_PIN` moved to **A1** in this tree only; see [§4](#the-switch-sense-pin-has-to-move-a4-is-sda). Still needs bench confirmation once wired: that the divider reads clean on A1 (0–9mV ON / ~2.08V OFF, per the base design's characterization) and that the I2C bus is healthy with the divider no longer on it.
@@ -377,7 +377,7 @@ The scheme is platform-neutral and equally applicable to the base nRF52840 tree 
 - [ ] **Implement the generalized axis remap** (§6): `_SRC`/`_SIGN` macros, the determinant `static_assert`, retire `IMU_SWAP_XY`, update `remapAxes()`.
 - [ ] **Derive this build's axis map** once the end-wall mount is final, via the static-pose procedure in §6.
 - [ ] **Re-run `imu_calibration` and re-derive the accel Z trim** for the new mounting (§6 — the existing +0.0075g trim is orientation-dependent).
-- [ ] Copy `imu_calibration` / `imu_tiltmap` into this tree's `tools/`, or decide the IMU tools stay single-sourced in the base tree and say so in the README. (`tools/` is no longer empty — it now holds [`oled_probe`](../tools/nRF52840-LCD/oled_probe/oled_probe.ino), which is display-specific and belongs only to this tree.)
+- [ ] Copy `imu_calibration` / `imu_tiltmap` into this tree's `tools/`, or decide the IMU tools stay single-sourced in the base tree and say so in the README. (`tools/` is no longer empty — it now holds [`oled_probe`](../tools/nRF52840-OLED/oled_probe/oled_probe.ino), which is display-specific and belongs only to this tree.)
 - [ ] Decide whether to migrate the **base nRF52840 tree** to the same remap scheme, or accept the divergence (§6, *Where this should live*).
 - [x] **Recorded the RaceBox protocol-figure discrepancy and the corrected axis map in the base tree's DESIGN.md (2026-08-04)** — its §4 now carries the as-built orientation, the bench-verified signs, and the output-frame evidence, and the superseded drive-test open item is marked as such.
 - [ ] Check the **ESP32 tree's** axis signs independently — it still carries `+1/+1/+1`, correct only if that build mounts USB-rearward; different enclosure and an external MPU-6050, so its board frame is not the XIAO's.

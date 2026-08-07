@@ -65,7 +65,7 @@
 // switch position plus a divider argued onto the I2C bus, presenting as flaky
 // state transitions and a glitchy screen rather than anything pointing at the
 // real cause. This line makes it visible on the first serial output instead.
-#define GNIMU_VARIANT "nRF52840-LCD"
+#define GNIMU_VARIANT "nRF52840-OLED"
 
 // ----------------------------------------------------------------------------
 // --- IMU (onboard LSM6DS3TR-C) ---
@@ -130,7 +130,7 @@
 // Established from the upstream emulator's unremapped output, the RaceBox
 // protocol doc's own worked example packet, and the RaceBox Mini mounting
 // manual. The protocol doc's axis FIGURE contradicts all three and is wrong -
-// its arrows are uniformly inverted. See nRF52840-LCD/DESIGN.md section 6.
+// its arrows are uniformly inverted. See nRF52840-OLED/DESIGN.md section 6.
 //
 // ORDER NAMES read as "which sensor axis feeds vehicle X, Y, Z". Because the
 // target frame is right-handed, a valid map is always a proper rotation, so

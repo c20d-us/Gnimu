@@ -19,17 +19,21 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## Variants
 
-This repo hosts two builds of the same concept, targeting different microcontrollers and use patterns. Both advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app should work with either one.
+This repo hosts three builds of the same concept, targeting different microcontrollers and use patterns. All advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app works with any of them.
 
-| | [**Gnimu ESP32**](src/Gnimu-ESP32/README.md) | [**Gnimu nRF52840**](src/Gnimu-nRF52840/README.md) |
-|---|---|---|
-| MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense |
-| Power | USB-powered | 3.7V LiPo battery or USB |
-| GNSS | HGLRC M100-5883 | HGLRC M100-5883 |
-| IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C |
-| Best for | A simple, always-plugged-in build | A portable, battery-powered build |
+| | [**Gnimu ESP32**](src/Gnimu-ESP32/README.md) | [**Gnimu nRF52840**](src/Gnimu-nRF52840/README.md) | [**Gnimu nRF52840-OLED**](src/Gnimu-nRF52840-OLED/README.md) |
+|---|---|---|---|
+| MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense | Seeed XIAO nRF52840 Sense |
+| Power | USB-powered | 3.7V LiPo battery or USB | 3.7V LiPo battery or USB |
+| GNSS | HGLRC M100-5883 | HGLRC M100-5883 | HGLRC M100-5883 |
+| IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C | Onboard 6-axis, LSM6DS3TR-C |
+| Status readout | RGB LED | RGB LED | 0.96" 128×64 OLED |
+| Status | Complete | Complete | **In development** |
+| Best for | A simple, always-plugged-in build | A portable, battery-powered build | Seeing fix quality and battery state without a phone |
 
-Start with [`src/Gnimu-ESP32/README.md`](src/Gnimu-ESP32/README.md) or [`src/Gnimu-nRF52840/README.md`](src/Gnimu-nRF52840/README.md) depending on which hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
+**Gnimu nRF52840-OLED** is an evolution of the nRF52840 build that swaps the RGB status LED for a small OLED. It shows device state, BLE connection and battery level as readable text, plus GNSS quality the LED could never convey — satellites locked, fix type, pDOP, horizontal accuracy and PVT rate. It is **not finished**: the hardware, wiring and screen layout are settled and bench-tested, but the display module itself isn't written yet, so the firmware currently behaves identically to the nRF52840 build. See its [`DESIGN.md`](src/Gnimu-nRF52840-OLED/DESIGN.md) for what's decided and what's outstanding.
+
+Start with the README for whichever hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
 
 ---
 
@@ -42,20 +46,20 @@ images/
 src/
   Gnimu-ESP32/           ESP32 firmware + README
   Gnimu-nRF52840/        nRF52840 firmware + README + DESIGN notes
-  Gnimu-nRF52840-LCD/    nRF52840 + OLED firmware + README + DESIGN notes
+  Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README + DESIGN notes
   tools/
     check_common.sh      Verifies the modules shared across variants are identical
     common/              Diagnostic sketches not tied to any one platform
     ESP32/               Diagnostic sketches for the ESP32 variant
     nRF52840/            Diagnostic sketches for the nRF52840 variant
-    nRF52840-LCD/        Diagnostic sketches for the nRF52840-LCD variant
+    nRF52840-OLED/        Diagnostic sketches for the nRF52840-OLED variant
 ```
 
 Each sketch folder is named for its variant and contains the `.ino` of the same
 name, as the Arduino IDE requires. That also means the IDE's window title and
 tab name identify which variant you have open.
 
-Several modules are deliberately duplicated between the two variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the other variant and run `src/tools/check_common.sh` to confirm they still match.
+Several modules are deliberately duplicated across the variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the others and run `src/tools/check_common.sh` to confirm they still match. The script covers all three variants; add any new sketch folder to its `VARIANTS` list or that copy goes unchecked.
 
 ---
 

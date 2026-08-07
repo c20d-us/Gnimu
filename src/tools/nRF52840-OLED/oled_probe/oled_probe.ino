@@ -17,7 +17,7 @@
 // ============================================================================
 // DIAGNOSTIC: SSD1306 128x64 OLED bring-up + power characterization
 //
-// First-light test for the OLED added in the nRF52840-LCD variant. Answers the
+// First-light test for the OLED added in the nRF52840-OLED variant. Answers the
 // open items in DESIGN.md that have to be settled on hardware before any
 // g_display code is worth writing:
 //

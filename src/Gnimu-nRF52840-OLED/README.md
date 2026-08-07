@@ -98,7 +98,7 @@ Same toolchain as [Gnimu nRF52840][0], plus the display library:
 ## Build & flash
 
 1. Install the board package and libraries above.
-2. Open [`Gnimu-nRF52840-LCD.ino`][5].
+2. Open [`Gnimu-nRF52840-OLED.ino`][5].
 3. Edit [`config.h`][config] — at minimum, set your `DEVICE_ID`.
 4. Select **Seeed XIAO nRF52840 Sense** as the board and the correct serial port.
 5. Click **Upload**. If the upload can't reset into the bootloader (common with BLE/SoftDevice sketches), **double-tap the reset button on the XIAO** to force it, then upload again.
@@ -137,11 +137,11 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 ## Diagnostic sketches
 
-- [`tools/oled_probe`](../tools/nRF52840-LCD/oled_probe/oled_probe.ino) — OLED bring-up and power characterization. Scans the I2C bus with raw `Wire` before any display library loads (so a wiring/power fault is distinguishable from a library problem), then holds test patterns on serial command: geometry (frame + corner ticks + crosshair, which catches a wrong panel size or controller variant immediately), font sizes, the Open Iconic Bluetooth glyph alongside drawn battery bars, a high-contrast screen for outdoor readability, and three discrete states for metering — all pixels on, controller active with nothing lit, and `DISPLAYOFF` sleep. Modes hold until the next keypress so a meter can be read without fighting a timer. Requires the **u8g2** library.
+- [`tools/oled_probe`](../tools/nRF52840-OLED/oled_probe/oled_probe.ino) — OLED bring-up and power characterization. Scans the I2C bus with raw `Wire` before any display library loads (so a wiring/power fault is distinguishable from a library problem), then holds test patterns on serial command: geometry (frame + corner ticks + crosshair, which catches a wrong panel size or controller variant immediately), font sizes, the Open Iconic Bluetooth glyph alongside drawn battery bars, a high-contrast screen for outdoor readability, and three discrete states for metering — all pixels on, controller active with nothing lit, and `DISPLAYOFF` sleep. Modes hold until the next keypress so a meter can be read without fighting a timer. Requires the **u8g2** library.
 
-- [`tools/oled_layout`](../tools/nRF52840-LCD/oled_layout/oled_layout.ino) — screen-layout mockup. Renders all five per-state screens with fake data so the layout can be judged on real glass: `1`/`2` RUNNING connected/advertising, `3` CHARGE_ONLY, `4` LIGHT_SLEEP, `5` BATTERY_WAIT, `6` display off. `w` swaps in worst-case field widths (layouts look fine on typical data and break on the extremes); `j` steps the burn-in pixel-shift offset to confirm nothing clips. This is the reference implementation of the layout spec in [`DESIGN.md`](DESIGN.md#screen-layout). Requires **u8g2**.
+- [`tools/oled_layout`](../tools/nRF52840-OLED/oled_layout/oled_layout.ino) — screen-layout mockup. Renders all five per-state screens with fake data so the layout can be judged on real glass: `1`/`2` RUNNING connected/advertising, `3` CHARGE_ONLY, `4` LIGHT_SLEEP, `5` BATTERY_WAIT, `6` display off. `w` swaps in worst-case field widths (layouts look fine on typical data and break on the extremes); `j` steps the burn-in pixel-shift offset to confirm nothing clips. This is the reference implementation of the layout spec in [`DESIGN.md`](DESIGN.md#screen-layout). Requires **u8g2**.
 
-- [`tools/oled_bench`](../tools/nRF52840-LCD/oled_bench/oled_bench.ino) — update-cost benchmark and partial-update validation. `b` times full-frame and partial writes at the current bus clock, labelling each against the GNSS UART's ~5.5ms tolerance; `p` animates a counter inside one region against a static backdrop to prove `updateDisplayArea()` doesn't corrupt anything outside it; `f` gives the full-frame cost for comparison. `1`/`4`/`8` switch the I2C clock. This is the sketch that decided the display library — results in [`DESIGN.md`](DESIGN.md#measured-update-cost).
+- [`tools/oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino) — update-cost benchmark and partial-update validation. `b` times full-frame and partial writes at the current bus clock, labelling each against the GNSS UART's ~5.5ms tolerance; `p` animates a counter inside one region against a static backdrop to prove `updateDisplayArea()` doesn't corrupt anything outside it; `f` gives the full-frame cost for comparison. `1`/`4`/`8` switch the I2C clock. This is the sketch that decided the display library — results in [`DESIGN.md`](DESIGN.md#measured-update-cost).
 
 The IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
 
@@ -155,7 +155,7 @@ The IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu 
 
 ## Credits
 
-Gnimu nRF52840-LCD is a further evolution of [**Gnimu nRF52840**][0], which is itself the battery-powered port of the original **Gnimu ESP32** build — a major evolution of the [**Open-Source RaceBox Mini Emulator**][6] by [**Anchit Chandra Sekhar**][7].
+Gnimu nRF52840-OLED is a further evolution of [**Gnimu nRF52840**][0], which is itself the battery-powered port of the original **Gnimu ESP32** build — a major evolution of the [**Open-Source RaceBox Mini Emulator**][6] by [**Anchit Chandra Sekhar**][7].
 
 Protocol details follow the *RaceBox BLE Protocol Description*, [available from RaceBox][8].
 
@@ -163,7 +163,7 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 ## License
 
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840-LCD carries the same license.
+Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840-OLED carries the same license.
 
 [License-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
 [Platform-shield]: https://img.shields.io/badge/platform-nRF52840-00A9CE.svg
@@ -177,7 +177,7 @@ Released under the **GNU General Public License v3.0** — see [`LICENSE`](../..
 [0-config]: ../Gnimu-nRF52840/README.md#configuration
 [0-tools]: ../tools/nRF52840/
 [4]: https://www.arduino.cc/en/software
-[5]: ./Gnimu-nRF52840-LCD.ino
+[5]: ./Gnimu-nRF52840-OLED.ino
 [6]: https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator
 [7]: https://github.com/anchit92
 [8]: https://www.racebox.pro/products/mini-micro-protocol-documentation

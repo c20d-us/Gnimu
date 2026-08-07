@@ -57,10 +57,10 @@
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
 //
-// This build and nRF52840-LCD target the SAME MCU, so the wrong binary flashes
+// This build and nRF52840-OLED target the SAME MCU, so the wrong binary flashes
 // and runs happily. They differ in POWER_SWITCH_SENSE_PIN: A4 here, A1 in the
-// LCD build, because on that board A4 IS SDA and its display needs the bus.
-// Flash this firmware onto LCD hardware and the switch-sense read lands on a
+// OLED build, because on that board A4 IS SDA and its display needs the bus.
+// Flash this firmware onto OLED hardware and the switch-sense read lands on a
 // pin the display is driving - a misread switch position plus a divider argued
 // onto the I2C bus, presenting as flaky state transitions and a glitchy screen
 // rather than anything pointing at the real cause. This line makes it visible
