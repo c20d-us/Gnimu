@@ -1,0 +1,276 @@
+// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#include "g_telemetry.h"
+#include "config.h"
+#include "g_battery.h"
+#include "g_ble.h"
+#include "g_gnss.h"
+#include "g_imu.h"
+#include "g_log.h"
+#include "g_ubx_helpers.h"
+
+// Internal counters and a private pointer to the latest PVT data
+static unsigned long bootTimeMs = 0;
+static unsigned long lastReportMs = 0;
+static unsigned int bleSentPacketCount = 0;
+static unsigned int gnssEpochCount = 0;
+// Rates published by updateRates() at each window close. Always compiled in -
+// see telemetryGnssRateHz() in the header for why.
+static float gnssRateHz = 0.0f;
+static float bleRateHz = 0.0f;
+static const UBX_NAV_PVT_data_t *pvt = nullptr;
+
+// Assemble an 88-byte RaceBox Data Message from the latest GNSS + IMU data.
+// Fills packet[0..87] with the UBX header, 80-byte payload, and checksum.
+// Once packet is built, hand off to BLE to send it.
+static void sendPacket() {
+  // Defensive check: if we somehow reach here with no data, abort immediately.
+  if (pvt == nullptr) {
+    return;
+  }
+
+  // The 80-byte payload is built in place inside the packet buffer (it
+  // occupies bytes 6..85), so no separate staging buffer or copy is needed.
+  uint8_t packet[88] = {0};
+  uint8_t *payload = packet + 6;
+
+  ImuProtocolUnits imu = imuReadProtocolUnits();
+
+  // Casts pin each field to its RaceBox protocol wire width (U1/U2/U4/I4),
+  // so the writeLittleEndian overload is correct regardless of the u-blox
+  // library's field types.
+  writeLittleEndian(payload, 0, (uint32_t)pvt->iTOW); // U4
+  writeLittleEndian(payload, 4, (uint16_t)pvt->year); // U2
+  writeLittleEndian(payload, 6, (uint8_t)pvt->month); // U1
+  writeLittleEndian(payload, 7, (uint8_t)pvt->day);   // U1
+  writeLittleEndian(payload, 8, (uint8_t)pvt->hour);  // U1
+  writeLittleEndian(payload, 9, (uint8_t)pvt->min);   // U1
+  writeLittleEndian(payload, 10, (uint8_t)pvt->sec);  // U1
+
+  // Offset 11: Validity Flags
+  uint8_t validityFlags = 0;
+  if (pvt->valid.bits.validDate)
+    validityFlags |= (1 << 0); // Bit 0: valid date
+  if (pvt->valid.bits.validTime)
+    validityFlags |= (1 << 1); // Bit 1: valid time
+  if (pvt->valid.bits.fullyResolved)
+    validityFlags |= (1 << 2); // Bit 2: fully resolved
+  if (pvt->valid.bits.validMag)
+    validityFlags |= (1 << 3); // Bit 3: valid magnetic declination
+  writeLittleEndian(payload, 11, validityFlags);
+
+  // Offset 12: Time Accuracy
+  writeLittleEndian(payload, 12, (uint32_t)pvt->tAcc); // U4
+
+  // Offset 16: Nanoseconds
+  writeLittleEndian(payload, 16, (int32_t)pvt->nano); // I4
+
+  // Offset 20: Fix Status
+  // Protocol only defines 0 (no fix), 2 (2D fix), 3 (3D fix).
+  // Clamp any other u-blox fix types (e.g. 1=DR only, 4=GNSS+DR) to 0 (no fix).
+  uint8_t safeFixType =
+      (pvt->fixType == 2 || pvt->fixType == 3) ? pvt->fixType : 0;
+  writeLittleEndian(payload, 20, safeFixType);
+
+  // Offset 21: Fix Status Flags
+  uint8_t fixStatusFlags = 0;
+
+  // Bit 0: valid fix - a 3D fix that the receiver also reports as within its
+  // DOP/accuracy masks (gnssFixOK), the strictest read of "valid".
+  if (pvt->fixType == 3 && pvt->flags.bits.gnssFixOK) {
+    fixStatusFlags |= (1 << 0);
+  }
+
+  // Bit 5: valid heading. Read from the SAME PVT snapshot being transmitted
+  // (not a library getter), so it can neither block nor describe a different
+  // epoch than the rest of this packet.
+  if (pvt->flags.bits.headVehValid) {
+    fixStatusFlags |= (1 << 5);
+  }
+  writeLittleEndian(payload, 21, fixStatusFlags);
+
+  // Offset 22: Date/Time Flags
+  uint8_t dateTimeFlags = 0;
+  if (pvt->valid.bits.validTime)
+    dateTimeFlags |= (1 << 5); // Available confirmation of Date/Time Validity
+  if (pvt->valid.bits.validDate)
+    dateTimeFlags |= (1 << 6); // Confirmed UTC Date Validity
+  if (pvt->valid.bits.validTime && pvt->valid.bits.fullyResolved)
+    dateTimeFlags |= (1 << 7); // Confirmed UTC Time Validity
+  writeLittleEndian(payload, 22, dateTimeFlags);
+
+  // Offset 23: Number of SVs
+  writeLittleEndian(payload, 23, (uint8_t)pvt->numSV); // U1
+
+  // Remaining fields, mostly direct mappings from u-blox data
+  writeLittleEndian(payload, 24, (int32_t)pvt->lon);      // I4
+  writeLittleEndian(payload, 28, (int32_t)pvt->lat);      // I4
+  writeLittleEndian(payload, 32, (int32_t)pvt->height);   // I4
+  writeLittleEndian(payload, 36, (int32_t)pvt->hMSL);     // I4
+  writeLittleEndian(payload, 40, (uint32_t)pvt->hAcc);    // U4
+  writeLittleEndian(payload, 44, (uint32_t)pvt->vAcc);    // U4
+  writeLittleEndian(payload, 48, (int32_t)pvt->gSpeed);   // I4
+  writeLittleEndian(payload, 52, (int32_t)pvt->headMot);  // I4
+  writeLittleEndian(payload, 56, (uint32_t)pvt->sAcc);    // U4
+  writeLittleEndian(payload, 60, (uint32_t)pvt->headAcc); // U4
+  writeLittleEndian(payload, 64, (uint16_t)pvt->pDOP);    // U2
+
+  // Offset 66: Lat/Lon Flags
+  uint8_t latLonFlags = 0;
+  if (pvt->fixType <
+      2) { // If no 2D/3D fix, then coordinates are considered invalid
+    latLonFlags |= (1 << 0); // Bit 0: Invalid Latitude, Longitude, WGS
+                             // Altitude, and MSL Altitude
+  }
+  writeLittleEndian(payload, 66, latLonFlags);
+
+  // Offset 67: Battery status (1 byte) - bit 7 = charging, bits 0-6 = percent.
+  writeLittleEndian(payload, 67, batteryProtocolByte());
+
+  // Offset 68-78: IMU data
+  writeLittleEndian(payload, 68, imu.gX);
+  writeLittleEndian(payload, 70, imu.gY);
+  writeLittleEndian(payload, 72, imu.gZ);
+  writeLittleEndian(payload, 74, imu.rX);
+  writeLittleEndian(payload, 76, imu.rY);
+  writeLittleEndian(payload, 78, imu.rZ);
+
+  // Add RaceBox protocol header
+  packet[0] = 0xB5;
+  packet[1] = 0x62;
+  packet[2] = 0xFF; // Message Class: RaceBox Data Message
+  packet[3] = 0x01; // Message ID: RaceBox Data Message
+  packet[4] = 80;   // Payload size
+  packet[5] = 0;
+
+  // Calculate payload checksum and add to packet
+  UbxChecksum checksum = calculateChecksum(payload, 80, 0xFF, 0x01);
+  packet[86] = checksum.ckA;
+  packet[87] = checksum.ckB;
+
+  // Hand the packet off to BLE
+  bleSendPacket(packet, 88);
+  bleSentPacketCount++;
+}
+
+// Close the stats window: convert the epoch/packet counts accumulated since
+// the last window into rates, publish them, and reset the counters.
+//
+// Deliberately OUTSIDE the LOG_ENABLED guard. This used to live inline in the
+// guarded serial report, so in a silent build (GNIMU_SERIAL_LOG_ENABLED 0 -
+// the shipping configuration) the rates were never computed and the counters
+// never reset. Anything that wanted the rate for a reason other than printing
+// it would have read zero, in production only. Rate accounting is now a plain
+// always-on function of the telemetry module and the serial report is just one
+// of its consumers.
+static void updateRates(unsigned long now) {
+  const float elapsed = (now - lastReportMs) / 1000.0f;
+  if (elapsed <= 0.0f) {
+    return;
+  }
+  gnssRateHz = gnssEpochCount / elapsed;
+  bleRateHz = bleSentPacketCount / elapsed;
+  gnssEpochCount = 0;
+  bleSentPacketCount = 0;
+  lastReportMs = now;
+}
+
+float telemetryGnssRateHz() { return gnssRateHz; }
+float telemetryBleRateHz() { return bleRateHz; }
+
+// Periodically print packet rate and GNSS/IMU debug stats over serial.
+// The printing compiles away in silent builds (LOG_ENABLED 0); the rate
+// accounting in updateRates() does not - see above.
+// Called only when a stats window has just closed, so it does no timing of its
+// own - it reads the rates updateRates() has already published.
+static void telemetrySerialReport(unsigned long now) {
+  (void)now; // only read by the report body, which silent builds compile out
+#if LOG_ENABLED
+  {
+    const float bleRate = telemetryBleRateHz();
+    const float gnssRate = telemetryGnssRateHz();
+    // Additional satellite info for debugging: number of satellites, fix type,
+    // horizontal accuracy, and lat/lon
+    uint8_t sats = 0, fix = 0;
+    uint32_t hAcc = 0, tAcc = 0;
+    double lat = 0.0, lon = 0.0;
+    if (pvt != nullptr) {
+      sats = pvt->numSV;
+      fix = pvt->fixType;
+      hAcc = pvt->hAcc;
+      tAcc = pvt->tAcc;
+      lat = pvt->lat * 1e-7;
+      lon = pvt->lon * 1e-7;
+    }
+    // Convert filtered IMU values to protocol units for display
+    ImuProtocolUnits imu = imuReadProtocolUnits();
+
+#if BATTERY_HAS_GAUGE
+    // Battery voltage/percent/charging for debugging
+    const BatteryStatus bat = batteryGetStatus();
+
+    // Print out the informational report. Voltage is the honest measurement;
+    // SoC is deliberately omitted from serial output because the voltage->%
+    // lookup is masked by charge/TPS draw and can swing 10+% between plugged
+    // and unplugged - misleading in the console. The percent still drives the
+    // BLE Battery Service + LED thresholds where consumers expect a 0-100 %.
+    LOG_PRINTF(
+        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
+        "centiDeg/s: X=%d Y=%d Z=%d | Batt: %.2fV%s\n",
+        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
+        bat.voltage, bat.charging ? "⚡" : "");
+#else
+    // No battery gauge on this build - the same report minus the Batt segment
+    // (the battery byte in the packet itself still carries the constant
+    // percent via batteryProtocolByte()).
+    LOG_PRINTF(
+        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
+        "centiDeg/s: X=%d Y=%d Z=%d\n",
+        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ);
+#endif
+    // Counters and the window timestamp are reset by updateRates(), which runs
+    // whether or not this report is compiled in.
+  }
+#endif // LOG_ENABLED
+}
+
+// Simple startup - just prime the boot time and report timer.
+void telemetryBegin() { bootTimeMs = lastReportMs = millis(); }
+
+// On each new GNSS epoch, count it and (when connected) send a packet.
+// Always try to send informational report over serial.
+void telemetrySendIfReady() {
+  if (const UBX_NAV_PVT_data_t *newPvt = gnssConsumePvt()) {
+    pvt = newPvt;
+    gnssEpochCount++;
+    if (bleIsConnected()) {
+      sendPacket();
+    }
+  }
+
+  // Close the stats window on schedule. updateRates() is unconditional so the
+  // rates stay available in silent builds; only the printing is compiled out.
+  const unsigned long now = millis();
+  if ((now - lastReportMs) >= LOG_STATS_INTERVAL_MS) {
+    updateRates(now);
+    telemetrySerialReport(now);
+  }
+}

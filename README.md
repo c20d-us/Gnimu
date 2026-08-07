@@ -21,7 +21,7 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 This repo hosts two builds of the same concept, targeting different microcontrollers and use patterns. Both advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app should work with either one.
 
-| | [**Gnimu ESP32**](src/ESP32/README.md) | [**Gnimu nRF52840**](src/nRF52840/README.md) |
+| | [**Gnimu ESP32**](src/Gnimu-ESP32/README.md) | [**Gnimu nRF52840**](src/Gnimu-nRF52840/README.md) |
 |---|---|---|
 | MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense |
 | Power | USB-powered | 3.7V LiPo battery or USB |
@@ -29,7 +29,7 @@ This repo hosts two builds of the same concept, targeting different microcontrol
 | IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C |
 | Best for | A simple, always-plugged-in build | A portable, battery-powered build |
 
-Start with [`src/ESP32/README.md`](src/ESP32/README.md) or [`src/nRF52840/README.md`](src/nRF52840/README.md) depending on which hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
+Start with [`src/Gnimu-ESP32/README.md`](src/Gnimu-ESP32/README.md) or [`src/Gnimu-nRF52840/README.md`](src/Gnimu-nRF52840/README.md) depending on which hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
 
 ---
 
@@ -37,17 +37,25 @@ Start with [`src/ESP32/README.md`](src/ESP32/README.md) or [`src/nRF52840/README
 
 ```
 images/
-  ESP32/          Build photos for the Gnimu ESP32 variant
-  nRF52840/       Build photos for the Gnimu nRF52840 variant
+  ESP32/                 Build photos for the Gnimu ESP32 variant
+  nRF52840/              Build photos for the Gnimu nRF52840 variant
 src/
-  ESP32/          Gnimu ESP32 firmware, README, and diagnostic tools
-  nRF52840/       Gnimu nRF52840 firmware, README, and diagnostic tools
-  universal/      Sketches that aren't tied to either platform
-tools/
-  check_common.sh Verifies the modules shared by both variants are identical
+  Gnimu-ESP32/           ESP32 firmware + README
+  Gnimu-nRF52840/        nRF52840 firmware + README + DESIGN notes
+  Gnimu-nRF52840-LCD/    nRF52840 + OLED firmware + README + DESIGN notes
+  tools/
+    check_common.sh      Verifies the modules shared across variants are identical
+    common/              Diagnostic sketches not tied to any one platform
+    ESP32/               Diagnostic sketches for the ESP32 variant
+    nRF52840/            Diagnostic sketches for the nRF52840 variant
+    nRF52840-LCD/        Diagnostic sketches for the nRF52840-LCD variant
 ```
 
-Several modules are deliberately duplicated between the two variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the other variant and run `tools/check_common.sh` to confirm they still match.
+Each sketch folder is named for its variant and contains the `.ino` of the same
+name, as the Arduino IDE requires. That also means the IDE's window title and
+tab name identify which variant you have open.
+
+Several modules are deliberately duplicated between the two variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the other variant and run `src/tools/check_common.sh` to confirm they still match.
 
 ---
 
