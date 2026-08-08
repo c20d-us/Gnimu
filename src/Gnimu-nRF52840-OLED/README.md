@@ -125,7 +125,13 @@ Unchanged from [Gnimu nRF52840][0] — same state machine, same low-voltage cuto
 
 ## Usage
 
-Identical to [Gnimu nRF52840][0] for now — the RGB LED still drives status. This section will be rewritten once the display replaces (or supplements — see [Open items](DESIGN.md#7-open-items)) the LED.
+Follows [Gnimu nRF52840][0] — charge the cell, slide the switch on, let the GNSS acquire, then connect from a RaceBox-compatible app — with one difference: **status comes from the display, not the RGB LED.**
+
+The screen shows what state the device is in, whether BLE is advertising or connected, battery percentage with a charging bolt, and GNSS quality (satellites, fix type, pDOP, horizontal accuracy, PVT rate). `BATTERY_WAIT` — switch off while USB is plugged in — takes over the whole screen with a `Switch is OFF` alert.
+
+The **onboard RGB LED stays dark**, since the enclosure puts it where you can't see it and the display says more. It comes back automatically as a fallback if no panel is detected at boot, so a display or wiring failure still leaves you with the LED signalling rather than a device that looks dead. Set `LED_ENABLED` to `1` in [`config.h`][config] to keep the LED active alongside the display for bench work.
+
+The XIAO's own charge LED is wired to the charge controller and can't be driven by firmware, so it still lights while charging regardless of either setting.
 
 ---
 

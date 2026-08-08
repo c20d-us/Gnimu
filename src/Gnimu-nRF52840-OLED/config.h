@@ -394,6 +394,24 @@
 // --- LED (onboard RGB status LED) ---
 // ----------------------------------------------------------------------------
 
+// Whether the onboard RGB LED does anything in this variant.
+//
+//   0 = FALLBACK ONLY (ship default). The OLED carries strictly richer status,
+//       and the enclosure layout puts the LED where it cannot be seen anyway.
+//       But displayBegin() disables itself if no panel answers, so without a
+//       fallback a loose I2C wire would leave the device with NO user-visible
+//       feedback at all - looking dead while streaming perfectly. The LED
+//       therefore comes back automatically when, and only when, the display is
+//       absent. BATTERY_WAIT is the case that makes this matter: "you left the
+//       switch off" is exactly when you need a signal and least likely to have
+//       serial attached.
+//   1 = ALWAYS ON, alongside the display. For bench work with the board out of
+//       the case, where the LED is genuinely convenient.
+//
+// Note this does not make the device fully dark either way: the XIAO's charge
+// LED is wired to the BQ25101 and cannot be driven by firmware.
+#define LED_ENABLED 0
+
 #define LED_BLINK_INTERVAL_MS 1000    // standard interval for blinking states
 #define LED_BATTERY_WAIT_BLINK_MS 150 // rapid blink for BATTERY_WAIT
 
@@ -401,6 +419,60 @@
 // distinct from the advertising blink's even on/off.
 #define LED_LIGHT_SLEEP_BLINK_ON_MS 250
 #define LED_LIGHT_SLEEP_BLINK_OFF_MS 5000
+
+// ----------------------------------------------------------------------------
+// --- Display (SSD1306 128x64 OLED) ---
+// ----------------------------------------------------------------------------
+
+// How often the whole screen is re-rendered and pushed. Nothing on screen is
+// worth reading faster than this, and every refresh costs I2C time.
+#define DISPLAY_REFRESH_INTERVAL_MS 1000 // 1 Hz
+
+// Minimum gap between consecutive slice pushes.
+//
+// This is the setting that actually fixed the GNSS rate, and it works on
+// DENSITY rather than volume. Total I2C time was never the problem - a whole
+// frame is ~31 ms spread over a second. The problem was that the slices landed
+// on CONSECUTIVE loop iterations, so for the length of a burst the UART never
+// got a clear stretch in which to be drained, and NAV-PVT bytes were lost.
+// Spacing the pushes leaves roughly four full RX-buffer fill windows (~5.5 ms
+// each at GNSS_BAUD) between hits.
+//
+// It also makes the push duration deterministic: a frame now takes
+// (slice count x this) milliseconds regardless of how fast loop() happens to
+// run, which is what lets the static_assert below check the runaway condition
+// at compile time instead of leaving it as a warning in a comment.
+#define DISPLAY_SLICE_INTERVAL_MS 20
+
+// Burn-in pixel shift. The layout is nudged around a 3x3 grid of offsets so no
+// element sits on the same pixels for a whole 8-hour run. Slow on purpose: a
+// shift dirties the entire frame, and it is visible if it happens often enough
+// to notice.
+#define DISPLAY_SHIFT_INTERVAL_MS 300000 // 5 minutes
+
+// Bytes pushed per loop() iteration, expressed as tile columns (each tile is
+// 8x8 px, so one tile column of one tile row = 8 bytes).
+//
+// This is a LATENCY control, not a throughput one. A full 1024-byte frame costs
+// ~31 ms at 400 kHz - measured, see DESIGN.md - against a GNSS UART budget of
+// ~5.5 ms before NAV-PVT bytes are dropped. So the frame is rendered into RAM
+// (free) and pushed a slice at a time, one slice per loop(). At 8 tiles wide
+// that is 64 bytes, roughly 2 ms, about a third of the budget, and a full frame
+// completes in 16 iterations - well inside the refresh interval.
+// Bench-tuned 2026-08-05, and this value MATTERS. At 8 tiles (64 bytes, ~2 ms)
+// the GNSS rate sagged to a wandering 15-25 Hz: during the 16 consecutive
+// iterations a frame takes to push, each loop carried 2 ms of blocking I2C on
+// top of its normal work, and the total crossed the ~5.5 ms UART budget often
+// enough to drop NAV-PVT bytes. Confirmed by raising the refresh interval to
+// 60 s, which restored a solid 25 Hz. At 4 tiles (32 bytes, ~1 ms) the peak
+// halves, at the cost of 32 iterations per frame instead of 16.
+//
+// If the rate still wanders, keep halving - but remember each halving doubles
+// the iterations per frame, so DISPLAY_REFRESH_INTERVAL_MS has to grow with it
+// or the push never finishes before the next one is due.
+#define DISPLAY_CHUNK_TILES_W 4
+
+#define DISPLAY_CONTRAST 255 // 0-255; full scale is most readable in daylight
 
 // ----------------------------------------------------------------------------
 // --- Logging ---
@@ -543,6 +615,33 @@
 #define LED_BLUE_PIN LED_BLUE
 
 // ----------------------------------------------------------------------------
+// --- Display (SSD1306 128x64 OLED, hardware I2C) ---
+// ----------------------------------------------------------------------------
+
+// 7-bit address. Bench-confirmed 0x3C on both ordered modules (the other common
+// value is 0x3D, selected by an onboard jumper). NOTE u8g2's setI2CAddress()
+// wants the 8-bit left-shifted form; g_display does that shift, so this stays
+// the plain 7-bit address everything else in the world quotes.
+#define DISPLAY_I2C_ADDRESS 0x3C
+
+// Panel geometry, and the content area the layout is drawn into.
+//
+// The pixel shift is POSITIVE-ONLY, sliding the layout into a gutter along the
+// right and bottom edges. A symmetric +/- shift was tried first and clipped
+// anything sitting at x=0 or y=0 - notably the status bar's Bluetooth icon -
+// because there is no gutter at the top-left to give. One-directional means
+// layout code reserves slack on two edges instead of four.
+#define DISPLAY_WIDTH 128
+#define DISPLAY_HEIGHT 64
+#define DISPLAY_SHIFT_MAX 2
+#define DISPLAY_LAYOUT_W (DISPLAY_WIDTH - DISPLAY_SHIFT_MAX)
+#define DISPLAY_LAYOUT_H (DISPLAY_HEIGHT - DISPLAY_SHIFT_MAX)
+
+// Tiles are 8x8 px, so the panel is 16 x 8 tiles.
+#define DISPLAY_TILES_W (DISPLAY_WIDTH / 8)
+#define DISPLAY_TILES_H (DISPLAY_HEIGHT / 8)
+
+// ----------------------------------------------------------------------------
 // --- Protocol (RaceBox BLE protocol) ---
 // These match the RaceBox BLE protocol and should not be changed. The UUIDs
 // are the Nordic UART UUIDs, which Bluefruit's BLEUart uses natively.
@@ -626,6 +725,20 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
               "(9600, 38400, 57600, 115200, 230400, 460800).");
 
 // Enforce navigation rate limit
+// A frame is pushed as (DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H
+// slices, spaced DISPLAY_SLICE_INTERVAL_MS apart. If that total ever exceeds the
+// refresh interval, the next render falls due the instant the last one lands and
+// the display pushes CONTINUOUSLY, monopolising the bus and undoing the spacing.
+// Each halving of DISPLAY_CHUNK_TILES_W doubles the slice count, so this is easy
+// to trip while tuning.
+static_assert(((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H) *
+                      DISPLAY_SLICE_INTERVAL_MS <
+                  DISPLAY_REFRESH_INTERVAL_MS,
+              "ERROR: a full display push takes longer than the refresh "
+              "interval - the display would push continuously. Raise "
+              "DISPLAY_REFRESH_INTERVAL_MS, or raise DISPLAY_CHUNK_TILES_W, or "
+              "lower DISPLAY_SLICE_INTERVAL_MS.");
+
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
 static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&

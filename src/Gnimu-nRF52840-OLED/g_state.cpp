@@ -17,6 +17,7 @@
 #include "g_state.h"
 #include "config.h"
 #include "g_battery.h"
+#include "g_display.h"
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
@@ -63,6 +64,9 @@ static void enterDeepSleepFrom(const char *reasonLog) {
   LOG_PRINTLN(reasonLog);
   bleStop();
   gnssEnd();
+  // Blank the panel before the MCU halts. Its 3V3 rail is NOT cut by System
+  // OFF, so without this it would sit lit on a stale frame indefinitely.
+  displaySleep();
   LOG_FLUSH();
   powerEnterDeepSleep(); // does not return; also forces the LED off
 }
@@ -150,6 +154,7 @@ SystemState stateBegin() {
     // Voltage grossly low with no USB - skip GNSS cold-start and go straight
     // to System OFF.
     LOG_PRINTF("Boot -> DEEP_SLEEP (VBAT %.2f V < cutoff, no USB).\n", peak);
+    displaySleep(); // see enterDeepSleepFrom(); harmless before displayBegin()
     LOG_FLUSH();
     current = STATE_DEEP_SLEEP;
     powerEnterDeepSleep(); // does not return

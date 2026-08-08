@@ -17,6 +17,7 @@
 #include "g_led.h"
 #include "config.h"
 #include "g_battery.h"
+#include "g_display.h"
 #include "g_ble.h"
 #include "g_state.h"
 
@@ -39,6 +40,16 @@ void ledBegin() {
 // held-off device doesn't have meaningful battery/BLE state to reflect and
 // we need the "check the switch" signal to be unmissable.
 void ledUpdate() {
+  // Stay dark while the display is doing the job. Deliberately a RUNTIME check
+  // rather than a compile-time #if: the whole point is to come back when the
+  // panel is missing, which is only knowable at boot. See LED_ENABLED.
+#if !LED_ENABLED
+  if (displayIsPresent()) {
+    setLed(false, false, false);
+    return;
+  }
+#endif
+
   const SystemState st = stateCurrent();
 
   if (st == STATE_BATTERY_WAIT) {

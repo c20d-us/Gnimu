@@ -21,6 +21,7 @@
 // sketch orchestrates lifecycles per the state machine (DESIGN §5).
 #include "config.h"
 #include "g_battery.h"
+#include "g_display.h"
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
@@ -54,6 +55,9 @@ void setup() {
   powerBegin();
   batteryBegin();
   ledBegin();
+  // Display comes up before the state classifier so BATTERY_WAIT and
+  // CHARGE_ONLY boots have a screen to draw on.
+  displayBegin();
 
   // Classify our initial state.
   // If the classifier lands in DEEP_SLEEP, this call enters System OFF directly
@@ -83,6 +87,9 @@ void loop() {
   // voltage sampler, ledUpdate reflects the current state.
   batteryPoll();
   ledUpdate();
+  // Safe in every live state; it renders whatever stateCurrent() reports and
+  // meters its own I2C cost across iterations.
+  displayUpdate();
 
   // Peripheral polls are gated by the live state.
   if (stateCurrent() == STATE_RUNNING) {
