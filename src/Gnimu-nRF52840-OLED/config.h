@@ -52,7 +52,7 @@
 // First digit must be 0-3, so the value stays below 4000000000 - the RaceBox
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
-#define DEVICE_ID "1001001001"
+#define DEVICE_ID "1010101010"
 
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
@@ -161,11 +161,11 @@
 // left-side-down reads Y=-1 (a right turn), right-side-down Y=+1; flat reads
 // Z=+1. Carried over from the non-display build; this variant moves the XIAO
 // to the end wall, so the map must be re-derived once that mount is final.
-#define IMU_AXIS_X_SRC 0    // vehicle forward <- sensor X
+#define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
 #define IMU_AXIS_X_SIGN -1.0f
-#define IMU_AXIS_Y_SRC 1    // vehicle left    <- sensor Y
+#define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
 #define IMU_AXIS_Y_SIGN -1.0f
-#define IMU_AXIS_Z_SRC 2    // vehicle up      <- sensor Z
+#define IMU_AXIS_Z_SRC 2 // vehicle up      <- sensor Z
 #define IMU_AXIS_Z_SIGN +1.0f
 
 // --- LIGHT_SLEEP wake-up detector (omni-directional shake-to-wake) ---
@@ -183,8 +183,8 @@
 // Only ODR changes across the RUNNING<->LIGHT_SLEEP transition now.
 #define IMU_WAKE_CTRL1_XL 0x18
 // 6-bit wake-up threshold (0-63), LSB weight = FS_XL/64 - so this scales with
-// the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL changes.
-// THE key tunable for shake-to-wake: too low false-triggers on small
+// the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL
+// changes. THE key tunable for shake-to-wake: too low false-triggers on small
 // vibrations, too high misses a real pickup.
 #define IMU_WAKE_THS 4
 #define IMU_WAKE_DUR 0 // debounce, in ODR cycles - 0 = fire on first sample
@@ -215,7 +215,7 @@
 // PVT rate while no BLE client is connected - keeps the receiver ticking (and
 // the fix warm) without the full 25Hz load when nobody is listening.
 #define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 0 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
@@ -251,7 +251,7 @@
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
 #define BLE_TX_POWER_ADV_DBM -12  // while advertising
-#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
+#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -312,9 +312,9 @@
 // Deliberately simplified to just two endpoints - a straight line, not a
 // real LiPo discharge curve. 3.90V/100% is the actual measured resting
 // voltage of this specific 900mAh pack after a full charge (bench-logged via
-// src/tools/nRF52840/battery_log, 2026-07); 3.37V/0% matches BATTERY_CUTOFF_V exactly.
-// Both endpoints are real for THIS cell; the straight line between them is
-// not - real cells have a flat plateau through the middle of the range
+// src/tools/nRF52840/battery_log, 2026-07); 3.37V/0% matches BATTERY_CUTOFF_V
+// exactly. Both endpoints are real for THIS cell; the straight line between
+// them is not - real cells have a flat plateau through the middle of the range
 // (roughly 20-80% SoC often sits in a narrow ~3.7-3.85V band) with much
 // steeper drops near both ends, so displayed SoC% will read pessimistically
 // low through the middle of a discharge. Accepted trade-off for now: this
@@ -424,6 +424,24 @@
 // --- Display (SSD1306 128x64 OLED) ---
 // ----------------------------------------------------------------------------
 
+// 1 = normal operation (default). 0 = display fully disabled at COMPILE TIME -
+// not "not detected," not "sleeping": g_display's I2C calls do not exist in the
+// binary at all, so Wire.begin() never runs and D4/D5 stay unconfigured rather
+// than merely idle.
+//
+// This is a diagnostic toggle, not a feature flag: it isolates whether the
+// display's I2C traffic is what caps the GNSS PVT rate, or whether a ceiling
+// (e.g. the 23-24Hz sag observed 2026-08-06) is intrinsic to the M100 Mini
+// itself under the current sky/SV conditions, independent of the display
+// entirely. Flip to 0, reflash, and compare the same GNSS hardware with zero
+// competing I2C traffic against the DISPLAY_ENABLED=1 baseline.
+//
+// displayIsPresent() returns false when this is 0, so LED_ENABLED's fallback
+// behavior (g_led lighting up when no display is present) engages automatically
+// - a side effect, not the point of this flag, but worth knowing about if the
+// LED comes on during this test.
+#define DISPLAY_ENABLED 1
+
 // How often the whole screen is re-rendered and pushed. Nothing on screen is
 // worth reading faster than this, and every refresh costs I2C time.
 #define DISPLAY_REFRESH_INTERVAL_MS 1000 // 1 Hz
@@ -519,8 +537,9 @@
 // valid only up to a ~40k source; the XIAO VBAT divider is ~338k (1M || 510k)
 // and the switch-sense divider is ~255k (510k || 510k), so short TACQ leaves
 // the sampling cap under-charged and every read undershoots ~100mV. 40us
-// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence. Value
-// is dictated by the fixed divider impedance, not a free performance knob.
+// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence.
+// Value is dictated by the fixed divider impedance, not a free performance
+// knob.
 #define SAADC_TACQ_US 40
 
 // ----------------------------------------------------------------------------
@@ -725,12 +744,12 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
               "(9600, 38400, 57600, 115200, 230400, 460800).");
 
 // Enforce navigation rate limit
-// A frame is pushed as (DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H
-// slices, spaced DISPLAY_SLICE_INTERVAL_MS apart. If that total ever exceeds the
-// refresh interval, the next render falls due the instant the last one lands and
-// the display pushes CONTINUOUSLY, monopolising the bus and undoing the spacing.
-// Each halving of DISPLAY_CHUNK_TILES_W doubles the slice count, so this is easy
-// to trip while tuning.
+// A frame is pushed as (DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) *
+// DISPLAY_TILES_H slices, spaced DISPLAY_SLICE_INTERVAL_MS apart. If that total
+// ever exceeds the refresh interval, the next render falls due the instant the
+// last one lands and the display pushes CONTINUOUSLY, monopolising the bus and
+// undoing the spacing. Each halving of DISPLAY_CHUNK_TILES_W doubles the slice
+// count, so this is easy to trip while tuning.
 static_assert(((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H) *
                       DISPLAY_SLICE_INTERVAL_MS <
                   DISPLAY_REFRESH_INTERVAL_MS,

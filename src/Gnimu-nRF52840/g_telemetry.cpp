@@ -171,7 +171,7 @@ static void sendPacket() {
 // the last window into rates, publish them, and reset the counters.
 //
 // Deliberately OUTSIDE the LOG_ENABLED guard. This used to live inline in the
-// guarded serial report, so in a silent build (GNIMU_SERIAL_LOG_ENABLED 0 -
+// guarded serial report, so in a silent build (LOG_ENABLED 0 -
 // the shipping configuration) the rates were never computed and the counters
 // never reset. Anything that wanted the rate for a reason other than printing
 // it would have read zero, in production only. Rate accounting is now a plain

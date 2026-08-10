@@ -16,6 +16,14 @@
 
 #include "g_display.h"
 #include "config.h"
+
+// See DISPLAY_ENABLED in config.h. When 0, none of this module's real
+// implementation - not even the includes - is compiled in, so the display can
+// be excluded from the binary as a variable when isolating whether its I2C
+// traffic is what caps the GNSS PVT rate. The stub implementation at the
+// bottom of this file takes over in that case.
+#if DISPLAY_ENABLED
+
 #include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
@@ -378,3 +386,21 @@ void displayWake() {
   lastRenderMs = 0; // force a render on the next poll rather than waiting out
                     // the refresh interval
 }
+
+#else // !DISPLAY_ENABLED
+
+#include "g_log.h"
+
+// Stubs matching g_display.h exactly. displayIsPresent() returns false, so
+// LED_ENABLED's fallback (g_led lights up when no display is present) engages
+// automatically - a side effect of reusing that mechanism, not the point of
+// this flag.
+void displayBegin() {
+  LOG_PRINTLN("⏸️ Display disabled at compile time (DISPLAY_ENABLED=0).");
+}
+void displayUpdate() {}
+bool displayIsPresent() { return false; }
+void displaySleep() {}
+void displayWake() {}
+
+#endif // DISPLAY_ENABLED

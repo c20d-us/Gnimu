@@ -40,7 +40,7 @@ void telemetrySendIfReady();
 //
 // This is NOT compiled out in silent builds. The rate used to be derived
 // inline inside the LOG_ENABLED-guarded serial report, which meant it simply
-// did not exist when GNIMU_SERIAL_LOG_ENABLED was 0 - the configuration
+// did not exist when LOG_ENABLED was 0 - the configuration
 // intended for shipping. Any non-logging consumer (a display, a health check)
 // would have silently read nothing there.
 float telemetryGnssRateHz();

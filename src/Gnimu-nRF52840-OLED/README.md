@@ -47,7 +47,17 @@ Everything from [Gnimu nRF52840's hardware list][0] applies unchanged, plus:
   </tr>
 </table>
 
-The rest of the bill of materials — XIAO, GNSS module, TPS63020, LiPo, switch, JST leads, resistors, USB-C adapter, project box — is identical to [Gnimu nRF52840][0]; see that README for part links and notes. The existing 45×75×20mm project box is a tight fit even before the display, so case fit is an open item (see [`DESIGN.md`](DESIGN.md#7-open-items)).
+**Two other parts differ from [Gnimu nRF52840][0]** — both chosen to ease the fit, since adding the display makes an already-snug case tighter:
+
+- **GNSS: [HGLRC M100 Mini](https://www.amazon.com/dp/B0BX65QZJ8)** instead of the M100-5883. Same u-blox M10 receiver, so the firmware is unchanged, but a smaller board — and it drops the QMC5883L compass this project never used, so there are no unconnected SDA/SCL pins to leave dangling.
+- **Battery: [1000mAh flat LiPo](https://www.amazon.com/dp/B0DPZVBKMY)** instead of 900mAh (the 900 was unavailable). Slightly more runtime, and at the top of what the enclosure will take.
+
+Plus one addition: **[JST 1.25mm 4-pin pre-crimped connector pairs](https://www.amazon.com/dp/B0DNTK1S9L)**, giving the GNSS and the display quick-disconnects so either can be lifted out without disturbing the shield wiring.
+
+> [!TIP]
+> **Use opposite genders on harnesses that share a connector type.** Several 4-pin runs in this build use the same part, so the wrong plug physically fits the wrong socket. Putting the male half board-side on one harness and the female half board-side on its neighbour makes an incorrect mating impossible to assemble — no labels to read. It matters most on the battery / buck-boost / `BAT±` runs, where a crossed connection carries raw cell voltage and can destroy the XIAO or the regulator. See [`DESIGN.md`](DESIGN.md#gender-convention-makes-mis-plugging-impossible).
+
+The rest — XIAO, TPS63020, switch, other JST leads, resistors, USB-C adapter, project box — is identical to [Gnimu nRF52840][0]; see that README for part links and notes. The existing 45×75×20mm project box is a tight fit even before the display, so case fit is an open item (see [`DESIGN.md`](DESIGN.md#7-open-items)).
 
 ---
 
@@ -134,6 +144,18 @@ The **onboard RGB LED stays dark**, since the enclosure puts it where you can't 
 The XIAO's own charge LED is wired to the charge controller and can't be driven by firmware, so it still lights while charging regardless of either setting.
 
 ---
+
+### M100 Mini GNSS LED indicators
+
+These are the GNSS module's own LEDs (not driven by our firmware) — useful for judging fix status without a serial connection. **This variant's M100 Mini uses the opposite color convention from the M100-5883** documented for [Gnimu nRF52840][0] — confirmed on the bench 2026-08-06, not a wiring issue:
+
+| LED | Pattern | Meaning |
+|---|---|---|
+| Blue (power) | Solid | GNSS rail powered |
+| Red (PPS) | Steady/flickering | Powered, no fix acquired yet |
+| Red (PPS) | Settles to a slow blink | 3D fix acquired |
+
+On the -5883, red is power and blue is PPS — exactly reversed. If you've built the other variant first, expect to be surprised by this once.
 
 ## Troubleshooting
 
