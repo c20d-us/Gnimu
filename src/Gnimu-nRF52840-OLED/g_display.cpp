@@ -18,10 +18,7 @@
 #include "config.h"
 
 // See DISPLAY_ENABLED in config.h. When 0, none of this module's real
-// implementation - not even the includes - is compiled in, so the display can
-// be excluded from the binary as a variable when isolating whether its I2C
-// traffic is what caps the GNSS PVT rate. The stub implementation at the
-// bottom of this file takes over in that case.
+// implementation is compiled in.
 #if DISPLAY_ENABLED
 
 #include "g_battery.h"
@@ -33,14 +30,11 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 
-// Full-buffer (F) hardware-I2C driver. The 1 KB framebuffer is nothing against
-// the nRF52840's 256 KB, and full-buffer mode is what supports the partial
-// updateDisplayArea() pushes this module relies on. U8X8_PIN_NONE: the 4-pin
-// module breaks out no reset line.
+// Full-buffer (F) hardware-I2C driver.
 static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
 
-static bool present = false;  // panel answered at begin(); false disables all
-static bool asleep = false;   // DISPLAYOFF sent
+static bool present = false; // panel answered at begin(); false disables all
+static bool asleep = false;  // DISPLAYOFF sent
 static unsigned long lastRenderMs = 0;
 static unsigned long lastShiftMs = 0;
 static unsigned long lastSliceMs = 0;
@@ -53,8 +47,7 @@ static int pushCursor = -1;
 
 // --- Burn-in pixel shift ----------------------------------------------------
 // Walks the perimeter of a 3x3 grid so every element visits 8 distinct pixel
-// positions rather than sliding along one diagonal. Positive-only: see the
-// DISPLAY_LAYOUT_W comment in config.h for why a symmetric shift clips.
+// positions rather than sliding along one diagonal.
 static uint8_t shiftIdx = 0;
 static const int8_t SHIFT_X[8] = {0, 1, 2, 2, 2, 1, 0, 0};
 static const int8_t SHIFT_Y[8] = {0, 0, 0, 1, 2, 2, 2, 1};
@@ -63,18 +56,7 @@ static inline int oy(int y) { return y + SHIFT_Y[shiftIdx]; }
 
 // --- USB plug icon ----------------------------------------------------------
 // Hand-drawn, like everything small on this panel: Open Iconic's "embedded"
-// subset has no USB glyph, and its vector downscales lose their shape at 8x8
-// anyway (a lightning bolt was tried here first and turned to mush).
-//
-// This replaced a charging bolt for a behavioural reason, not an aesthetic one.
-// The bolt was gated on `bat.charging && !bat.full`, and `full` is
-// `voltage >= BATTERY_FULL_V` with no hysteresis - so near a full cell the
-// voltage wanders across the threshold and the flag oscillates, making the bolt
-// blink on and off at random. USB presence is a clean digital signal with no
-// threshold to chatter on.
-//
-// 7 wide x 8 tall, XBM row order, LSB = leftmost pixel. A plug viewed head-on:
-// two prongs, a body, and a cable tapering away.
+// subset has no USB glyph.
 //
 //     . # # . # # .
 //     . # # . # # .
@@ -84,13 +66,16 @@ static inline int oy(int y) { return y + SHIFT_Y[shiftIdx]; }
 //     . # # # # # .
 //     . . # # # . .
 //     . . # # # . .
-static const uint8_t USB_XBM[] = {0x36, 0x36, 0x7F, 0x7F, 0x7F, 0x3E, 0x1C, 0x1C};
+static const uint8_t USB_XBM[] = {0x36, 0x36, 0x7F, 0x7F,
+                                  0x7F, 0x3E, 0x1C, 0x1C};
 static const int USB_W = 7, USB_H = 8;
 
 static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded encoding
 
 // --- Draw helpers -----------------------------------------------------------
-static void strAt(int x, int y, const char *s) { oled.drawStr(ox(x), oy(y), s); }
+static void strAt(int x, int y, const char *s) {
+  oled.drawStr(ox(x), oy(y), s);
+}
 
 // Right-aligned and centred variants measure with getStrWidth() rather than
 // assuming a fixed advance - not every u8g2 "_tf" font is fixed-pitch. Centring
@@ -128,7 +113,8 @@ static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
 // well enough at a glance, and a number that close to the noise floor of a
 // voltage-derived SoC estimate implied more precision than exists. Dropping it
 // also freed the width the USB icon now uses.
-static void drawStatusBar(const char *label, bool bleUp, const BatteryStatus &bat) {
+static void drawStatusBar(const char *label, bool bleUp,
+                          const BatteryStatus &bat) {
   if (bleUp) {
     oled.setFont(u8g2_font_open_iconic_embedded_1x_t);
     oled.drawGlyph(ox(0), oy(8), ICON_BLUETOOTH);
@@ -156,10 +142,14 @@ static void drawStatusBar(const char *label, bool bleUp, const BatteryStatus &ba
 // wire and must not leak here.
 static const char *fixLabel(uint8_t fixType) {
   switch (fixType) {
-  case 2:  return "2D";
-  case 3:  return "3D";
-  case 4:  return "3D";  // GNSS + dead reckoning; no DR sensors on the M100
-  default: return "No Fix";
+  case 2:
+    return "2D";
+  case 3:
+    return "3D";
+  case 4:
+    return "3D"; // GNSS + dead reckoning; no DR sensors on the M100
+  default:
+    return "No Fix";
   }
 }
 
@@ -364,15 +354,15 @@ void displayUpdate() {
   }
 
   renderFrame();
-  pushCursor = 0;      // hand the frame to the metered push above
-  lastSliceMs = now;   // first slice waits one full interval, like the rest
+  pushCursor = 0;    // hand the frame to the metered push above
+  lastSliceMs = now; // first slice waits one full interval, like the rest
 }
 
 void displaySleep() {
   if (!present || asleep) {
     return;
   }
-  pushCursor = -1; // abandon any frame mid-push; it is about to be blanked
+  pushCursor = -1;      // abandon any frame mid-push; it is about to be blanked
   oled.setPowerSave(1); // SSD1306 DISPLAYOFF
   asleep = true;
 }

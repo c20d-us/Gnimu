@@ -19,6 +19,7 @@
 #include "config.h"
 #include "g_log.h"
 #include <LSM6DS3.h>
+#include <Wire.h> // Wire1, for the setClock() below
 
 // IMU driver. I2C at IMU_I2C_ADDRESS (0x6A).
 static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
@@ -90,16 +91,53 @@ static int16_t toProtocolInt16(float value) {
 // FIRST, in the sensor's raw axis frame. That keeps the offsets intrinsic to
 // the chip so they don't need to change if the mounting orientation flips
 // the IMU_AXIS_* mapping. The mounting remap runs AFTER the correction.
+// Reassemble a little-endian register pair, matching the byte order the
+// library's own readRegisterInt16() uses (low byte first).
+static inline int16_t rawPair(const uint8_t *p) {
+  return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
 static ImuRawSample readImuRaw() {
+  // Last good sample, reused if a read fails - see the error branch below.
+  // Zero-initialised, so a failure before the very first successful read
+  // yields zeros rather than stack garbage.
+  static ImuRawSample lastGood = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+
   ImuRawSample s;
-  s.accel[0] = myIMU.readFloatAccelX() - IMU_ACCEL_OFFSET_X_G;
-  s.accel[1] = myIMU.readFloatAccelY() - IMU_ACCEL_OFFSET_Y_G;
-  s.accel[2] = myIMU.readFloatAccelZ() - IMU_ACCEL_OFFSET_Z_G;
-  s.gyro[0] = myIMU.readFloatGyroX() - IMU_GYRO_OFFSET_X_DPS;
-  s.gyro[1] = myIMU.readFloatGyroY() - IMU_GYRO_OFFSET_Y_DPS;
-  s.gyro[2] = myIMU.readFloatGyroZ() - IMU_GYRO_OFFSET_Z_DPS;
+
+  // ONE burst for all six axes rather than six separate two-transaction
+  // reads. OUTX_L_G (0x22) through OUTZ_H_XL (0x2D) is 12 contiguous bytes -
+  // gyro X/Y/Z then accel X/Y/Z - so this is 2 I2C transactions instead of 12.
+  //
+  // Speed is the lesser reason. The real one is SAMPLE COHERENCY: BDU (set in
+  // configureNormalMode) freezes each register PAIR so a 16-bit read cannot
+  // straddle a sample, but six separate transactions still leave gaps in which
+  // a new sample can land - so X could come from one sample and Z from the
+  // next. A single burst returns one coherent six-axis set, which matters when
+  // the values feed per-chip offset correction, an axis remap, and a
+  // transient-peak detector that is specifically looking for short events.
+  uint8_t raw[12];
+  if (myIMU.readRegisterRegion(raw, LSM6DS3_ACC_GYRO_OUTX_L_G, sizeof(raw)) !=
+      IMU_SUCCESS) {
+    // Reuse the previous sample rather than feeding a failed read into the
+    // filters. The old per-axis path had no such guard: a bad transfer went
+    // straight into the EMA and, worse, into the transient-peak window, where
+    // one bogus value is latched as a "peak" and reported as a real event.
+    // Deliberately silent - this runs at IMU_SAMPLE_INTERVAL_MS, and logging
+    // per failure would be its own latency problem on a flaky bus.
+    return lastGood;
+  }
+
+  s.gyro[0] = myIMU.calcGyro(rawPair(&raw[0])) - IMU_GYRO_OFFSET_X_DPS;
+  s.gyro[1] = myIMU.calcGyro(rawPair(&raw[2])) - IMU_GYRO_OFFSET_Y_DPS;
+  s.gyro[2] = myIMU.calcGyro(rawPair(&raw[4])) - IMU_GYRO_OFFSET_Z_DPS;
+  s.accel[0] = myIMU.calcAccel(rawPair(&raw[6])) - IMU_ACCEL_OFFSET_X_G;
+  s.accel[1] = myIMU.calcAccel(rawPair(&raw[8])) - IMU_ACCEL_OFFSET_Y_G;
+  s.accel[2] = myIMU.calcAccel(rawPair(&raw[10])) - IMU_ACCEL_OFFSET_Z_G;
+
   remapAxes(s.accel);
   remapAxes(s.gyro);
+  lastGood = s;
   return s;
 }
 
@@ -125,6 +163,14 @@ static void configureNormalMode() {
     while (1)
       delay(100);
   }
+
+  // Raise the IMU bus above the core's 100kHz default. MUST come after
+  // begin(): the library calls Wire1.begin() internally, which hardcodes the
+  // TWIM FREQUENCY register, so anything set earlier is silently overwritten.
+  // Re-applied on every call because imuDisarmWake() runs begin() again on
+  // each LIGHT_SLEEP exit. See IMU_I2C_CLOCK_HZ in config.h for why this
+  // matters to loop() latency.
+  Wire1.setClock(IMU_I2C_CLOCK_HZ);
 
   // Enable Block Data Update on CTRL3_C: freezes each 16-bit output register
   // between its low- and high-byte reads, so a two-byte fetch can never

@@ -69,6 +69,24 @@
 #define IMU_GYRO_RANGE_DPS MPU6050_RANGE_500_DEG   // 500 deg/s for auto-x
 #define IMU_FILTER_BANDWIDTH_HZ MPU6050_BAND_21_HZ // built-in low-pass filter
 
+// I2C bus speed for the MPU-6050.
+//
+// This is a LATENCY setting: imuPoll() reads the sensor every
+// IMU_SAMPLE_INTERVAL_MS, and every millisecond spent blocked in that transfer
+// is a millisecond gnssPoll() is not draining the GNSS UART.
+//
+// The default is NOT 400kHz and has to be set explicitly. Wire.begin() leaves
+// the ESP32 bus at 100kHz; Adafruit_BusIO exposes setSpeed() but the MPU-6050
+// library never calls it, so nothing raises it on its own. g_imu.cpp applies
+// this AFTER myIMU.begin(), which is required - begin() brings the bus up and
+// would overwrite an earlier setting.
+//
+// Unlike the nRF52 variants, only this half of the fix applies here: Adafruit's
+// _read() already fetches all six axes plus temperature as a single 14-byte
+// burst, so there is no per-axis transaction overhead to remove. The MPU-6050
+// supports 400kHz per InvenSense's datasheet.
+#define IMU_I2C_CLOCK_HZ 400000
+
 // ImuAxis smoothing rates and transient thresholds.
 // The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
 // window's peak must exceed before it gets blended into the transmitted value
@@ -117,7 +135,7 @@
 // PVT rate while no BLE client is connected - keeps the receiver ticking (and
 // the fix warm) without the full 25Hz load when nobody is listening.
 #define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 0 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // GNSS UART wiring - which ESP32 GPIOs you routed the receiver's TX/RX to.
@@ -184,7 +202,7 @@
 // preprocessor-level no-op, both the call AND its arguments vanish before the
 // compiler sees them. Turning this off eliminates a small amount of
 // once-per-second stats-printf loop-latency.
-#define LOG_ENABLED 1
+#define LOG_ENABLED 0
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 

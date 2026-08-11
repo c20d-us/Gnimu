@@ -4,25 +4,22 @@
 [![Platform: nRF52840][Platform-shield]][Platform-link]
 [![Language: C++ (Arduino)][Language-shield]][Language-link]
 
-This section of the repository is a further evolution of [Gnimu nRF52840][0] — same **Seeed Studio XIAO nRF52840 Sense** [MCU][9], GNSS module, onboard IMU, battery subsystem, and BLE protocol — that replaces the onboard RGB status LED with a small **SSD1306 OLED display**. Where the LED could only signal state through color and blink pattern, the display can show it directly as text, alongside GNSS quality information the LED never could: **locked satellites, pDOP, horizontal accuracy, PVT rate, and fix status**.
+This section of the repository is a further evolution of [Gnimu nRF52840][0]. The same **Seeed Studio XIAO nRF52840 Sense** [MCU][9], GNSS module, onboard IMU, battery subsystem, and BLE protocol, but it replaces the onboard RGB status LED with a small **SSD1306 OLED display**. Where the LED could only signal state through color and blink patterns, the display can show it directly as text, alongside GNSS quality information the LED never could: **locked satellites, pDOP, horizontal accuracy, PVT rate, and fix status**.
 
-The advertised BLE identity and RaceBox Data Message protocol are unaffected — this variant differs only in its status/telemetry presentation, not in what it streams to a connected app.
+The advertised BLE identity and RaceBox Data Message protocol are unaffected. This variant differs only in its status/telemetry presentation, not in what it streams to a connected app.
 
 > [!IMPORTANT]
 > **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
-
-> [!NOTE]
-> **Status: pre-implementation.** This tree started as a fork of [Gnimu nRF52840][0]'s firmware (its IMU/GNSS/battery `tools/` sketches not duplicated) — the display hardware has been selected and bench-tested, and its power/wiring architecture worked out (see [`DESIGN.md`](DESIGN.md)), but the `g_display` module itself hasn't been written yet. Until it lands, this firmware behaves identically to the base nRF52840 build, RGB LED included. This README describes the intended end state; sections that don't apply yet are marked accordingly.
 
 ---
 
 ## What it does
 
-Everything [Gnimu nRF52840][0] does — live 25Hz GNSS+IMU streaming over BLE as a RaceBox Mini-compatible device, battery power with a full state machine, low-voltage cutoff — plus, once `g_display` lands:
+This variant does everything [Gnimu nRF52840][0] does, plus:
 
 - Shows device state (RUNNING / CHARGE_ONLY / LIGHT_SLEEP / BATTERY_WAIT / DEEP_SLEEP), BLE connection status, and battery charge/charging status on-screen, replacing the RGB LED's color/blink code with readable text.
 - Shows GNSS fix quality that was previously only visible over serial: **satellites locked, pDOP, horizontal accuracy (hAcc), current PVT rate, and fix status**.
-- Draws its status independent of the GNSS's power schedule — the display stays live and readable through states (like CHARGE_ONLY) where the GNSS is deliberately powered down, so it can always show at least charge/battery status. See [`DESIGN.md`](DESIGN.md#3-power-architecture).
+- Draws its status independent of the GNSS's power schedule. The display stays live and readable through states (like CHARGE_ONLY) where the GNSS is deliberately powered down, so it can always show at least charge/battery status.
 
 See [Gnimu nRF52840's README][0] for everything this variant inherits unchanged: GNSS/IMU pipeline, BLE protocol, battery subsystem, and the RUNNING/CHARGE_ONLY/LIGHT_SLEEP/BATTERY_WAIT/DEEP_SLEEP state machine.
 
@@ -49,8 +46,8 @@ Everything from [Gnimu nRF52840's hardware list][0] applies unchanged, plus:
 
 **Two other parts differ from [Gnimu nRF52840][0]** — both chosen to ease the fit, since adding the display makes an already-snug case tighter:
 
-- **GNSS: [HGLRC M100 Mini](https://www.amazon.com/dp/B0BX65QZJ8)** instead of the M100-5883. Same u-blox M10 receiver, so the firmware is unchanged, but a smaller board — and it drops the QMC5883L compass this project never used, so there are no unconnected SDA/SCL pins to leave dangling.
-- **Battery: [1000mAh flat LiPo](https://www.amazon.com/dp/B0DPZVBKMY)** instead of 900mAh (the 900 was unavailable). Slightly more runtime, and at the top of what the enclosure will take.
+- **GNSS: [HGLRC M100 Mini](https://www.amazon.com/dp/B0BX65QZJ8)** instead of the M100-5883. Same u-blox M10 receiver, so the firmware is unchanged, but a smaller board that drops the QMC5883L compass this project never used.
+- **Battery: [1000mAh flat LiPo](https://www.amazon.com/dp/B0DPZVBKMY)** instead of 900mAh (the 900mAh was unavailable). Slightly more runtime, and at the top of what the enclosure will take.
 
 Plus one addition: **[JST 1.25mm 4-pin pre-crimped connector pairs](https://www.amazon.com/dp/B0DNTK1S9L)**, giving the GNSS and the display quick-disconnects so either can be lifted out without disturbing the shield wiring.
 

@@ -56,15 +56,6 @@
 
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
-//
-// This build and the non-display nRF52840 target the SAME MCU, so the wrong
-// binary flashes and runs happily. They differ in POWER_SWITCH_SENSE_PIN: A1
-// here, A4 in the non-display build, because on this board A4 IS SDA and the
-// display needs the bus. Flash the non-display firmware onto this hardware and
-// the switch-sense read lands on a pin the display is driving - a misread
-// switch position plus a divider argued onto the I2C bus, presenting as flaky
-// state transitions and a glitchy screen rather than anything pointing at the
-// real cause. This line makes it visible on the first serial output instead.
 #define GNIMU_VARIANT "nRF52840-OLED"
 
 // ----------------------------------------------------------------------------
@@ -99,38 +90,24 @@
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/nRF52840/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-// Bench-calibrated 2026-07-23 (average of 4 imu_calibration runs; per-run
-// spread was < 0.001g accel / < 0.03dps gyro). Two further trims on top of
-// that, both from in-case full-firmware behavior the bench sketch can't see
-// (it only powers the IMU, not GNSS/BLE, so it misses production's
-// thermal/electrical load):
-//   * Z accel: +0.0075g (rest reading sat at 0.992-0.993g).
-//   * Z gyro:  +0.045dps (Gnimu Monitor yaw rate sat at +0.02..0.07dps).
-#define IMU_ACCEL_OFFSET_X_G +0.004967f
-#define IMU_ACCEL_OFFSET_Y_G +0.003585f
-#define IMU_ACCEL_OFFSET_Z_G +0.019085f
-#define IMU_GYRO_OFFSET_X_DPS +0.611464f
-#define IMU_GYRO_OFFSET_Y_DPS -1.458232f
-#define IMU_GYRO_OFFSET_Z_DPS +0.609842f
+#define IMU_ACCEL_OFFSET_X_G +0.0f
+#define IMU_ACCEL_OFFSET_Y_G +0.0f
+#define IMU_ACCEL_OFFSET_Z_G +0.0f
+#define IMU_GYRO_OFFSET_X_DPS +0.0f
+#define IMU_GYRO_OFFSET_Y_DPS +0.0f
+#define IMU_GYRO_OFFSET_Z_DPS +0.0f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
-// Board-frame axes, to be bench-confirmed via src/tools/nRF52840/imu_tiltmap
 // The bench-verified orientation of the XIAO Sense:
 //      +X -> toward the BLE-antenna end (away from USB-C)
 //      +Y -> toward the left edge (LED side)
 //      +Z -> up, out of the top of the SoC face
 // What may vary per BUILD is how the module sits in your enclosure. Each
 // VEHICLE axis below names which SENSOR axis feeds it (0=X, 1=Y, 2=Z) plus a
-// sign. That covers all 24 physically-realizable orientations, including edge
-// mounts - unlike the older IMU_SWAP_XY model, which only reached the 8
-// flat-mount cases and is retired.
+// sign. This covers all 24 physically-realizable orientations.
 //
 // TARGET OUTPUT FRAME: X forward+, Y left+, Z up+ (ISO 8855, right-handed).
-// Established from the upstream emulator's unremapped output, the RaceBox
-// protocol doc's own worked example packet, and the RaceBox Mini mounting
-// manual. The protocol doc's axis FIGURE contradicts all three and is wrong -
-// its arrows are uniformly inverted. See nRF52840-OLED/DESIGN.md section 6.
 //
 // ORDER NAMES read as "which sensor axis feeds vehicle X, Y, Z". Because the
 // target frame is right-handed, a valid map is always a proper rotation, so
@@ -152,35 +129,28 @@
 //      up vs down.
 //   2. Raise the forward end - the axis going positive is vehicle X.
 //   3. Raise the left side  - the axis going positive is vehicle Y.
-// Do NOT use the Monitor app to check signs: it is a display layer that has
-// been wrong in exactly this area before.
 //
-// CURRENT VALUES: order XYZ with X and Y flipped - the 180-degree yaw of the
-// flat, SoC-up, USB-C-forward mounting. Bench-verified 2026-08-04 by static
-// tilt: standing on the forward end reads X=-1, on the rearward end X=+1;
-// left-side-down reads Y=-1 (a right turn), right-side-down Y=+1; flat reads
-// Z=+1. Carried over from the non-display build; this variant moves the XIAO
-// to the end wall, so the map must be re-derived once that mount is final.
+// CURRENT VALUES: order XYZ with no sign flips. The XIAO board is in standard
+// orientation with USB plug facing rearward and SoC face up.
 #define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
-#define IMU_AXIS_X_SIGN -1.0f
+#define IMU_AXIS_X_SIGN +1.0f
 #define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
-#define IMU_AXIS_Y_SIGN -1.0f
+#define IMU_AXIS_Y_SIGN +1.0f
 #define IMU_AXIS_Z_SRC 2 // vehicle up      <- sensor Z
 #define IMU_AXIS_Z_SIGN +1.0f
 
 // --- LIGHT_SLEEP wake-up detector (omni-directional shake-to-wake) ---
 // Configured via direct register writes (the Seeed library has no high-level
-// API for this) per ST AN4650. Bench-tuned via src/tools/nRF52840/imu_wake.
-// CTRL1_XL: ODR=12.5Hz (low-power mode) | FS=+/-4g - bits [7:4] ODR_XL=0001,
-// bits [3:2] FS_XL=10. A low ODR is what puts the accelerometer into the
-// chip's automatic low-power mode; full accuracy isn't needed just to detect
-// "something moved." FS is deliberately kept matched to IMU_ACCEL_RANGE_G
-// (the RUNNING-mode range) rather than dropped to +/-2g: since this is a live
-// mode switch on an already-running chip (not a cold power-on), changing
-// FS_XL creates a scale discontinuity in the wake-up detector's raw-code
-// threshold comparison that persists (not a settling transient - a delay
-// before arming does not fix it) and reliably false-triggers immediately.
-// Only ODR changes across the RUNNING<->LIGHT_SLEEP transition now.
+// API for this) per ST AN4650. A low ODR is what puts the accelerometer into
+// the chip's automatic low-power mode; full accuracy isn't needed just to
+// detect "something moved." FS is deliberately kept matched to
+// IMU_ACCEL_RANGE_G (the RUNNING-mode range) rather than dropped to +/-2g:
+// since this is a live mode switch on an already-running chip (not a cold
+// power-on), changing FS_XL creates a scale discontinuity in the wake-up
+// detector's raw-code threshold comparison that persists (not a settling
+// transient - a delay before arming does not fix it) and reliably
+// false-triggers immediately. Only ODR changes across the RUNNING<->LIGHT_SLEEP
+// transition now.
 #define IMU_WAKE_CTRL1_XL 0x18
 // 6-bit wake-up threshold (0-63), LSB weight = FS_XL/64 - so this scales with
 // the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL
@@ -200,22 +170,46 @@
 // pullup silently win every write, defeating our rail-cutoff.
 #define GNSS_EN_PIN D9
 
-// Target baud of 115200 is chosen deliberately: at 25Hz PVT the receiver only
-// puts out ~2500bytes/sec, way under this baud's capacity. The 4x-wider
-// Serial1 RX buffer window (~5.5ms fill time) gives enough headroom that our
-// worst-case loop latency spikes never drop UBX bytes. Tests at 460800 caused
-// significant fix rate drops in bench testing. There is no need to go higher
-// than 115200 for normal operation.
+// LOWER is better here, within reason - this setting buys loop-latency
+// tolerance, not throughput.
 //
-// gnssBegin's connectAndConfigureBaud() logic sweeps common rates and
-// reconfigures + saves-to-flash if the receiver is ever found at a different
-// rate.
-#define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 25 // max supported by RaceBox Mini protocol
+// What matters is how long the ~64-byte Serial1 RX buffer takes to fill, since
+// that is the deadline by which gnssPoll() must service it or UBX bytes are
+// lost and the observed PVT rate sags. Halving the baud doubles that deadline:
+//
+//   baud     RX fill window   NAV-PVT airtime   link use @25Hz
+//   460800   ~1.4 ms          ~2.2 ms           5%
+//   115200   ~5.6 ms          ~8.7 ms           22%
+//   57600    ~11.1 ms         ~17.4 ms          43%
+//   38400    ~16.7 ms         ~26 ms            65%
+//
+// Throughput is nowhere near the constraint: NAV-PVT is a fixed 100 bytes
+// (92 payload + 8 framing) regardless of SV count, so 25Hz is only ~2500
+// bytes/sec and link utilisation does not grow as satellites are added.
+//
+// This project has now walked this down twice for the same reason. 460800 was
+// abandoned first - a 1.4 ms window is shorter than worst-case loop latency,
+// which craters the rate. 115200 held for a long time, but the GPS+Galileo
+// work (2026-08-06) needed more margin than its 5.6 ms window allowed.
+//
+// 57600 doubles the deadline again while still using under half the link at
+// full rate. The costs are that a packet takes ~8.7 ms longer to arrive (still
+// well inside one epoch, irrelevant for this use case) and that there is less
+// slack if additional UBX messages are ever enabled - only NAV-PVT is today,
+// and adding NAV-SAT or similar would change the arithmetic quickly here.
+//
+// 38400 would still work at 25Hz but the margin starts running the wrong way:
+// two-thirds link utilisation, and the packet occupies ~26 ms of a 40 ms epoch.
+//
+// gnssBegin's connectAndConfigureBaud() sweeps common rates, reconfigures the
+// receiver, and saves to flash if it is found at a different rate - so changing
+// this value is a one-line edit that survives the next boot on its own.
+#define GNSS_BAUD 57600
+#define GNSS_NAV_RATE_HZ 25
 // PVT rate while no BLE client is connected - keeps the receiver ticking (and
 // the fix warm) without the full 25Hz load when nobody is listening.
 #define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
@@ -226,11 +220,9 @@
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region
 // benefits from. Enabling too many can pull the update rate below 25Hz.
-// HGLRC M100-5883 purports to support GPS/Galileo/GLONASS/BeiDou/QZSS/SBAS,
-// though emprical testing indicates it only supports GPS + Galileo.
 // Only GPS is enabled below for North American use. Testing has shown that the
-// M100-5883 can't quite maintain a 25Hz fix rate with both GPS+Galileo enabled.
-// Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
+// M100-5883/M100 Mini can't maintain a 25Hz fix rate with both GPS+Galileo
+// enabled. Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
       {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
@@ -250,8 +242,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -12  // while advertising
-#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
+#define BLE_TX_POWER_ADV_DBM -20  // while advertising
+#define BLE_TX_POWER_CONN_DBM -20 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -262,7 +254,7 @@
 // GNSS rail (EN pulled low) then enters System OFF, which remains latched until
 // a real power event (USB plug-in or a switch off->on cycle).
 // Debounce so acquisition current spikes don't trip it.
-#define BATTERY_CUTOFF_V 3.37f          // Cutoff voltage threshold
+#define BATTERY_CUTOFF_V 3.35f          // Cutoff voltage threshold
 #define BATTERY_WARN_V 3.60f            // Amber LED blink voltage threshold
 #define BATTERY_CRITICAL_V 3.40f        // Red LED blink voltage threshold
 #define BATTERY_CUTOFF_DEBOUNCE_MS 5000 // low-V duration before tripping
@@ -302,7 +294,7 @@
 // higher = snappier, lower = smoother. The low-voltage cutoff uses the
 // un-smoothed fresh peak, so this is display-only and can never hide a
 // genuine low voltage cutoff from the safety path.
-#define BATTERY_EMA_ALPHA 0.2f
+#define BATTERY_EMA_ALPHA 0.1f
 
 // --- Discharge curve (resting volts -> percent), high to low ---
 // A macro (not an array) so the table lives here while g_battery.cpp owns
@@ -310,18 +302,10 @@
 // {voltage, percent} pairs. Must be sorted high voltage -> low.
 //
 // Deliberately simplified to just two endpoints - a straight line, not a
-// real LiPo discharge curve. 3.90V/100% is the actual measured resting
-// voltage of this specific 900mAh pack after a full charge (bench-logged via
-// src/tools/nRF52840/battery_log, 2026-07); 3.37V/0% matches BATTERY_CUTOFF_V
-// exactly. Both endpoints are real for THIS cell; the straight line between
-// them is not - real cells have a flat plateau through the middle of the range
-// (roughly 20-80% SoC often sits in a narrow ~3.7-3.85V band) with much
-// steeper drops near both ends, so displayed SoC% will read pessimistically
-// low through the middle of a discharge. Accepted trade-off for now: this
-// doesn't touch the low-voltage cutoff (a direct voltage compare against
-// BATTERY_CUTOFF_V, not derived from this curve), only the informational
-// display. Revisit with a real multi-point discharge-curve log later.
-#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.37f, 0}}
+// real LiPo discharge curve. 3.90V/100% is an actual measured resting
+// voltage of a LiPo pack after a full charge; 3.35V/0% matches BATTERY_CUTOFF_V
+// exactly.
+#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.35f, 0}}
 
 // ----------------------------------------------------------------------------
 // --- Power ---
@@ -335,14 +319,6 @@
 // Divider sized at 510k for low always-on switch-off standby draw (~4uA), while
 // staying inside the SAADC's TACQ=40us source-impedance budget and the GPIO
 // input-leakage margin below POWER_SWITCH_OFF_THRESHOLD_MV.
-//
-// A1, NOT A4 as in the non-display builds. On this board A4 and SDA are the
-// same physical pin (variant.h: PIN_A4 == PIN_WIRE_SDA == 4), and this variant
-// puts the OLED on the external I2C bus. Sharing is impossible, not merely
-// awkward: the sense read needs the pin in analog-input mode while I2C needs
-// it owned by the TWI peripheral, and powerSwitchOn() polls continuously.
-// The divider would also load the bus, biasing the line toward ~2V through
-// 510k whenever the switch is off. A5/SCL is likewise off-limits.
 #define POWER_SWITCH_SENSE_PIN A1         // Set to your selected GPIO pin
 #define POWER_SWITCH_OFF_THRESHOLD_MV 800 // pin mv above this == switch OFF
 
@@ -424,22 +400,13 @@
 // --- Display (SSD1306 128x64 OLED) ---
 // ----------------------------------------------------------------------------
 
-// 1 = normal operation (default). 0 = display fully disabled at COMPILE TIME -
-// not "not detected," not "sleeping": g_display's I2C calls do not exist in the
-// binary at all, so Wire.begin() never runs and D4/D5 stay unconfigured rather
-// than merely idle.
-//
-// This is a diagnostic toggle, not a feature flag: it isolates whether the
-// display's I2C traffic is what caps the GNSS PVT rate, or whether a ceiling
-// (e.g. the 23-24Hz sag observed 2026-08-06) is intrinsic to the M100 Mini
-// itself under the current sky/SV conditions, independent of the display
-// entirely. Flip to 0, reflash, and compare the same GNSS hardware with zero
-// competing I2C traffic against the DISPLAY_ENABLED=1 baseline.
+// 1 = normal operation (default). 0 = display fully disabled at COMPILE TIME.
+// This is here as a diagnostic toggle: it isolates whether the display's I2C
+// traffic affects the GNSS PVT rate.
 //
 // displayIsPresent() returns false when this is 0, so LED_ENABLED's fallback
-// behavior (g_led lighting up when no display is present) engages automatically
-// - a side effect, not the point of this flag, but worth knowing about if the
-// LED comes on during this test.
+// behavior (g_led lighting up when no display is present) engages
+// automatically.
 #define DISPLAY_ENABLED 1
 
 // How often the whole screen is re-rendered and pushed. Nothing on screen is
@@ -448,18 +415,17 @@
 
 // Minimum gap between consecutive slice pushes.
 //
-// This is the setting that actually fixed the GNSS rate, and it works on
-// DENSITY rather than volume. Total I2C time was never the problem - a whole
-// frame is ~31 ms spread over a second. The problem was that the slices landed
-// on CONSECUTIVE loop iterations, so for the length of a burst the UART never
-// got a clear stretch in which to be drained, and NAV-PVT bytes were lost.
-// Spacing the pushes leaves roughly four full RX-buffer fill windows (~5.5 ms
-// each at GNSS_BAUD) between hits.
+// This setting can affect the GNSS rate, and it works on DENSITY rather than
+// volume. A whole frame takes ~31ms, but the problem is landing the update
+// slices on CONSECUTIVE loop iterations. For the length of a consecutive update
+// burst the UART never gets a clear stretch in which to be drained, and NAV-PVT
+// bytes get lost. Spacing the pushes leaves roughly four full RX-buffer fill
+// windows (~5.5 ms each at GNSS_BAUD) between hits.
 //
-// It also makes the push duration deterministic: a frame now takes
-// (slice count x this) milliseconds regardless of how fast loop() happens to
-// run, which is what lets the static_assert below check the runaway condition
-// at compile time instead of leaving it as a warning in a comment.
+// This also makes the push duration deterministic: a frame now takes
+// (slice count x INTERVAL_MS) milliseconds regardless of how fast loop()
+// happens to run, which is what lets the static_assert below check the runaway
+// condition at compile time instead of leaving it as a warning in a comment.
 #define DISPLAY_SLICE_INTERVAL_MS 20
 
 // Burn-in pixel shift. The layout is nudged around a 3x3 grid of offsets so no
@@ -472,18 +438,11 @@
 // 8x8 px, so one tile column of one tile row = 8 bytes).
 //
 // This is a LATENCY control, not a throughput one. A full 1024-byte frame costs
-// ~31 ms at 400 kHz - measured, see DESIGN.md - against a GNSS UART budget of
-// ~5.5 ms before NAV-PVT bytes are dropped. So the frame is rendered into RAM
-// (free) and pushed a slice at a time, one slice per loop(). At 8 tiles wide
-// that is 64 bytes, roughly 2 ms, about a third of the budget, and a full frame
-// completes in 16 iterations - well inside the refresh interval.
-// Bench-tuned 2026-08-05, and this value MATTERS. At 8 tiles (64 bytes, ~2 ms)
-// the GNSS rate sagged to a wandering 15-25 Hz: during the 16 consecutive
-// iterations a frame takes to push, each loop carried 2 ms of blocking I2C on
-// top of its normal work, and the total crossed the ~5.5 ms UART budget often
-// enough to drop NAV-PVT bytes. Confirmed by raising the refresh interval to
-// 60 s, which restored a solid 25 Hz. At 4 tiles (32 bytes, ~1 ms) the peak
-// halves, at the cost of 32 iterations per frame instead of 16.
+// ~31 ms at 400 kHz. So the frame is rendered into RAM (free) and pushed a
+// slice at a time, one slice per loop(). At 8 tiles wide that is 64 bytes,
+// roughly 2 ms, and a full frame completes in 16 iterations, which is well
+// inside the refresh interval. This value matters, as the the GNSS rate can sag
+// to a wandering 15-25 Hz if set too high.
 //
 // If the rate still wanders, keep halving - but remember each halving doubles
 // the iterations per frame, so DISPLAY_REFRESH_INTERVAL_MS has to grow with it
@@ -500,10 +459,10 @@
 // 1 = normal verbose output
 // 0 = silent
 // Every LOG_PRINT / LOG_PRINTLN / LOG_PRINTF / LOG_FLUSH call is a
-// preprocessor-level no-op, both the call AND its arguments vanish before the
-// compiler sees them. Turning this off eliminates a small amount of
-// once-per-second stats-printf loop-latency.
-#define LOG_ENABLED 1
+// preprocessor-level no-op, so when set to 0 both the call AND its arguments
+// vanish before the compiler sees them. Turning this off eliminates a small
+// amount of once-per-second stats-printf loop-latency.
+#define LOG_ENABLED 0
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
@@ -537,9 +496,8 @@
 // valid only up to a ~40k source; the XIAO VBAT divider is ~338k (1M || 510k)
 // and the switch-sense divider is ~255k (510k || 510k), so short TACQ leaves
 // the sampling cap under-charged and every read undershoots ~100mV. 40us
-// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence.
-// Value is dictated by the fixed divider impedance, not a free performance
-// knob.
+// covers up to ~800k. Value is dictated by the fixed divider impedance, not a
+// free performance knob.
 #define SAADC_TACQ_US 40
 
 // ----------------------------------------------------------------------------
@@ -548,6 +506,28 @@
 
 // Powered by a dedicated enable pin; sits on the internal I2C bus (Wire1).
 #define IMU_I2C_ADDRESS 0x6A // SA0 tied high on the XIAO Sense
+
+// I2C bus speed for the onboard IMU.
+//
+// This is a LATENCY setting, not a throughput one. imuPoll() reads six 16-bit
+// registers every IMU_SAMPLE_INTERVAL_MS, and the Seeed LSM6DS3 library issues
+// each as TWO separate I2C transactions (write register address, then read) -
+// twelve transactions per sample tick, no burst read. At the core's default
+// bus speed that is the single largest recurring blocking cost in loop(),
+// larger than the display's metered slices and 100x/second rather than 32.
+//
+// The default is NOT 400kHz and has to be set explicitly. TwoWire::begin()
+// hardcodes FREQUENCY to K100, and the LSM6DS3 library calls begin() but never
+// setClock() - so without this the IMU bus runs at 100kHz while the display's
+// runs at 400kHz. g_imu.cpp applies it AFTER myIMU.begin(), which is required:
+// begin() resets the frequency register, so setting it earlier is silently
+// undone. It is re-applied on every configureNormalMode() for the same reason
+// (imuDisarmWake() calls begin() again on each LIGHT_SLEEP exit).
+//
+// The LSM6DS3TR-C supports I2C fast mode (400kHz) per ST's datasheet, and
+// Wire1 is entirely internal to the XIAO - short traces, onboard pull-ups - so
+// there is no signal-integrity reason to stay at 100kHz.
+#define IMU_I2C_CLOCK_HZ 400000
 #define IMU_POWER_PIN PIN_LSM6DS3TR_C_POWER
 // Wake-up detector's interrupt output (onboard, no wiring needed).
 #define IMU_INT1_PIN PIN_LSM6DS3TR_C_INT1
@@ -557,7 +537,7 @@
 #define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_NAV_RATE_HZ)
 
 // ----------------------------------------------------------------------------
-// --- GNSS (HGLRC M100-5883, u-blox M10 chipset) ---
+// --- GNSS (HGLRC M100 Mini, u-blox M10 chipset) ---
 // ----------------------------------------------------------------------------
 
 // --- GNSS UART ---
@@ -568,21 +548,13 @@
 #define GNSS_RX_PIN D7
 #define GNSS_TX_PIN D6
 
-// --- GNSS power gate polarity (TPS63020 buck-boost EN) ---
-// Firmware pulls this LOW to disable the rail for low-voltage cutoff and idle
-// sleep, and releases it hi-Z (TPS63020's own EN pullup takes over) to
-// enable (HIGH/hi-Z = rail on, LOW = rail off). Polarity is fixed by the
-// TPS63020's own EN behavior, not a wiring choice - see GNSS_EN_PIN in the
-// Tunables section above for the pin itself.
-
 // ----------------------------------------------------------------------------
 // --- Battery ---
 // ----------------------------------------------------------------------------
 
 // This build has a real battery gauge (VBAT sensing + fuel gauge in
 // g_battery): the shared telemetry module includes the battery segment in the
-// serial stats line. (0 on builds without battery hardware, e.g. the ESP32
-// variant, whose g_battery is a constant stub.)
+// serial stats line. Set to 0 for non-battery builds.
 #define BATTERY_HAS_GAUGE 1
 
 // --- Voltage-sense scaling ---
@@ -637,26 +609,22 @@
 // --- Display (SSD1306 128x64 OLED, hardware I2C) ---
 // ----------------------------------------------------------------------------
 
-// 7-bit address. Bench-confirmed 0x3C on both ordered modules (the other common
-// value is 0x3D, selected by an onboard jumper). NOTE u8g2's setI2CAddress()
-// wants the 8-bit left-shifted form; g_display does that shift, so this stays
-// the plain 7-bit address everything else in the world quotes.
+// 7-bit address. NOTE u8g2's setI2CAddress() wants the 8-bit left-shifted form;
+// g_display does that shift, so this stays the plain 7-bit address everything
+// else in the world quotes.
 #define DISPLAY_I2C_ADDRESS 0x3C
 
 // Panel geometry, and the content area the layout is drawn into.
 //
 // The pixel shift is POSITIVE-ONLY, sliding the layout into a gutter along the
-// right and bottom edges. A symmetric +/- shift was tried first and clipped
-// anything sitting at x=0 or y=0 - notably the status bar's Bluetooth icon -
-// because there is no gutter at the top-left to give. One-directional means
-// layout code reserves slack on two edges instead of four.
+// right and bottom edges.
 #define DISPLAY_WIDTH 128
 #define DISPLAY_HEIGHT 64
 #define DISPLAY_SHIFT_MAX 2
 #define DISPLAY_LAYOUT_W (DISPLAY_WIDTH - DISPLAY_SHIFT_MAX)
 #define DISPLAY_LAYOUT_H (DISPLAY_HEIGHT - DISPLAY_SHIFT_MAX)
 
-// Tiles are 8x8 px, so the panel is 16 x 8 tiles.
+// Tiles are 8x8 px, so the panel is 16x8 tiles.
 #define DISPLAY_TILES_W (DISPLAY_WIDTH / 8)
 #define DISPLAY_TILES_H (DISPLAY_HEIGHT / 8)
 

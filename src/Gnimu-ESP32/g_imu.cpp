@@ -20,6 +20,7 @@
 #include "g_log.h"
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+#include <Wire.h> // for the setClock() in imuBegin()
 
 // IMU
 static Adafruit_MPU6050 myIMU;
@@ -111,6 +112,12 @@ void imuBegin() {
     while (1)
       delay(100);
   }
+
+  // Raise the IMU bus above the core's 100kHz default. MUST come after
+  // begin(): that call brings the bus up and would overwrite anything set
+  // earlier. See IMU_I2C_CLOCK_HZ in config.h for why this matters to loop()
+  // latency, and why only this half of the nRF52 fix applies here.
+  Wire.setClock(IMU_I2C_CLOCK_HZ);
 
   // IMU started, proceed with configuration
   LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");

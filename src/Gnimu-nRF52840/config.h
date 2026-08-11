@@ -147,8 +147,8 @@
 // Only ODR changes across the RUNNING<->LIGHT_SLEEP transition now.
 #define IMU_WAKE_CTRL1_XL 0x18
 // 6-bit wake-up threshold (0-63), LSB weight = FS_XL/64 - so this scales with
-// the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL changes.
-// THE key tunable for shake-to-wake: too low false-triggers on small
+// the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL
+// changes. THE key tunable for shake-to-wake: too low false-triggers on small
 // vibrations, too high misses a real pickup.
 #define IMU_WAKE_THS 4
 #define IMU_WAKE_DUR 0 // debounce, in ODR cycles - 0 = fire on first sample
@@ -164,22 +164,46 @@
 // pullup silently win every write, defeating our rail-cutoff.
 #define GNSS_EN_PIN D9
 
-// Target baud of 115200 is chosen deliberately: at 25Hz PVT the receiver only
-// puts out ~2500bytes/sec, way under this baud's capacity. The 4x-wider
-// Serial1 RX buffer window (~5.5ms fill time) gives enough headroom that our
-// worst-case loop latency spikes never drop UBX bytes. Tests at 460800 caused
-// significant fix rate drops in bench testing. There is no need to go higher
-// than 115200 for normal operation.
+// LOWER is better here, within reason - this setting buys loop-latency
+// tolerance, not throughput.
 //
-// gnssBegin's connectAndConfigureBaud() logic sweeps common rates and
-// reconfigures + saves-to-flash if the receiver is ever found at a different
-// rate.
-#define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 25 // max supported by RaceBox Mini protocol
+// What matters is how long the ~64-byte Serial1 RX buffer takes to fill, since
+// that is the deadline by which gnssPoll() must service it or UBX bytes are
+// lost and the observed PVT rate sags. Halving the baud doubles that deadline:
+//
+//   baud     RX fill window   NAV-PVT airtime   link use @25Hz
+//   460800   ~1.4 ms          ~2.2 ms           5%
+//   115200   ~5.6 ms          ~8.7 ms           22%
+//   57600    ~11.1 ms         ~17.4 ms          43%
+//   38400    ~16.7 ms         ~26 ms            65%
+//
+// Throughput is nowhere near the constraint: NAV-PVT is a fixed 100 bytes
+// (92 payload + 8 framing) regardless of SV count, so 25Hz is only ~2500
+// bytes/sec and link utilisation does not grow as satellites are added.
+//
+// This project has now walked this down twice for the same reason. 460800 was
+// abandoned first - a 1.4 ms window is shorter than worst-case loop latency,
+// which craters the rate. 115200 held for a long time, but the GPS+Galileo
+// work (2026-08-06) needed more margin than its 5.6 ms window allowed.
+//
+// 57600 doubles the deadline again while still using under half the link at
+// full rate. The costs are that a packet takes ~8.7 ms longer to arrive (still
+// well inside one epoch, irrelevant for this use case) and that there is less
+// slack if additional UBX messages are ever enabled - only NAV-PVT is today,
+// and adding NAV-SAT or similar would change the arithmetic quickly here.
+//
+// 38400 would still work at 25Hz but the margin starts running the wrong way:
+// two-thirds link utilisation, and the packet occupies ~26 ms of a 40 ms epoch.
+//
+// gnssBegin's connectAndConfigureBaud() sweeps common rates, reconfigures the
+// receiver, and saves to flash if it is found at a different rate - so changing
+// this value is a one-line edit that survives the next boot on its own.
+#define GNSS_BAUD 57600
+#define GNSS_NAV_RATE_HZ 25
 // PVT rate while no BLE client is connected - keeps the receiver ticking (and
 // the fix warm) without the full 25Hz load when nobody is listening.
 #define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 0 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
@@ -214,8 +238,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -12  // while advertising
-#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
+#define BLE_TX_POWER_ADV_DBM -16  // while advertising
+#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -226,7 +250,7 @@
 // GNSS rail (EN pulled low) then enters System OFF, which remains latched until
 // a real power event (USB plug-in or a switch off->on cycle).
 // Debounce so acquisition current spikes don't trip it.
-#define BATTERY_CUTOFF_V 3.37f          // Cutoff voltage threshold
+#define BATTERY_CUTOFF_V 3.35f          // Cutoff voltage threshold
 #define BATTERY_WARN_V 3.60f            // Amber LED blink voltage threshold
 #define BATTERY_CRITICAL_V 3.40f        // Red LED blink voltage threshold
 #define BATTERY_CUTOFF_DEBOUNCE_MS 5000 // low-V duration before tripping
@@ -274,18 +298,8 @@
 // {voltage, percent} pairs. Must be sorted high voltage -> low.
 //
 // Deliberately simplified to just two endpoints - a straight line, not a
-// real LiPo discharge curve. 3.90V/100% is the actual measured resting
-// voltage of this specific 900mAh pack after a full charge (bench-logged via
-// src/tools/nRF52840/battery_log, 2026-07); 3.37V/0% matches BATTERY_CUTOFF_V exactly.
-// Both endpoints are real for THIS cell; the straight line between them is
-// not - real cells have a flat plateau through the middle of the range
-// (roughly 20-80% SoC often sits in a narrow ~3.7-3.85V band) with much
-// steeper drops near both ends, so displayed SoC% will read pessimistically
-// low through the middle of a discharge. Accepted trade-off for now: this
-// doesn't touch the low-voltage cutoff (a direct voltage compare against
-// BATTERY_CUTOFF_V, not derived from this curve), only the informational
-// display. Revisit with a real multi-point discharge-curve log later.
-#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.37f, 0}}
+// real LiPo discharge curve.
+#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.35f, 0}}
 
 // ----------------------------------------------------------------------------
 // --- Power ---
@@ -369,7 +383,7 @@
 // preprocessor-level no-op, both the call AND its arguments vanish before the
 // compiler sees them. Turning this off eliminates a small amount of
 // once-per-second stats-printf loop-latency.
-#define LOG_ENABLED 1
+#define LOG_ENABLED 0
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
@@ -403,8 +417,9 @@
 // valid only up to a ~40k source; the XIAO VBAT divider is ~338k (1M || 510k)
 // and the switch-sense divider is ~255k (510k || 510k), so short TACQ leaves
 // the sampling cap under-charged and every read undershoots ~100mV. 40us
-// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence. Value
-// is dictated by the fixed divider impedance, not a free performance knob.
+// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence.
+// Value is dictated by the fixed divider impedance, not a free performance
+// knob.
 #define SAADC_TACQ_US 40
 
 // ----------------------------------------------------------------------------
@@ -413,6 +428,29 @@
 
 // Powered by a dedicated enable pin; sits on the internal I2C bus (Wire1).
 #define IMU_I2C_ADDRESS 0x6A // SA0 tied high on the XIAO Sense
+
+// I2C bus speed for the onboard IMU (Wire1 / TWIM1 - a separate peripheral
+// from the display's Wire/TWIM0, so the two never contend).
+//
+// This is a LATENCY setting, not a throughput one. imuPoll() reads six 16-bit
+// registers every IMU_SAMPLE_INTERVAL_MS, and the Seeed LSM6DS3 library issues
+// each as TWO separate I2C transactions (write register address, then read) -
+// twelve transactions per sample tick, no burst read. At the core's default
+// bus speed that is the single largest recurring blocking cost in loop(),
+// larger than the display's metered slices and 100x/second rather than 32.
+//
+// The default is NOT 400kHz and has to be set explicitly. TwoWire::begin()
+// hardcodes FREQUENCY to K100, and the LSM6DS3 library calls begin() but never
+// setClock() - so without this the IMU bus runs at 100kHz while the display's
+// runs at 400kHz. g_imu.cpp applies it AFTER myIMU.begin(), which is required:
+// begin() resets the frequency register, so setting it earlier is silently
+// undone. It is re-applied on every configureNormalMode() for the same reason
+// (imuDisarmWake() calls begin() again on each LIGHT_SLEEP exit).
+//
+// The LSM6DS3TR-C supports I2C fast mode (400kHz) per ST's datasheet, and
+// Wire1 is entirely internal to the XIAO - short traces, onboard pull-ups - so
+// there is no signal-integrity reason to stay at 100kHz.
+#define IMU_I2C_CLOCK_HZ 400000
 #define IMU_POWER_PIN PIN_LSM6DS3TR_C_POWER
 // Wake-up detector's interrupt output (onboard, no wiring needed).
 #define IMU_INT1_PIN PIN_LSM6DS3TR_C_INT1
