@@ -90,12 +90,18 @@
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/nRF52840/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-#define IMU_ACCEL_OFFSET_X_G +0.0f
-#define IMU_ACCEL_OFFSET_Y_G +0.0f
-#define IMU_ACCEL_OFFSET_Z_G +0.0f
-#define IMU_GYRO_OFFSET_X_DPS +0.0f
-#define IMU_GYRO_OFFSET_Y_DPS +0.0f
-#define IMU_GYRO_OFFSET_Z_DPS +0.0f
+// #define IMU_ACCEL_OFFSET_X_G +0.0f
+// #define IMU_ACCEL_OFFSET_Y_G +0.0f
+// #define IMU_ACCEL_OFFSET_Z_G +0.0f
+// #define IMU_GYRO_OFFSET_X_DPS +0.0f
+// #define IMU_GYRO_OFFSET_Y_DPS +0.0f
+// #define IMU_GYRO_OFFSET_Z_DPS +0.0f
+#define IMU_GYRO_OFFSET_X_DPS +1.476073f
+#define IMU_GYRO_OFFSET_Y_DPS -4.123416f
+#define IMU_GYRO_OFFSET_Z_DPS +0.289723f
+#define IMU_ACCEL_OFFSET_X_G -0.016207f
+#define IMU_ACCEL_OFFSET_Y_G -0.005381f
+#define IMU_ACCEL_OFFSET_Z_G +0.057797f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
