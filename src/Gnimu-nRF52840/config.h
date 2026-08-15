@@ -542,10 +542,10 @@
 // are the Nordic UART UUIDs, which Bluefruit's BLEUart uses natively.
 // ----------------------------------------------------------------------------
 
-#define RACEBOX_MODEL "RaceBox Mini"
-#define RACEBOX_MANUFACTURER "RaceBox"
-#define RACEBOX_HARDWARE_VERSION "1"
-#define RACEBOX_FIRMWARE_VERSION "3.3"
+#define RACEBOX_MODEL "RaceBox Mini"   // Compatibility requirement
+#define RACEBOX_MANUFACTURER "RaceBox" // Compatibility requirement
+#define RACEBOX_HARDWARE_VERSION "1"   // Compatibility requirement
+#define RACEBOX_FIRMWARE_VERSION "3.3" // Compatibility requirement
 #define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"

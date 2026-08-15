@@ -120,7 +120,19 @@ As of today this produces firmware **identical in behavior** to [Gnimu nRF52840]
 
 ## Configuration
 
-`config.h` is currently unmodified from [Gnimu nRF52840][0] — see that README's [Configuration section][0-config] for the full reference. Display-specific settings (I2C pins, refresh cadence, field layout) will be added here once `g_display` is implemented.
+Most of `config.h` matches [Gnimu nRF52840][0] — see that README's [Configuration section][0-config] for the full reference. The settings below are where this variant **differs**; everything not listed here behaves as documented there.
+
+| Setting | Purpose |
+|---|---|
+| `DISPLAY_ENABLED`, `DISPLAY_I2C_ADDRESS`, `DISPLAY_WIDTH/HEIGHT` | Panel presence, I2C address (`0x3C`), and geometry for the SSD1306 128×64. |
+| `DISPLAY_REFRESH_INTERVAL_MS`, `DISPLAY_SLICE_INTERVAL_MS`, `DISPLAY_CHUNK_TILES_W` | Redraw cadence (1 Hz) and the metered chunk-at-a-time write that keeps a full frame's I2C cost off any single `loop()` pass — see [`DESIGN.md`](DESIGN.md#measured-update-cost) for the cost model. |
+| `DISPLAY_SHIFT_INTERVAL_MS`, `DISPLAY_SHIFT_MAX`, `DISPLAY_LAYOUT_W/H` | Burn-in mitigation: the layout is inset by `DISPLAY_SHIFT_MAX` px and walks within that margin every 5 minutes. |
+| `DISPLAY_CONTRAST` | 0–255; full scale by default for daylight readability. |
+| `LED_ENABLED` | **`0` in this variant** — the display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
+| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | **Replaces `IMU_SWAP_XY`/`IMU_SIGN_*` in this tree.** Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations rather than the older model's 8 flat ones. A determinant `static_assert` rejects a mirrored (physically impossible) map at compile time. Derivation procedure and the old→new migration table are in [`DESIGN.md`](DESIGN.md#why-the-existing-model-runs-out). |
+| `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`** — on this board `A4` *is* `PIN_WIRE_SDA`, which the display needs. |
+
+Note the GNSS module also differs (M100 Mini, not M100-5883) — same u-blox M10 silicon, so no firmware setting changes with it.
 
 ---
 
@@ -168,7 +180,13 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 - [`tools/oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino) — update-cost benchmark and partial-update validation. `b` times full-frame and partial writes at the current bus clock, labelling each against the GNSS UART's ~5.5ms tolerance; `p` animates a counter inside one region against a static backdrop to prove `updateDisplayArea()` doesn't corrupt anything outside it; `f` gives the full-frame cost for comparison. `1`/`4`/`8` switch the I2C clock. This is the sketch that decided the display library — results in [`DESIGN.md`](DESIGN.md#measured-update-cost).
 
-The IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
+- [`tools/imu_calibration`](../tools/nRF52840-OLED/imu_calibration/imu_calibration.ino) — per-chip IMU zero-point offsets, this tree's own copy. Warms up until the die temperature plateaus, then runs repeating 10000-sample sessions a minute apart, each gated on a stability check and appended to internal flash; press any key and then `a` to aggregate the run into six paste-ready `#define` lines for `config.h`. The measurement core is byte-identical to the [base tree's copy](../tools/nRF52840/imu_calibration/imu_calibration.ino), so results from the two are directly comparable. What differs is this variant's own settings baked in — the panel is brought up as part of the thermal load the die settles against (production keeps it lit), which also makes the run readable with **no USB attached**, and BLE advertises at this tree's `-20` dBm rather than the base tree's `-16`. Requires **u8g2**.
+
+The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
+
+`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `milliG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch — and note it reports in the base tree's `IMU_SWAP_XY`/`IMU_SIGN_*` terms, so this tree's `IMU_AXIS_*_SRC`/`_SIGN` form needs the migration table in [`DESIGN.md`](DESIGN.md#why-the-existing-model-runs-out) §6.
+
+> ⚠️ Derive the axis map against the **raw serial `milliG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
 
 ---
 

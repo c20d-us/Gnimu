@@ -62,14 +62,19 @@
 // highest run number present, which is the current run once it has produced
 // a record and the previous boot's run before that. Use `e` to start clean.
 //
-// THERMAL REALISM: the GNSS rail and BLE advertising are deliberately left
-// ON. IMU offsets drift with die temperature, and production runs with both
-// active, so calibrating on a cold board would characterize a thermal state
-// the firmware never actually operates in. GNSS is by far the larger effect
-// (~30 mA searching vs. ~1 mA advertising); BLE is included for completeness
-// rather than for the heat. Neither is configured beyond bring-up - GNSS
-// bytes are read and discarded, BLE advertises with no services and needs no
-// connection, and no sky view is required.
+// THERMAL REALISM: the GNSS rail, BLE advertising and the OLED panel are
+// deliberately left ON. IMU offsets drift with die temperature, and production
+// runs with all three active, so calibrating on a cold board would
+// characterize a thermal state the firmware never actually operates in. GNSS
+// is by far the larger effect (~30 mA searching vs. ~1 mA advertising); BLE is
+// included for completeness rather than for the heat. Nothing is configured
+// beyond bring-up - GNSS bytes are read and discarded, BLE advertises with no
+// services and needs no connection, and no sky view is required.
+//
+// The panel is continuously lit in this variant's production firmware and is
+// therefore part of the load the die settles against. It doubles as a USB-free
+// readout of phase, temperature and the latest offsets, which is what makes a
+// genuinely unattended run retrievable without plugging anything in.
 //
 // LIMITATION - accel X/Y is a levelness measurement as much as a bias one.
 // One degree of tilt leaks ~17 mg of gravity into the horizontal axes, which
@@ -86,14 +91,14 @@
 // gyro defines - a sloped bench costs you the numbers it compromised, not
 // the whole run.
 //
-// This is the base nRF52840 tree's copy, with no display code at all. The
-// nRF52840-OLED tree has its own at tools/nRF52840-OLED/imu_calibration -
-// same measurement approach, plus the panel as both extra thermal load and a
-// USB-free readout. Keeping them separate is what lets each one hardcode its
-// own variant's settings instead of carrying a build flag.
+// This is the nRF52840-OLED tree's copy. The base tree has its own at
+// tools/nRF52840/imu_calibration - same measurement approach, without the
+// panel. Keeping them separate is what lets each one hardcode its own
+// variant's settings instead of carrying a build flag.
 //
-// Requires: XIAO nRF52840 Sense; level bench surface. USB is optional and
-// only needed to retrieve results.
+// Requires: XIAO nRF52840 Sense with the SSD1306 panel; level bench surface.
+// USB is never needed - results are readable on the panel, and the aggregated
+// #define block is retrieved over Serial only when you want to paste it.
 // ============================================================================
 
 #include <Adafruit_LittleFS.h>
@@ -127,12 +132,32 @@ using namespace Adafruit_LittleFS_Namespace;
 #define GNSS_EN_PIN D9
 #define GNSS_BAUD 57600
 #define BLE_ADV_NAME "Gnimu cal"
-#define BLE_TX_POWER_ADV_DBM -16
+// Mirrors this tree's config.h, which advertises quieter than the base tree's
+// -16. Matching production is the whole point of bringing the radio up here.
+#define BLE_TX_POWER_ADV_DBM -20
 
-// No display code in this tree, and deliberately no flag to add it. A4 is
-// POWER_SWITCH_SENSE_PIN here - an analog tap on a resistor divider - not the
-// SDA it is on the OLED board, so there is nothing safe to probe for. That
-// variant has its own copy of this sketch instead.
+// ----------------------------------------------------------------------------
+// OLED panel. Always on in this tree - the panel is lit continuously in this
+// variant's production firmware, so it is part of the load the die settles
+// against, and leaving it dark would calibrate a cooler board than the
+// firmware ever runs on.
+//
+// The IMU library drives Wire1 internally, so the panel's Wire is a separate
+// bus and the two never contend. A4/A5 are SDA/SCL on this board; the base
+// tree, where A4 is instead an analog divider tap, has its own copy of this
+// sketch with no display code at all rather than a flag to get this wrong.
+//
+// displayBringUp() still probes before committing, so a cracked or unplugged
+// panel costs a warning and a Serial-only run rather than a hang.
+// ----------------------------------------------------------------------------
+#define DISPLAY_I2C_ADDRESS 0x3C
+#define DISPLAY_CONTRAST 255
+#define DISPLAY_REFRESH_MS 1000
+
+#include <U8g2lib.h>
+#include <Wire.h>
+static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
+static bool displayPresent = false;
 
 // ----------------------------------------------------------------------------
 // Warmup: run until the die temperature plateaus, not for a fixed span. With
@@ -378,6 +403,86 @@ static void bleWarmLoadOn() {
   Bluefruit.Advertising.setInterval(32, 244);
   Bluefruit.Advertising.setFastTimeout(30);
   Bluefruit.Advertising.start(0);
+}
+
+// ----------------------------------------------------------------------------
+// OLED status panel. Two jobs: reproduce the panel's share of production's
+// thermal load, and make an unattended run legible without USB.
+//
+// Deliberately simpler than g_display.cpp - no burn-in pixel shift, no sliced
+// frame pushes. Production slices frames so the GNSS UART is never starved of
+// drain windows; here GNSS bytes are discarded, so a plain blocking
+// sendBuffer is fine. The one place it would NOT be fine is inside the
+// sampling loop, which is why displayTick() is never called from there - see
+// performCalibration().
+// ----------------------------------------------------------------------------
+static float latestTempC = 0.0f;
+static bool haveResult = false;
+
+static void displayBringUp() {
+  Wire.begin();
+  // u8g2 wants the 8-bit left-shifted address. Passing the 7-bit value is the
+  // classic silent failure: begin() returns and nothing ever appears.
+  oled.setI2CAddress(DISPLAY_I2C_ADDRESS << 1);
+
+  // Probe before committing, so a cracked, unplugged or failed panel costs a
+  // warning rather than a hang.
+  Wire.beginTransmission(DISPLAY_I2C_ADDRESS);
+  if (Wire.endTransmission() != 0) {
+    if (Serial) {
+      Serial.printf("⚠️  No OLED at 0x%02X - display disabled (thermal load "
+                    "will be light for this variant).\n",
+                    DISPLAY_I2C_ADDRESS);
+    }
+    displayPresent = false;
+    return;
+  }
+
+  oled.begin();
+  oled.setContrast(DISPLAY_CONTRAST);
+  oled.setFont(u8g2_font_5x8_tf); // 25 cols x 7 rows at this panel size
+  displayPresent = true;
+  if (Serial) {
+    Serial.println("✅ OLED panel up (thermal load + standalone readout).");
+  }
+}
+
+// phaseText is the one-line "what is happening now"; force bypasses the 1 Hz
+// throttle for state changes worth showing immediately.
+static void displayTick(const char *phaseText, bool force) {
+  if (!displayPresent) {
+    return;
+  }
+  static unsigned long lastMs = 0;
+  const unsigned long nowMs = millis();
+  if (!force && (nowMs - lastMs) < DISPLAY_REFRESH_MS) {
+    return;
+  }
+  lastMs = nowMs;
+
+  char l[32];
+  oled.clearBuffer();
+
+  snprintf(l, sizeof(l), "Gnimu IMU cal   run %u", (unsigned)runNumber);
+  oled.drawStr(0, 8, l);
+  oled.drawStr(0, 17, phaseText);
+  snprintf(l, sizeof(l), "die %.2fC  sess %u", latestTempC,
+           (unsigned)sessionNumber);
+  oled.drawStr(0, 26, l);
+  snprintf(l, sizeof(l), "log %lu/%lu B", (unsigned long)logBytesUsed,
+           (unsigned long)LOG_BUDGET_BYTES);
+  oled.drawStr(0, 35, l);
+
+  if (haveResult) {
+    snprintf(l, sizeof(l), "a %+.3f %+.3f %+.3f", cur.ax, cur.ay, cur.az);
+    oled.drawStr(0, 49, l);
+    snprintf(l, sizeof(l), "g %+.3f %+.3f %+.3f", cur.gx, cur.gy, cur.gz);
+    oled.drawStr(0, 58, l);
+  } else {
+    oled.drawStr(0, 49, "no session yet");
+  }
+
+  oled.sendBuffer();
 }
 
 // ----------------------------------------------------------------------------
@@ -1108,8 +1213,13 @@ static void warmupTick() {
 
   if (nowMs - lastTempMs >= TEMP_SAMPLE_INTERVAL_MS || tempHistCount == 0) {
     lastTempMs = nowMs;
-    tempHistPush(nowMs, myIMU.readTempC());
+    latestTempC = myIMU.readTempC();
+    tempHistPush(nowMs, latestTempC);
   }
+
+  char phaseText[32];
+  snprintf(phaseText, sizeof(phaseText), "WARMUP %lus", elapsed / 1000UL);
+  displayTick(phaseText, false);
 
   if (Serial && nowMs - lastLogMs >= 30000UL) {
     lastLogMs = nowMs;
@@ -1144,6 +1254,10 @@ static void gateTick() {
   const unsigned long nowMs = millis();
   if (gateWaiting && (int32_t)(nowMs - gateRetryAtMs) < 0) {
     gnssDrain();
+    char phaseText[32];
+    snprintf(phaseText, sizeof(phaseText), "NOT STABLE - retry %lu",
+             (unsigned long)gateAttempts);
+    displayTick(phaseText, false);
     delay(50);
     return;
   }
@@ -1203,9 +1317,17 @@ static void gateTick() {
   }
 
   sessionNumber++;
+  // Painted once here and not touched again until the session ends: a
+  // blocking ~31 ms sendBuffer inside the sampling loop would swallow three
+  // 10 ms sample ticks, and the deadline-anchored pacing would then take
+  // three reads back to back off the same 104 Hz sensor sample - duplicated
+  // values, slightly over-weighting one instant in the average.
+  displayTick("SAMPLING...", true);
   if (!performCalibration()) {
     return; // aborted into PHASE_HALTED
   }
+  latestTempC = cur.tempC;
+  haveResult = true;
   printSession();
   logSession();
   prev = cur;
@@ -1224,10 +1346,15 @@ static void gapTick() {
     return;
   }
   gnssDrain();
-  if (millis() - gapStartMs >= SESSION_GAP_MS) {
+  const unsigned long gapElapsed = millis() - gapStartMs;
+  if (gapElapsed >= SESSION_GAP_MS) {
     phase = PHASE_GATE;
     return;
   }
+  char phaseText[32];
+  snprintf(phaseText, sizeof(phaseText), "GAP %lus",
+           (SESSION_GAP_MS - gapElapsed) / 1000UL);
+  displayTick(phaseText, false);
   delay(50);
 }
 
@@ -1235,6 +1362,7 @@ static void haltedTick() {
   static bool menuShown = false;
   if (!menuShown) {
     menuShown = true;
+    displayTick("HALTED - see serial", true);
     if (Serial) {
       printMenu();
     }
@@ -1332,10 +1460,13 @@ void setup() {
   // IMU so an IMU failure halts before anything starts drawing current.
   gnssWarmLoadOn();
   bleWarmLoadOn();
+  displayBringUp();
   if (Serial) {
     Serial.println("✅ IMU up; GNSS rail and BLE advertising on (thermal "
                    "load).");
   }
+  latestTempC = myIMU.readTempC();
+  displayTick("starting warmup", true);
 
   if (fsReady) {
     logWriteHeaderIfNew();

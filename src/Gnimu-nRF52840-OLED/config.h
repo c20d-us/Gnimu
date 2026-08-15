@@ -90,18 +90,12 @@
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/nRF52840/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-// #define IMU_ACCEL_OFFSET_X_G +0.0f
-// #define IMU_ACCEL_OFFSET_Y_G +0.0f
-// #define IMU_ACCEL_OFFSET_Z_G +0.0f
-// #define IMU_GYRO_OFFSET_X_DPS +0.0f
-// #define IMU_GYRO_OFFSET_Y_DPS +0.0f
-// #define IMU_GYRO_OFFSET_Z_DPS +0.0f
-#define IMU_GYRO_OFFSET_X_DPS +1.476073f
-#define IMU_GYRO_OFFSET_Y_DPS -4.123416f
-#define IMU_GYRO_OFFSET_Z_DPS +0.289723f
 #define IMU_ACCEL_OFFSET_X_G -0.016207f
 #define IMU_ACCEL_OFFSET_Y_G -0.005381f
 #define IMU_ACCEL_OFFSET_Z_G +0.057797f
+#define IMU_GYRO_OFFSET_X_DPS +1.476073f
+#define IMU_GYRO_OFFSET_Y_DPS -4.123416f
+#define IMU_GYRO_OFFSET_Z_DPS +0.289723f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
@@ -166,7 +160,7 @@
 #define IMU_WAKE_DUR 0 // debounce, in ODR cycles - 0 = fire on first sample
 
 // ----------------------------------------------------------------------------
-// --- GNSS (HGLRC M100-5883, u-blox M10 chipset) ---
+// --- GNSS (HGLRC M100 Mini, u-blox M10 chipset) ---
 // ----------------------------------------------------------------------------
 
 // --- GNSS power gate pin (TPS63020 buck-boost EN) ---
@@ -192,20 +186,6 @@
 // Throughput is nowhere near the constraint: NAV-PVT is a fixed 100 bytes
 // (92 payload + 8 framing) regardless of SV count, so 25Hz is only ~2500
 // bytes/sec and link utilisation does not grow as satellites are added.
-//
-// This project has now walked this down twice for the same reason. 460800 was
-// abandoned first - a 1.4 ms window is shorter than worst-case loop latency,
-// which craters the rate. 115200 held for a long time, but the GPS+Galileo
-// work (2026-08-06) needed more margin than its 5.6 ms window allowed.
-//
-// 57600 doubles the deadline again while still using under half the link at
-// full rate. The costs are that a packet takes ~8.7 ms longer to arrive (still
-// well inside one epoch, irrelevant for this use case) and that there is less
-// slack if additional UBX messages are ever enabled - only NAV-PVT is today,
-// and adding NAV-SAT or similar would change the arithmetic quickly here.
-//
-// 38400 would still work at 25Hz but the margin starts running the wrong way:
-// two-thirds link utilisation, and the packet occupies ~26 ms of a 40 ms epoch.
 //
 // gnssBegin's connectAndConfigureBaud() sweeps common rates, reconfigures the
 // receiver, and saves to flash if it is found at a different rate - so changing
@@ -554,6 +534,13 @@
 #define GNSS_RX_PIN D7
 #define GNSS_TX_PIN D6
 
+// --- GNSS power gate polarity (TPS63020 buck-boost EN) ---
+// Firmware pulls this LOW to disable the rail for low-voltage cutoff and idle
+// sleep, and releases it hi-Z (TPS63020's own EN pullup takes over) to
+// enable (HIGH/hi-Z = rail on, LOW = rail off). Polarity is fixed by the
+// TPS63020's own EN behavior, not a wiring choice - see GNSS_EN_PIN in the
+// Tunables section above for the pin itself.
+
 // ----------------------------------------------------------------------------
 // --- Battery ---
 // ----------------------------------------------------------------------------
@@ -640,10 +627,10 @@
 // are the Nordic UART UUIDs, which Bluefruit's BLEUart uses natively.
 // ----------------------------------------------------------------------------
 
-#define RACEBOX_MODEL "RaceBox Mini"
-#define RACEBOX_MANUFACTURER "RaceBox"
-#define RACEBOX_HARDWARE_VERSION "1"
-#define RACEBOX_FIRMWARE_VERSION "3.3"
+#define RACEBOX_MODEL "RaceBox Mini"   // Compatibility requirement
+#define RACEBOX_MANUFACTURER "RaceBox" // Compatibility requirement
+#define RACEBOX_HARDWARE_VERSION "1"   // Compatibility requirement
+#define RACEBOX_FIRMWARE_VERSION "3.3" // Compatibility requirement
 #define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"

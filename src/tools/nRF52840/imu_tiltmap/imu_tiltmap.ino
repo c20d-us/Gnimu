@@ -22,6 +22,12 @@
 // The sensor's orientation is fixed by the XIAO's design, so what you learn here
 // carries to any XIAO nRF52840 Sense - no wiring or soldering, board stays as-is.
 //
+// NOTE: the macro names above are the BASE nRF52840 (and ESP32) tree's form.
+// The nRF52840-OLED tree has replaced them with IMU_AXIS_{X,Y,Z}_SRC/_SIGN,
+// which covers all 24 orientations instead of 8. The poses this sketch prints
+// are the same either way - only the macros you write differ. See the old->new
+// migration table in Gnimu-nRF52840-OLED/DESIGN.md §6.
+//
 // The accelerometer at rest reads the specific force (reaction to gravity), so
 // the axis pointing UP reads about +1 g and the axis pointing DOWN reads -1 g.
 // Hold the board still in a pose; this prints ONE line naming the up-axis. Move

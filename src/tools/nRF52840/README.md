@@ -15,8 +15,8 @@ core. Open the serial monitor at **115200**.
 | Sketch | Validates | Extra parts | Pass criteria |
 |---|---|---|---|
 | [`imu_probe/`](imu_probe/imu_probe.ino) | Onboard LSM6DS3TR-C power pin, library bring-up, units (`g_imu.cpp`, DESIGN §4) | none | `begin() OK`; resting board reads ~+1 g on one accel axis (total ~1 g, not ~9.8) and ~0 dps gyro. *(Confirmed — see DESIGN Open items.)* |
-| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `g_imu.cpp` `IMU_SIGN_*` / `IMU_SWAP_XY`) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
-| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of `IMU_SWAP_XY`/`IMU_SIGN_*` (feeds `config.h`'s `IMU_ACCEL_OFFSET_*`/`IMU_GYRO_OFFSET_*`) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `IMU_*_OFFSET_*` `#define` lines. |
+| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_SIGN_*` / `IMU_SWAP_XY`, or `IMU_AXIS_*_SRC`/`_SIGN` on the OLED tree — see note below) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
+| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (feeds `config.h`'s `IMU_ACCEL_OFFSET_*`/`IMU_GYRO_OFFSET_*`). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `IMU_*_OFFSET_*` `#define` lines. |
 | [`imu_wake/`](imu_wake/imu_wake.ino) | LSM6DS3TR-C's embedded wake-up (activity) detector register config (`CTRL1_XL`, `WAKE_UP_THS`, `WAKE_UP_DUR`) used by LIGHT_SLEEP's shake-to-wake exit trigger | none | Threshold/debounce tuned so a real pickup/shake reliably fires without false-triggering from bench vibration or handling. *(Bench-tuned — see DESIGN §5.)* |
 | [`led_check/`](led_check/led_check.ino) | RGB LED pins + active-LOW polarity + status colors (`g_led.cpp`) | none | The LED color matches each name printed over serial; OFF goes fully dark. *(Confirmed.)* |
 | [`ble_mtu/`](ble_mtu/ble_mtu.ino) | Advertising name, TX power, MTU ≥ 91, `BLEUart` 88-byte notify (`g_ble.cpp`) | phone w/ nRF Connect | Advertises as `RaceBox Mini <id>`; "Negotiated MTU" line reports ≥ 91; the 88-byte test notify is received. *(Confirmed — MTU 23→247.)* |
@@ -25,6 +25,36 @@ core. Open the serial monitor at **115200**.
 | [`battery_presence/`](battery_presence/battery_presence.ino) | Switch-sense divider tap (A1) — the authoritative battery-present signal in `g_power.cpp` — plus the non-blocking VBAT sampler and divider-recovery math that feeds `g_battery`'s state-of-charge fuel gauge | LiPo, multimeter, USB | Self-check mV matches the meter on the cell; switch-sense reads ~2 V OFF / ~0 V ON, powered, matching the meter. |
 | [`battery_log/`](battery_log/battery_log.ino) | The LiPo's true resting voltage at full charge, for `BATTERY_DISCHARGE_CURVE`'s 100% anchor — VBAT logged to internal flash through a full plug-in → charge → unplug → settle cycle (survives a Serial disconnect mid-run) | LiPo, USB | Log flags `CHARGE_PLATEAU` near full charge and `SETTLED` after unplug; the settled reading is the value to paste into `BATTERY_DISCHARGE_CURVE`. |
 | [`storage_check/`](storage_check/storage_check.ino) | QSPI flash + LittleFS stack in isolation (chip detection, mount, format, read/write/delete) on the XIAO Sense's Puya P25Q16H chip | none | Phase 1 (read-only) reports the chip correctly; Phase 2 formats only after typing `FORMAT`, then a read/write/delete round-trip succeeds. Not currently used by the main firmware — kept as a standalone diagnostic for the flash chip itself. |
+
+> **`imu_calibration` is per-tree.** Since 2026-08-14 the OLED variant carries
+> [its own copy](../nRF52840-OLED/imu_calibration/imu_calibration.ino) rather
+> than this one taking a build flag. The measurement core is byte-identical, so
+> results are comparable; each copy just hardcodes its own variant's settings
+> (the panel as thermal load and USB-free readout there, and a different BLE
+> advertising power). **A change to the measurement logic must be applied to
+> both.** The ESP32 tree has a
+> [third copy](../ESP32/imu_calibration/imu_calibration.ino), same approach in
+> that sensor's native units.
+
+> **`imu_tiltmap` is single-sourced here on purpose, and is usually not the
+> tool you want.** The production firmware already prints the 1 Hz serial
+> `milliG` line, and the three static poses documented in `config.h`'s axis
+> section fully determine the map from it — which is how the base tree's
+> as-built map was actually settled, in preference to a drive test. Reach for
+> this sketch when a board's sensor orientation is unknown from scratch;
+> otherwise just run the firmware.
+>
+> ⚠️ **Derive against the raw serial `milliG` numbers, not the Gnimu Monitor
+> readout.** Monitor is a display layer that has been wrong about exactly this
+> before, masking a mirrored (determinant −1) axis map. It cannot validate
+> firmware signs. See [`Gnimu-nRF52840/DESIGN.md`](../../Gnimu-nRF52840/DESIGN.md) §4.
+>
+> **Axis-macro note.** This sketch prints results in terms of `IMU_SWAP_XY` /
+> `IMU_SIGN_*`, which is what the base nRF52840 and ESP32 trees use. The
+> **nRF52840-OLED** tree has replaced those with `IMU_AXIS_{X,Y,Z}_SRC` /
+> `_SIGN` (all 24 orientations rather than 8). The bench poses are identical
+> either way — only the macros you write differ. The old→new migration table is
+> in [`Gnimu-nRF52840-OLED/DESIGN.md`](../../Gnimu-nRF52840-OLED/DESIGN.md) §6.
 
 ## What each result feeds back into the firmware
 
