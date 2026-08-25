@@ -6,7 +6,7 @@ open it directly.
 
 | Sketch | Purpose | Pass criteria |
 |---|---|---|
-| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis MPU-6050 zero-point offsets in the raw sensor frame, independent of `IMU_SWAP_XY`/`IMU_SIGN_*` (feeds `config.h`'s `IMU_ACCEL_OFFSET_*_MPS2` / `IMU_GYRO_OFFSET_*_RADPS`). Warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to LittleFS. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `#define` lines. | Gate passes on a still bench; `a` reports a median and 20% trimmed mean that agree within 1 sd, and a median tilt under 1°. |
+| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis MPU-6050 zero-point offsets in the raw sensor frame, independent of the `IMU_AXIS_*` remap (feeds `config.h`'s `IMU_ACCEL_OFFSET_*_MPS2` / `IMU_GYRO_OFFSET_*_RADPS`). Warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to LittleFS. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `#define` lines. | Gate passes on a still bench; `a` reports a median and 20% trimmed mean that agree within 1 sd, and a median tilt under 1°. |
 
 > **Method note.** This sketch mirrors
 > [`tools/nRF52840/imu_calibration`](../nRF52840/imu_calibration/imu_calibration.ino)

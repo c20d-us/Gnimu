@@ -46,7 +46,7 @@
 // First digit must be 0-3, so the value stays below 4000000000. The RaceBox
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
-#define DEVICE_ID "0008675309"
+#define DEVICE_ID "1000000001"
 
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
@@ -111,31 +111,58 @@
 #define IMU_GYRO_OFFSET_Z_RADPS -0.009113f
 
 // --- Axis orientation (installed mounting) ---
-// Corrects the sensor's raw axes into the vehicle frame. What varies per
-// BUILD is how the MPU-6050 module sits in your enclosure. These four values
-// correct for different orientations. This model assumes the module is
-// mounted FLAT, with sensor Z vehicle-vertical, and covers all 8 flat-mount
-// variants (any 90-degree yaw rotation, right-side-up or upside-down). It
-// does NOT cover mounting the board on any edge. The defaults (no swap, all
-// +1) leave the raw sensor frame untouched.
-// Vehicle forward/lateral assignment (which of X/Y is which, and their
-// final signs) still needs an in-car drive test once mounted.
-#define IMU_SWAP_XY false // true if raw X axis is lateral, not longitudinal
-#define IMU_SIGN_X +1.0f
-#define IMU_SIGN_Y +1.0f
-#define IMU_SIGN_Z +1.0f
+// Corrects the sensor's raw axes into the vehicle frame. What varies per BUILD
+// is how the MPU-6050 module sits in your enclosure - unlike the nRF52840
+// builds, whose sensor is fixed to a known board, this is a separate module
+// you mounted yourself, so its axes are whatever your wiring and placement
+// made them. Each VEHICLE axis below names which SENSOR axis feeds it
+// (0=X, 1=Y, 2=Z) plus a sign. This covers all 24 physically-realizable
+// orientations.
+//
+// TARGET OUTPUT FRAME: X forward+, Y left+, Z up+ (ISO 8855, right-handed).
+//
+// ORDER NAMES read as "which sensor axis feeds vehicle X, Y, Z". Because the
+// target frame is right-handed, a valid map is always a proper rotation, so
+// the permutation's parity must match the number of sign flips - odd needs
+// odd, even needs even. The static_assert at the bottom of this file enforces
+// it; a map that fails is a mirror, which no physical mounting can produce.
+//
+//   Order   _SRC triple   Parity   Sign flips required
+//   XYZ     0, 1, 2       even     even (0 or 2)
+//   XZY     0, 2, 1       odd      odd  (1 or 3)
+//   YXZ     1, 0, 2       odd      odd  (1 or 3)
+//   YZX     1, 2, 0       even     even (0 or 2)
+//   ZXY     2, 0, 1       even     even (0 or 2)
+//   ZYX     2, 1, 0       odd      odd  (1 or 3)
+//
+// TO DERIVE A NEW MAP, no drive test is needed - hold the assembled unit in
+// its installed orientation and read the 1 Hz serial milliG line:
+//   1. At rest, the axis reading ~+/-1000 is vehicle-vertical; sign gives
+//      up vs down.
+//   2. Raise the forward end - the axis going positive is vehicle X.
+//   3. Raise the left side  - the axis going positive is vehicle Y.
+// Derive against the RAW SERIAL NUMBERS, not the Gnimu Monitor readout -
+// Monitor is a display layer that has masked a mirrored map on a sibling
+// variant before and cannot validate firmware signs.
+//
+// CURRENT VALUES: order XYZ with no sign flips - the identity map, leaving the
+// raw sensor frame untouched. Even permutation, zero flips, determinant +1.
+// Confirmed correct for this build 2026-08-06.
+#define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
+#define IMU_AXIS_X_SIGN +1.0f
+#define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
+#define IMU_AXIS_Y_SIGN +1.0f
+#define IMU_AXIS_Z_SRC 2 // vehicle up      <- sensor Z
+#define IMU_AXIS_Z_SIGN +1.0f
 
 // ----------------------------------------------------------------------------
 // --- GNSS (u-blox) ---
 // ----------------------------------------------------------------------------
 
-// No need for greater than 115200; higher can reduce PVT rate.
-#define GNSS_BAUD 115200 // one of 9600/38400/57600/115200/230400/460800
-#define GNSS_MAX_NAVIGATION_RATE_HZ 25 // max for RaceBox Mini protocol
-// PVT rate while no BLE client is connected - keeps the receiver ticking (and
-// the fix warm) without the full 25Hz load when nobody is listening.
-#define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
+// No need for greater than 57600; higher can reduce PVT rate.
+#define GNSS_BAUD 57600 // one of 9600/38400/57600/115200/230400/460800
+#define GNSS_NAV_RATE_HZ 20
+#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // GNSS UART wiring - which ESP32 GPIOs you routed the receiver's TX/RX to.
@@ -144,13 +171,13 @@
 
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
-// from. Enabling too many can reduce the update rate below 25Hz.
+// from. Enabling too many can reduce the PVT rate.
 // For North American use you should always include GPS.
 // Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
       {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
-      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, false},                           \
+      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, true},                            \
       {"GLONASS", SFE_UBLOX_GNSS_ID_GLONASS, false},                           \
       {"BeiDou", SFE_UBLOX_GNSS_ID_BEIDOU, false},                             \
       {"QZSS", SFE_UBLOX_GNSS_ID_QZSS, false},                                 \
@@ -220,8 +247,8 @@
 // ----------------------------------------------------------------------------
 
 // Decimate the IMU stream down to the transmission rate. Derived from
-// GNSS_MAX_NAVIGATION_RATE_HZ so the two can't drift out of sync.
-#define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_MAX_NAVIGATION_RATE_HZ)
+// GNSS_NAV_RATE_HZ so the two can't drift out of sync.
+#define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_NAV_RATE_HZ)
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -326,13 +353,8 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
               "(9600, 38400, 57600, 115200, 230400, 460800).");
 
 // Enforce navigation rate limit
-static_assert(GNSS_MAX_NAVIGATION_RATE_HZ > 0 &&
-                  GNSS_MAX_NAVIGATION_RATE_HZ <= 25,
-              "ERROR: GNSS_MAX_NAVIGATION_RATE_HZ must be between 1 and 25.");
-static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&
-                  GNSS_IDLE_NAV_RATE_HZ <= GNSS_MAX_NAVIGATION_RATE_HZ,
-              "ERROR: GNSS_IDLE_NAV_RATE_HZ must be between 1 and "
-              "GNSS_MAX_NAVIGATION_RATE_HZ.");
+static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
+              "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
@@ -391,12 +413,59 @@ static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,
               "ERROR: LOG_ENABLED must be 0 or 1.");
 
 // Enforce each axis sign is a true sign, not a scale factor
-static_assert(IMU_SIGN_X == 1.0f || IMU_SIGN_X == -1.0f,
-              "ERROR: IMU_SIGN_X must be exactly +1.0f or -1.0f.");
-static_assert(IMU_SIGN_Y == 1.0f || IMU_SIGN_Y == -1.0f,
-              "ERROR: IMU_SIGN_Y must be exactly +1.0f or -1.0f.");
-static_assert(IMU_SIGN_Z == 1.0f || IMU_SIGN_Z == -1.0f,
-              "ERROR: IMU_SIGN_Z must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_X_SIGN == 1.0f || IMU_AXIS_X_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_X_SIGN must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_Y_SIGN == 1.0f || IMU_AXIS_Y_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_Y_SIGN must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_Z_SIGN == 1.0f || IMU_AXIS_Z_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_Z_SIGN must be exactly +1.0f or -1.0f.");
+
+// Enforce each source index names a real sensor axis.
+static_assert(IMU_AXIS_X_SRC >= 0 && IMU_AXIS_X_SRC <= 2,
+              "ERROR: IMU_AXIS_X_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+static_assert(IMU_AXIS_Y_SRC >= 0 && IMU_AXIS_Y_SRC <= 2,
+              "ERROR: IMU_AXIS_Y_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+static_assert(IMU_AXIS_Z_SRC >= 0 && IMU_AXIS_Z_SRC <= 2,
+              "ERROR: IMU_AXIS_Z_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+
+// Permutation parity: +1 if even, -1 if odd, 0 if any two _SRC collide.
+// Integer arithmetic only, so it is usable in a static_assert.
+#define IMU_AXIS_PARITY                                                        \
+  ((((IMU_AXIS_Y_SRC) - (IMU_AXIS_X_SRC)) *                                    \
+    ((IMU_AXIS_Z_SRC) - (IMU_AXIS_X_SRC)) *                                    \
+    ((IMU_AXIS_Z_SRC) - (IMU_AXIS_Y_SRC))) /                                   \
+   2)
+
+// Catch a duplicated source index with a message that names the real problem,
+// rather than letting it fall through to the mirror check below as a 0.
+static_assert(IMU_AXIS_PARITY != 0,
+              "ERROR: IMU_AXIS_X/Y/Z_SRC must be a permutation - each of "
+              "sensor 0, 1 and 2 used exactly once. Two vehicle axes are "
+              "currently fed by the same sensor axis.");
+
+// The determinant check, and the reason this scheme is worth having.
+//
+// The target output frame is right-handed, so any valid mounting map is a
+// proper rotation: determinant +1. Determinant = permutation parity x the
+// product of the signs, so an even permutation needs an even number of sign
+// flips and an odd permutation an odd number. Anything else is a MIRROR - an
+// orientation no physical mounting can produce.
+//
+// This matters because a mirror fails silently and slowly. The data still
+// looks entirely plausible; whichever axes are mis-signed are simply wrong,
+// for accel and gyro alike, since remapAxes() applies the same matrix to both.
+// The nRF52840 variant's config carried exactly that bug for months - X had
+// been flipped without Y - and it survived a drive test and an app-side
+// investigation before the arithmetic caught it. This variant is MORE exposed
+// to that class of error, not less: its sensor is a separate module you
+// oriented by hand rather than one fixed to a known board.
+static_assert(IMU_AXIS_PARITY * IMU_AXIS_X_SIGN * IMU_AXIS_Y_SIGN *
+                      IMU_AXIS_Z_SIGN ==
+                  1.0f,
+              "ERROR: axis map is a mirror, not a rotation (determinant -1). "
+              "An even permutation needs an even number of sign flips, an odd "
+              "permutation an odd number. See the order table in the Axis "
+              "orientation section above.");
 
 // Enforce a valid reported battery percentage (transmitted as a raw byte)
 static_assert(BATTERY_REPORT_PERCENT >= 0 && BATTERY_REPORT_PERCENT <= 100,

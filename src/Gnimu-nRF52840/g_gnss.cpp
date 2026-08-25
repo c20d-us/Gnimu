@@ -16,7 +16,6 @@
 
 #include "g_gnss.h"
 #include "config.h"
-#include "g_ble.h"
 #include "g_log.h"
 
 // GNSS state
@@ -133,26 +132,6 @@ static void setConstellations() {
   }
 }
 
-// Set the navigation frequency based on BLE client connection state.
-static void setNavFreq() {
-  // The current navigation frequency, updated as BLE clients
-  // connect/disconnect.
-  static uint8_t currentNavFreq = 0;
-
-  // Check to see if there is a BLE client connected, and adjust the navigation
-  // frequency accordingly.
-  const uint8_t desiredNavFreq =
-      bleIsConnected() ? GNSS_NAV_RATE_HZ : GNSS_IDLE_NAV_RATE_HZ;
-  if (currentNavFreq != desiredNavFreq) {
-    if (myGNSS.setNavigationFrequency(desiredNavFreq, VAL_LAYER_RAM_BBR)) {
-      currentNavFreq = desiredNavFreq;
-      LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", desiredNavFreq);
-    } else {
-      LOG_PRINTLN("❌ Failed to reset GNSS update rate.");
-    }
-  }
-}
-
 // Consume the cached PVT data if available, returning nullptr if no new data.
 const UBX_NAV_PVT_data_t *gnssConsumePvt() {
   if (!newEpochAvailable) {
@@ -223,8 +202,12 @@ void gnssBegin() {
   // Constellation setup
   setConstellations();
 
-  // Set the GNSS PVT update frequency
-  setNavFreq();
+  // Set the GNSS PVT update frequency.
+  if (myGNSS.setNavigationFrequency(GNSS_NAV_RATE_HZ, VAL_LAYER_RAM_BBR)) {
+    LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", GNSS_NAV_RATE_HZ);
+  } else {
+    LOG_PRINTLN("❌ Failed to set GNSS update rate.");
+  }
 
   // Register our callback and enable automatic PVT output.
   // setAutoPVTcallbackPtr() implicitly enables AutoPVT.
@@ -241,14 +224,11 @@ void gnssEnd() { gnssSerial.end(); }
 
 // GNSS module poller - called every loop().
 // Prompts firing of registered callback when a new PVT epoch is available.
-// Updates the Navigation Frequency as needed depending on BLE connection state.
 void gnssPoll() {
   // Pump the UART and parse incoming bytes into complete packets
   myGNSS.checkUblox();
   // Fire registered callbacks for any completed packets
   myGNSS.checkCallbacks();
-  // Set to the desired navigation frequency for our current state
-  setNavFreq();
 }
 
 // LIGHT_SLEEP entry: RXM-PMREQ backup mode, infinite duration, UART-RX wake

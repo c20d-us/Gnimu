@@ -93,7 +93,7 @@ Same toolchain as [Gnimu nRF52840][0], plus the display library:
 - Libraries (install via Library Manager):
   - **Seeed Arduino LSM6DS3** (onboard IMU)
   - **SparkFun u-blox GNSS Arduino Library** (GNSS)
-  - **u8g2** (olikraus) — the display library, and required by the diagnostic sketches below. Chosen over Adafruit SSD1306 + GFX for its `updateDisplayArea()` partial updates: a full-frame push costs ~31ms on this panel, far past the window the GNSS UART can tolerate, so partial updates aren't an optimization here but the only workable path (see [`DESIGN.md`](DESIGN.md#measured-update-cost)). Not wired into the firmware yet — `g_display` doesn't exist.
+  - **u8g2** (olikraus) — the display library, and required by the diagnostic sketches below. Chosen over Adafruit SSD1306 + GFX for its `updateDisplayArea()` partial updates: a full-frame push costs ~31ms on this panel, far past the window the GNSS UART can tolerate, so partial updates aren't an optimization here but the only workable path (see [`DESIGN.md`](DESIGN.md#measured-update-cost)). Used by `g_display.cpp`.
 
 > [!IMPORTANT]
 > **macOS build gotcha:** The Seeed nRF52 core's `platform.txt` invokes bare `python` for its UF2 step, but modern macOS only ships `python3`, so compiling fails with `exec: "python": executable file not found in $PATH`.
@@ -129,7 +129,7 @@ Most of `config.h` matches [Gnimu nRF52840][0] — see that README's [Configurat
 | `DISPLAY_SHIFT_INTERVAL_MS`, `DISPLAY_SHIFT_MAX`, `DISPLAY_LAYOUT_W/H` | Burn-in mitigation: the layout is inset by `DISPLAY_SHIFT_MAX` px and walks within that margin every 5 minutes. |
 | `DISPLAY_CONTRAST` | 0–255; full scale by default for daylight readability. |
 | `LED_ENABLED` | **`0` in this variant** — the display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
-| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | **Replaces `IMU_SWAP_XY`/`IMU_SIGN_*` in this tree.** Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations rather than the older model's 8 flat ones. A determinant `static_assert` rejects a mirrored (physically impossible) map at compile time. Derivation procedure and the old→new migration table are in [`DESIGN.md`](DESIGN.md#why-the-existing-model-runs-out). |
+| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations rather than the older model's 8 flat ones. A determinant `static_assert` rejects a mirrored (physically impossible) map at compile time. Derivation procedure and the old→new migration table are in [`DESIGN.md`](DESIGN.md#why-the-existing-model-runs-out). |
 | `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`** — on this board `A4` *is* `PIN_WIRE_SDA`, which the display needs. |
 
 Note the GNSS module also differs (M100 Mini, not M100-5883) — same u-blox M10 silicon, so no firmware setting changes with it.
@@ -184,7 +184,7 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
 
-`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `milliG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch — and note it reports in the base tree's `IMU_SWAP_XY`/`IMU_SIGN_*` terms, so this tree's `IMU_AXIS_*_SRC`/`_SIGN` form needs the migration table in [`DESIGN.md`](DESIGN.md#why-the-existing-model-runs-out) §6.
+`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `milliG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
 
 > ⚠️ Derive the axis map against the **raw serial `milliG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
 

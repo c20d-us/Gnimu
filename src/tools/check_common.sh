@@ -72,11 +72,13 @@ NRF_VARIANTS=(
 
 # Shared between the nRF trees. DELIBERATELY EXCLUDED, each for a real reason -
 # do not "fix" these by adding them here:
-#   g_imu.cpp   - OLED tree uses the generalized IMU_AXIS_*_SRC/_SIGN remap,
-#                 the base tree still uses IMU_SWAP_XY/IMU_SIGN_*.
 #   g_led.cpp   - OLED tree yields the LED to the panel via displayIsPresent().
 #   g_state.cpp - OLED tree calls displaySleep() before the MCU halts.
 #   g_power.h   - switch-sense pin differs (A4 base / A1 OLED; A4 IS SDA there).
+#
+# g_imu.cpp joined this list on 2026-08-14, when the base tree was migrated to
+# the generalized IMU_AXIS_*_SRC/_SIGN remap the OLED tree already used. It was
+# the last axis-scheme divergence in the codebase.
 NRF_COMMON_FILES=(
   g_battery.h
   g_battery.cpp
@@ -84,6 +86,8 @@ NRF_COMMON_FILES=(
   g_ble.cpp
   g_gnss.h
   g_gnss.cpp
+  g_imu.cpp
+  g_imu.h
   g_power.cpp
   g_state.h
   g_led.h

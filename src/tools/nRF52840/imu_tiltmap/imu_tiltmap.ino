@@ -18,15 +18,17 @@
 // DIAGNOSTIC: XIAO nRF52840 Sense IMU axis tilt-map (onboard IMU, USB only)
 //
 // Maps the LSM6DS3TR-C sensor axes to the physical board so the axis remap in
-// imu.cpp (IMU_SIGN_X / IMU_SIGN_Y / IMU_SIGN_Z / IMU_SWAP_XY) can be filled in.
-// The sensor's orientation is fixed by the XIAO's design, so what you learn here
-// carries to any XIAO nRF52840 Sense - no wiring or soldering, board stays as-is.
+// config.h (IMU_AXIS_{X,Y,Z}_SRC / _SIGN) can be filled in. The sensor's
+// orientation is fixed by the XIAO's design, so what you learn here carries to
+// any XIAO nRF52840 Sense - no wiring or soldering, board stays as-is.
 //
-// NOTE: the macro names above are the BASE nRF52840 (and ESP32) tree's form.
-// The nRF52840-OLED tree has replaced them with IMU_AXIS_{X,Y,Z}_SRC/_SIGN,
-// which covers all 24 orientations instead of 8. The poses this sketch prints
-// are the same either way - only the macros you write differ. See the old->new
-// migration table in Gnimu-nRF52840-OLED/DESIGN.md §6.
+// USUALLY YOU DO NOT NEED THIS SKETCH. The production firmware already prints
+// the 1 Hz serial milliG line, and the three static poses documented in
+// config.h's Axis orientation section derive the whole map from it - which is
+// how the shipped maps were actually settled. Reach for this sketch when a
+// board's sensor orientation is unknown from scratch. Either way, derive
+// against the RAW SERIAL NUMBERS, not the Gnimu Monitor readout: Monitor is a
+// display layer that has masked a mirrored map here before.
 //
 // The accelerometer at rest reads the specific force (reaction to gravity), so
 // the axis pointing UP reads about +1 g and the axis pointing DOWN reads -1 g.
@@ -35,7 +37,7 @@
 //
 // How to use (results feed imu.cpp - DESIGN.md section 4):
 //   1. Board FLAT, component/LED side UP (the installed under-the-lid pose).
-//      Expect "UP = +Z" -> confirms IMU_SIGN_Z = +1.
+//      Expect "UP = +Z" -> confirms IMU_AXIS_Z_SRC = 2, IMU_AXIS_Z_SIGN = +1.
 //   2. Stand it on each edge in turn (USB-C edge down, opposite edge down, each
 //      long edge down). The axis that reads +-1 g there is the in-plane axis
 //      aligned with that edge - that's your X vs Y and their signs relative to

@@ -53,18 +53,20 @@ struct ImuRawSample {
 
 // ============================================================================
 // Axis remap - installed orientation. Maps the sensor frame into the vehicle
-// frame; the mounting correction itself (IMU_SWAP_XY, IMU_SIGN_X/Y/Z) lives
-// in config.h - see the comment there for its flat-mount-only scope.
+// frame. The mounting correction itself (IMU_AXIS_*_SRC / _SIGN) lives in
+// config.h, along with the order table, the derivation procedure, and the
+// static_asserts that reject a physically impossible map.
+//
+// A general permutation cannot be done in place - writing triple[0] would
+// clobber a value a later axis still needs to read - so work from a copy. Three
+// floats of stack, and it keeps the mapping a plain declarative read of the
+// config rather than a sequence of conditional swaps.
 // ============================================================================
 static void remapAxes(float triple[3]) {
-  if (IMU_SWAP_XY) {
-    float t = triple[0];
-    triple[0] = triple[1];
-    triple[1] = t;
-  }
-  triple[0] *= IMU_SIGN_X;
-  triple[1] *= IMU_SIGN_Y;
-  triple[2] *= IMU_SIGN_Z;
+  const float in[3] = {triple[0], triple[1], triple[2]};
+  triple[0] = in[IMU_AXIS_X_SRC] * IMU_AXIS_X_SIGN;
+  triple[1] = in[IMU_AXIS_Y_SRC] * IMU_AXIS_Y_SIGN;
+  triple[2] = in[IMU_AXIS_Z_SRC] * IMU_AXIS_Z_SIGN;
 }
 
 // Convert a scaled sensor value (gyro in centi-deg/sec, accel in milli-g) to
@@ -88,7 +90,7 @@ static int16_t toProtocolInt16(float value) {
 // Order matters: per-chip zero-point offsets (IMU_*_OFFSET_*) are subtracted
 // FIRST, in the sensor's raw axis frame. That keeps the offsets intrinsic to
 // the chip so they don't need to change if the mounting orientation flips
-// IMU_SWAP_XY / IMU_SIGN_*. The mounting remap runs AFTER the correction.
+// the IMU_AXIS_* mapping. The mounting remap runs AFTER the correction.
 // Reassemble a little-endian register pair, matching the byte order the
 // library's own readRegisterInt16() uses (low byte first).
 static inline int16_t rawPair(const uint8_t *p) {

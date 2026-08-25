@@ -178,14 +178,14 @@ All user-tunable settings live in [`config.h`](config.h), grouped into sections.
 | `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `LED_ONBOARD_PIN` | Hardware pin assignments. |
 | `GNSS_BAUD` | GNSS serial baud rate. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
-| `GNSS_MAX_NAVIGATION_RATE_HZ`, `GNSS_IDLE_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25) while a BLE client is connected, and the reduced rate used while nobody is listening. |
+| `GNSS_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25). Set once at startup and held for the life of the session, connected or not. |
 | `GNSS_SV_MINELEV_DEG` | Ignore satellites below this elevation angle (anti-multipath). |
 | `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
 | `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
 | `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
 | `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2`, `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
 | `IMU_ACCEL_OFFSET_*_MPS2`, `IMU_GYRO_OFFSET_*_RADPS` | Per-chip zero-point corrections in the raw sensor frame, subtracted before smoothing. Measure once per board with [`tools/imu_calibration/`](../tools/ESP32/imu_calibration/imu_calibration.ino) and paste the printed values. |
-| `IMU_SWAP_XY`, `IMU_SIGN_X/Y/Z` | Mounting-orientation remap into the vehicle frame — covers any 90° yaw + right-side-up/upside-down flat mount. Defaults leave the sensor frame untouched. |
+| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Mounting-orientation remap into the vehicle frame. Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations. A determinant `static_assert` rejects a mirrored (impossible) map at compile time. Defaults are the identity map, leaving the raw sensor frame untouched. Derivation procedure and the order table are in `config.h`. |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
 | `LOG_ENABLED` | Master switch for all serial diagnostic output. `0` = **silent build**: every `LOG_*` call vanishes at compile time and `setup()` skips the wait for the serial port. |
 

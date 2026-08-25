@@ -16,7 +16,6 @@
 
 #include "g_gnss.h"
 #include "config.h"
-#include "g_ble.h"
 #include "g_log.h"
 
 // GNSS state
@@ -136,26 +135,6 @@ static void drainSerial() {
   }
 }
 
-// Set the navigation frequency based on BLE client connection state.
-static void setNavFreq() {
-  // The current navigation frequency, updated as BLE clients
-  // connect/disconnect.
-  static uint8_t currentNavFreq = 0;
-
-  // Check to see if there is a BLE client connected, and adjust the navigation
-  // frequency accordingly.
-  const uint8_t desiredNavFreq =
-      bleIsConnected() ? GNSS_MAX_NAVIGATION_RATE_HZ : GNSS_IDLE_NAV_RATE_HZ;
-  if (currentNavFreq != desiredNavFreq) {
-    if (myGNSS.setNavigationFrequency(desiredNavFreq)) {
-      currentNavFreq = desiredNavFreq;
-      LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", desiredNavFreq);
-    } else {
-      LOG_PRINTLN("❌ Failed to reset GNSS update rate.");
-    }
-  }
-}
-
 // Initialize the GNSS module.
 void gnssBegin() {
   // Make sure we can connect to the GNSS module at the target baud rate.
@@ -206,8 +185,17 @@ void gnssBegin() {
   // Constellation setup
   setConstellations();
 
-  // Set the GNSS PVT update frequency
-  setNavFreq();
+  // Set the GNSS PVT update frequency. Written exactly once, here: every
+  // CFG-RATE change makes the receiver re-initialise its navigation filter,
+  // so hAcc degrades and has to re-converge over the following seconds. An
+  // earlier build dropped to a lower rate while no BLE client was connected
+  // and restored it on connect, which put that re-convergence right at the
+  // start of every session. One fixed rate avoids it entirely.
+  if (myGNSS.setNavigationFrequency(GNSS_NAV_RATE_HZ)) {
+    LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", GNSS_NAV_RATE_HZ);
+  } else {
+    LOG_PRINTLN("❌ Failed to set GNSS update rate.");
+  }
 
   // Register the PVT callback and enable automatic PVT output LAST, once
   // the module is fully configured. setAutoPVTcallbackPtr() implicitly enables
@@ -239,12 +227,9 @@ const UBX_NAV_PVT_data_t *gnssLatestPvt() {
 
 // GNSS module poller - called every loop().
 // Prompts firing of registered callback when a new PVT epoch is available.
-// Updates the Navigation Frequency as needed depending on BLE connection state.
 void gnssPoll() {
   // Pump the UART and parse incoming bytes into complete packets
   myGNSS.checkUblox();
   // Fire the registered callbacks for any completed packets
   myGNSS.checkCallbacks();
-  // Set to the desired navigation frequency for our current state
-  setNavFreq();
 }

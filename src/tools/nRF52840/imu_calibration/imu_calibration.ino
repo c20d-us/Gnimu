@@ -20,7 +20,7 @@
 // Measures per-axis zero-point offsets for the onboard LSM6DS3TR-C in the
 // sensor's RAW axis frame (before any axis remap), logs every session to
 // internal flash, and aggregates them into six paste-ready #define lines for
-// config.h. Independent of IMU_SWAP_XY / IMU_SIGN_* - the offsets stay valid
+// config.h. Independent of the IMU_AXIS_* remap - the offsets stay valid
 // across mounting changes.
 //
 // Units match what g_imu.cpp / config.h use:

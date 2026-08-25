@@ -52,19 +52,10 @@
 // First digit must be 0-3, so the value stays below 4000000000 - the RaceBox
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
-#define DEVICE_ID "1001001001"
+#define DEVICE_ID "1000000002"
 
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
-//
-// This build and nRF52840-OLED target the SAME MCU, so the wrong binary flashes
-// and runs happily. They differ in POWER_SWITCH_SENSE_PIN: A4 here, A1 in the
-// OLED build, because on that board A4 IS SDA and its display needs the bus.
-// Flash this firmware onto OLED hardware and the switch-sense read lands on a
-// pin the display is driving - a misread switch position plus a divider argued
-// onto the I2C bus, presenting as flaky state transitions and a glitchy screen
-// rather than anything pointing at the real cause. This line makes it visible
-// on the first serial output instead.
 #define GNIMU_VARIANT "nRF52840"
 
 // ----------------------------------------------------------------------------
@@ -93,58 +84,73 @@
 // --- Per-chip zero-point offsets (raw sensor frame) ---
 // Subtracted from each raw axis inside g_imu's readImuRaw() BEFORE the
 // mounting remap runs, so these values are intrinsic to the chip and do not
-// need to change if IMU_SWAP_XY / IMU_SIGN_* change. Units match the LSM6DS3
+// need to change if the IMU_AXIS_* mapping changes. Units match the LSM6DS3
 // native units (g for accel, deg/s for gyro).
 //
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/nRF52840/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-// Bench-calibrated 2026-07-23 (average of 4 imu_calibration runs; per-run
-// spread was < 0.001g accel / < 0.03dps gyro). Two further trims on top of
-// that, both from in-case full-firmware behavior the bench sketch can't see
-// (it only powers the IMU, not GNSS/BLE, so it misses production's
-// thermal/electrical load):
-//   * Z accel: +0.0075g (rest reading sat at 0.992-0.993g).
-//   * Z gyro:  +0.045dps (Gnimu Monitor yaw rate sat at +0.02..0.07dps).
-#define IMU_ACCEL_OFFSET_X_G +0.004967f
-#define IMU_ACCEL_OFFSET_Y_G +0.003585f
-#define IMU_ACCEL_OFFSET_Z_G +0.019085f
-#define IMU_GYRO_OFFSET_X_DPS +0.611464f
-#define IMU_GYRO_OFFSET_Y_DPS -1.458232f
-#define IMU_GYRO_OFFSET_Z_DPS +0.609842f
+#define IMU_ACCEL_OFFSET_X_G -0.001033f
+#define IMU_ACCEL_OFFSET_Y_G +0.010585f
+#define IMU_ACCEL_OFFSET_Z_G +0.031085f
+#define IMU_GYRO_OFFSET_X_DPS +0.491464f
+#define IMU_GYRO_OFFSET_Y_DPS -1.558232f
+#define IMU_GYRO_OFFSET_Z_DPS +0.369842f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
-// Board-frame axes, to be bench-confirmed via src/tools/nRF52840/imu_tiltmap
 // The bench-verified orientation of the XIAO Sense:
 //      +X -> toward the BLE-antenna end (away from USB-C)
 //      +Y -> toward the left edge (LED side)
 //      +Z -> up, out of the top of the SoC face
-// What may vary per BUILD is how the module sits in your enclosure. These
-// four values correct for different orientations. This model assumes the
-// module is mounted FLAT, with sensor Z vehicle-vertical, and covers all 8
-// flat-mount variants (any 90-degree yaw rotation, right-side-up or
-// upside-down). It does NOT cover mounting the board on any edge.
-// Vehicle forward/lateral assignment (which of X/Y is which, and their
-// final signs) still needs an in-car drive test once mounted.
-#define IMU_SWAP_XY false // true if raw X axis is lateral, not longitudinal
-#define IMU_SIGN_X -1.0f
-#define IMU_SIGN_Y -1.0f
-#define IMU_SIGN_Z +1.0f
+// What may vary per BUILD is how the module sits in your enclosure. Each
+// VEHICLE axis below names which SENSOR axis feeds it (0=X, 1=Y, 2=Z) plus a
+// sign. This covers all 24 physically-realizable orientations.
+//
+// TARGET OUTPUT FRAME: X forward+, Y left+, Z up+ (ISO 8855, right-handed).
+//
+// ORDER NAMES read as "which sensor axis feeds vehicle X, Y, Z". Because the
+// target frame is right-handed, a valid map is always a proper rotation, so
+// the permutation's parity must match the number of sign flips - odd needs
+// odd, even needs even. The static_assert at the bottom of this file enforces
+// it; a map that fails is a mirror, which no physical mounting can produce.
+//
+//   Order   _SRC triple   Parity   Sign flips required
+//   XYZ     0, 1, 2       even     even (0 or 2)
+//   XZY     0, 2, 1       odd      odd  (1 or 3)
+//   YXZ     1, 0, 2       odd      odd  (1 or 3)
+//   YZX     1, 2, 0       even     even (0 or 2)
+//   ZXY     2, 0, 1       even     even (0 or 2)
+//   ZYX     2, 1, 0       odd      odd  (1 or 3)
+//
+// TO DERIVE A NEW MAP, no drive test is needed - hold the assembled unit in
+// its installed orientation and read the 1 Hz serial milliG line:
+//   1. At rest, the axis reading ~+/-1000 is vehicle-vertical; sign gives
+//      up vs down.
+//   2. Raise the forward end - the axis going positive is vehicle X.
+//   3. Raise the left side  - the axis going positive is vehicle Y.
+//
+// CURRENT VALUES: order XYZ with two sign flips. The XIAO sits with USB-C
+// facing FORWARD, so sensor +X) points rearward and sensor +Y points right.
+#define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
+#define IMU_AXIS_X_SIGN -1.0f
+#define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
+#define IMU_AXIS_Y_SIGN -1.0f
+#define IMU_AXIS_Z_SRC 2 // vehicle up      <- sensor Z
+#define IMU_AXIS_Z_SIGN +1.0f
 
 // --- LIGHT_SLEEP wake-up detector (omni-directional shake-to-wake) ---
 // Configured via direct register writes (the Seeed library has no high-level
-// API for this) per ST AN4650. Bench-tuned via src/tools/nRF52840/imu_wake.
-// CTRL1_XL: ODR=12.5Hz (low-power mode) | FS=+/-4g - bits [7:4] ODR_XL=0001,
-// bits [3:2] FS_XL=10. A low ODR is what puts the accelerometer into the
-// chip's automatic low-power mode; full accuracy isn't needed just to detect
-// "something moved." FS is deliberately kept matched to IMU_ACCEL_RANGE_G
-// (the RUNNING-mode range) rather than dropped to +/-2g: since this is a live
-// mode switch on an already-running chip (not a cold power-on), changing
-// FS_XL creates a scale discontinuity in the wake-up detector's raw-code
-// threshold comparison that persists (not a settling transient - a delay
-// before arming does not fix it) and reliably false-triggers immediately.
-// Only ODR changes across the RUNNING<->LIGHT_SLEEP transition now.
+// API for this) per ST AN4650. A low ODR is what puts the accelerometer into
+// the chip's automatic low-power mode; full accuracy isn't needed just to
+// detect "something moved." FS is deliberately kept matched to
+// IMU_ACCEL_RANGE_G (the RUNNING-mode range) rather than dropped to +/-2g:
+// since this is a live mode switch on an already-running chip (not a cold
+// power-on), changing FS_XL creates a scale discontinuity in the wake-up
+// detector's raw-code threshold comparison that persists (not a settling
+// transient - a delay before arming does not fix it) and reliably
+// false-triggers immediately. Only ODR changes across the RUNNING<->LIGHT_SLEEP
+// transition now.
 #define IMU_WAKE_CTRL1_XL 0x18
 // 6-bit wake-up threshold (0-63), LSB weight = FS_XL/64 - so this scales with
 // the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL
@@ -181,29 +187,12 @@
 // (92 payload + 8 framing) regardless of SV count, so 25Hz is only ~2500
 // bytes/sec and link utilisation does not grow as satellites are added.
 //
-// This project has now walked this down twice for the same reason. 460800 was
-// abandoned first - a 1.4 ms window is shorter than worst-case loop latency,
-// which craters the rate. 115200 held for a long time, but the GPS+Galileo
-// work (2026-08-06) needed more margin than its 5.6 ms window allowed.
-//
-// 57600 doubles the deadline again while still using under half the link at
-// full rate. The costs are that a packet takes ~8.7 ms longer to arrive (still
-// well inside one epoch, irrelevant for this use case) and that there is less
-// slack if additional UBX messages are ever enabled - only NAV-PVT is today,
-// and adding NAV-SAT or similar would change the arithmetic quickly here.
-//
-// 38400 would still work at 25Hz but the margin starts running the wrong way:
-// two-thirds link utilisation, and the packet occupies ~26 ms of a 40 ms epoch.
-//
 // gnssBegin's connectAndConfigureBaud() sweeps common rates, reconfigures the
 // receiver, and saves to flash if it is found at a different rate - so changing
 // this value is a one-line edit that survives the next boot on its own.
 #define GNSS_BAUD 57600
-#define GNSS_NAV_RATE_HZ 25
-// PVT rate while no BLE client is connected - keeps the receiver ticking (and
-// the fix warm) without the full 25Hz load when nobody is listening.
-#define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
+#define GNSS_NAV_RATE_HZ 20
+#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
@@ -212,17 +201,14 @@
 #define GNSS_WAKE_PULSE_MS 10
 
 // --- GNSS Constellation Toggles ---
-// Enable only the constellations your module supports and your region
-// benefits from. Enabling too many can pull the update rate below 25Hz.
-// HGLRC M100-5883 purports to support GPS/Galileo/GLONASS/BeiDou/QZSS/SBAS,
-// though emprical testing indicates it only supports GPS + Galileo.
-// Only GPS is enabled below for North American use. Testing has shown that the
-// M100-5883 can't quite maintain a 25Hz fix rate with both GPS+Galileo enabled.
+// Enable only the constellations your module supports and your region benefits
+// from. Enabling too many can reduce the PVT rate.
+// For North American use you should always include GPS.
 // Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
       {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
-      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, false},                           \
+      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, true},                            \
       {"GLONASS", SFE_UBLOX_GNSS_ID_GLONASS, false},                           \
       {"BeiDou", SFE_UBLOX_GNSS_ID_BEIDOU, false},                             \
       {"QZSS", SFE_UBLOX_GNSS_ID_QZSS, false},                                 \
@@ -238,8 +224,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -16  // while advertising
-#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
+#define BLE_TX_POWER_ADV_DBM -12  // while advertising
+#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -290,7 +276,7 @@
 // higher = snappier, lower = smoother. The low-voltage cutoff uses the
 // un-smoothed fresh peak, so this is display-only and can never hide a
 // genuine low voltage cutoff from the safety path.
-#define BATTERY_EMA_ALPHA 0.2f
+#define BATTERY_EMA_ALPHA 0.1f
 
 // --- Discharge curve (resting volts -> percent), high to low ---
 // A macro (not an array) so the table lives here while g_battery.cpp owns
@@ -417,9 +403,8 @@
 // valid only up to a ~40k source; the XIAO VBAT divider is ~338k (1M || 510k)
 // and the switch-sense divider is ~255k (510k || 510k), so short TACQ leaves
 // the sampling cap under-charged and every read undershoots ~100mV. 40us
-// covers up to ~800k. Bench-validated via src/tools/nRF52840/battery_presence.
-// Value is dictated by the fixed divider impedance, not a free performance
-// knob.
+// covers up to ~800k. Value is dictated by the fixed divider impedance, not a
+// free performance knob.
 #define SAADC_TACQ_US 40
 
 // ----------------------------------------------------------------------------
@@ -429,8 +414,7 @@
 // Powered by a dedicated enable pin; sits on the internal I2C bus (Wire1).
 #define IMU_I2C_ADDRESS 0x6A // SA0 tied high on the XIAO Sense
 
-// I2C bus speed for the onboard IMU (Wire1 / TWIM1 - a separate peripheral
-// from the display's Wire/TWIM0, so the two never contend).
+// I2C bus speed for the onboard IMU.
 //
 // This is a LATENCY setting, not a throughput one. imuPoll() reads six 16-bit
 // registers every IMU_SAMPLE_INTERVAL_MS, and the Seeed LSM6DS3 library issues
@@ -484,8 +468,7 @@
 
 // This build has a real battery gauge (VBAT sensing + fuel gauge in
 // g_battery): the shared telemetry module includes the battery segment in the
-// serial stats line. (0 on builds without battery hardware, e.g. the ESP32
-// variant, whose g_battery is a constant stub.)
+// serial stats line. Set to 0 for non-battery builds.
 #define BATTERY_HAS_GAUGE 1
 
 // --- Voltage-sense scaling ---
@@ -622,10 +605,6 @@ static_assert(GNSS_BAUD == 9600 || GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
 // Enforce navigation rate limit
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
-static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&
-                  GNSS_IDLE_NAV_RATE_HZ <= GNSS_NAV_RATE_HZ,
-              "ERROR: GNSS_IDLE_NAV_RATE_HZ must be between 1 and "
-              "GNSS_NAV_RATE_HZ.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
@@ -686,12 +665,57 @@ static_assert(
     "ERROR: IMU_ACCEL_BANDWIDTH_HZ must be one of 50, 100, 200, 400.");
 
 // Enforce each axis sign is a true sign, not a scale factor
-static_assert(IMU_SIGN_X == 1.0f || IMU_SIGN_X == -1.0f,
-              "ERROR: IMU_SIGN_X must be exactly +1.0f or -1.0f.");
-static_assert(IMU_SIGN_Y == 1.0f || IMU_SIGN_Y == -1.0f,
-              "ERROR: IMU_SIGN_Y must be exactly +1.0f or -1.0f.");
-static_assert(IMU_SIGN_Z == 1.0f || IMU_SIGN_Z == -1.0f,
-              "ERROR: IMU_SIGN_Z must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_X_SIGN == 1.0f || IMU_AXIS_X_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_X_SIGN must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_Y_SIGN == 1.0f || IMU_AXIS_Y_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_Y_SIGN must be exactly +1.0f or -1.0f.");
+static_assert(IMU_AXIS_Z_SIGN == 1.0f || IMU_AXIS_Z_SIGN == -1.0f,
+              "ERROR: IMU_AXIS_Z_SIGN must be exactly +1.0f or -1.0f.");
+
+// Enforce each source index names a real sensor axis.
+static_assert(IMU_AXIS_X_SRC >= 0 && IMU_AXIS_X_SRC <= 2,
+              "ERROR: IMU_AXIS_X_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+static_assert(IMU_AXIS_Y_SRC >= 0 && IMU_AXIS_Y_SRC <= 2,
+              "ERROR: IMU_AXIS_Y_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+static_assert(IMU_AXIS_Z_SRC >= 0 && IMU_AXIS_Z_SRC <= 2,
+              "ERROR: IMU_AXIS_Z_SRC must be 0 (sensor X), 1 (Y) or 2 (Z).");
+
+// Permutation parity: +1 if even, -1 if odd, 0 if any two _SRC collide.
+// Integer arithmetic only, so it is usable in a static_assert.
+#define IMU_AXIS_PARITY                                                        \
+  ((((IMU_AXIS_Y_SRC) - (IMU_AXIS_X_SRC)) *                                    \
+    ((IMU_AXIS_Z_SRC) - (IMU_AXIS_X_SRC)) *                                    \
+    ((IMU_AXIS_Z_SRC) - (IMU_AXIS_Y_SRC))) /                                   \
+   2)
+
+// Catch a duplicated source index with a message that names the real problem,
+// rather than letting it fall through to the mirror check below as a 0.
+static_assert(IMU_AXIS_PARITY != 0,
+              "ERROR: IMU_AXIS_X/Y/Z_SRC must be a permutation - each of "
+              "sensor 0, 1 and 2 used exactly once. Two vehicle axes are "
+              "currently fed by the same sensor axis.");
+
+// The determinant check, and the reason this scheme is worth having.
+//
+// The target output frame is right-handed, so any valid mounting map is a
+// proper rotation: determinant +1. Determinant = permutation parity x the
+// product of the signs, so an even permutation needs an even number of sign
+// flips and an odd permutation an odd number. Anything else is a MIRROR - an
+// orientation no physical mounting can produce.
+//
+// This matters because a mirror fails silently and slowly. The data still
+// looks entirely plausible; whichever axes are mis-signed are simply wrong,
+// for accel and gyro alike, since remapAxes() applies the same matrix to both.
+// THIS config carried exactly that bug for months - X had been flipped without
+// Y - and it survived a drive test and an app-side investigation before the
+// arithmetic caught it. See DESIGN.md section 4.
+static_assert(IMU_AXIS_PARITY * IMU_AXIS_X_SIGN * IMU_AXIS_Y_SIGN *
+                      IMU_AXIS_Z_SIGN ==
+                  1.0f,
+              "ERROR: axis map is a mirror, not a rotation (determinant -1). "
+              "An even permutation needs an even number of sign flips, an odd "
+              "permutation an odd number. See the order table in the Axis "
+              "orientation section above.");
 
 // Enforce both BLE TX power levels are exact levels the nRF52840 radio
 // supports. Bluefruit.setTxPower() rejects (and ignores) any other value at

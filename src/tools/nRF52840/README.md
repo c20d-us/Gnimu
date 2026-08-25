@@ -15,7 +15,7 @@ core. Open the serial monitor at **115200**.
 | Sketch | Validates | Extra parts | Pass criteria |
 |---|---|---|---|
 | [`imu_probe/`](imu_probe/imu_probe.ino) | Onboard LSM6DS3TR-C power pin, library bring-up, units (`g_imu.cpp`, DESIGN §4) | none | `begin() OK`; resting board reads ~+1 g on one accel axis (total ~1 g, not ~9.8) and ~0 dps gyro. *(Confirmed — see DESIGN Open items.)* |
-| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_SIGN_*` / `IMU_SWAP_XY`, or `IMU_AXIS_*_SRC`/`_SIGN` on the OLED tree — see note below) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
+| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_AXIS_*_SRC`/`_SIGN` — see note below; usually the firmware's own `milliG` line is enough) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
 | [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (feeds `config.h`'s `IMU_ACCEL_OFFSET_*`/`IMU_GYRO_OFFSET_*`). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `IMU_*_OFFSET_*` `#define` lines. |
 | [`imu_wake/`](imu_wake/imu_wake.ino) | LSM6DS3TR-C's embedded wake-up (activity) detector register config (`CTRL1_XL`, `WAKE_UP_THS`, `WAKE_UP_DUR`) used by LIGHT_SLEEP's shake-to-wake exit trigger | none | Threshold/debounce tuned so a real pickup/shake reliably fires without false-triggering from bench vibration or handling. *(Bench-tuned — see DESIGN §5.)* |
 | [`led_check/`](led_check/led_check.ino) | RGB LED pins + active-LOW polarity + status colors (`g_led.cpp`) | none | The LED color matches each name printed over serial; OFF goes fully dark. *(Confirmed.)* |
@@ -49,12 +49,11 @@ core. Open the serial monitor at **115200**.
 > before, masking a mirrored (determinant −1) axis map. It cannot validate
 > firmware signs. See [`Gnimu-nRF52840/DESIGN.md`](../../Gnimu-nRF52840/DESIGN.md) §4.
 >
-> **Axis-macro note.** This sketch prints results in terms of `IMU_SWAP_XY` /
-> `IMU_SIGN_*`, which is what the base nRF52840 and ESP32 trees use. The
-> **nRF52840-OLED** tree has replaced those with `IMU_AXIS_{X,Y,Z}_SRC` /
-> `_SIGN` (all 24 orientations rather than 8). The bench poses are identical
-> either way — only the macros you write differ. The old→new migration table is
-> in [`Gnimu-nRF52840-OLED/DESIGN.md`](../../Gnimu-nRF52840-OLED/DESIGN.md) §6.
+> **Axis-macro note.** As of 2026-08-14 **all three trees** use
+> `IMU_AXIS_{X,Y,Z}_SRC` / `_SIGN` (all 24 orientations rather than the old
+> model's 8). `IMU_SWAP_XY` / `IMU_SIGN_*` are retired codebase-wide, and this
+> sketch reports in the current form. Order table, derivation procedure and the
+> determinant `static_assert` live in each tree's `config.h`.
 
 ## What each result feeds back into the firmware
 

@@ -52,7 +52,7 @@
 // First digit must be 0-3, so the value stays below 4000000000 - the RaceBox
 // app will not connect to IDs of 4000000000 or higher. See compile-time
 // validation at the bottom of this file.
-#define DEVICE_ID "1010101010"
+#define DEVICE_ID "1000000003"
 
 // Identifies which build this binary is, printed as the first line of the
 // startup banner. Purely diagnostic - nothing branches on it.
@@ -90,12 +90,12 @@
 // Defaults are 0 = no correction. To calibrate a specific board, run the
 // src/tools/nRF52840/imu_calibration sketch and paste its printed values
 // here. Typical magnitudes on a healthy chip: accel < ~0.1g, gyro < ~5deg/s.
-#define IMU_ACCEL_OFFSET_X_G -0.016207f
-#define IMU_ACCEL_OFFSET_Y_G -0.005381f
-#define IMU_ACCEL_OFFSET_Z_G +0.057797f
-#define IMU_GYRO_OFFSET_X_DPS +1.476073f
-#define IMU_GYRO_OFFSET_Y_DPS -4.123416f
-#define IMU_GYRO_OFFSET_Z_DPS +0.289723f
+#define IMU_ACCEL_OFFSET_X_G -0.004207f
+#define IMU_ACCEL_OFFSET_Y_G -0.014381f
+#define IMU_ACCEL_OFFSET_Z_G +0.057130f
+#define IMU_GYRO_OFFSET_X_DPS +1.676073f
+#define IMU_GYRO_OFFSET_Y_DPS -4.023416f
+#define IMU_GYRO_OFFSET_Z_DPS +0.124723f
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
@@ -191,11 +191,8 @@
 // receiver, and saves to flash if it is found at a different rate - so changing
 // this value is a one-line edit that survives the next boot on its own.
 #define GNSS_BAUD 57600
-#define GNSS_NAV_RATE_HZ 25
-// PVT rate while no BLE client is connected - keeps the receiver ticking (and
-// the fix warm) without the full 25Hz load when nobody is listening.
-#define GNSS_IDLE_NAV_RATE_HZ 1
-#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
+#define GNSS_NAV_RATE_HZ 20
+#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
@@ -204,15 +201,14 @@
 #define GNSS_WAKE_PULSE_MS 10
 
 // --- GNSS Constellation Toggles ---
-// Enable only the constellations your module supports and your region
-// benefits from. Enabling too many can pull the update rate below 25Hz.
-// Only GPS is enabled below for North American use. Testing has shown that the
-// M100-5883/M100 Mini can't maintain a 25Hz fix rate with both GPS+Galileo
-// enabled. Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
+// Enable only the constellations your module supports and your region benefits
+// from. Enabling too many can reduce the PVT rate.
+// For North American use you should always include GPS.
+// Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
   {                                                                            \
       {"GPS", SFE_UBLOX_GNSS_ID_GPS, true},                                    \
-      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, false},                           \
+      {"Galileo", SFE_UBLOX_GNSS_ID_GALILEO, true},                            \
       {"GLONASS", SFE_UBLOX_GNSS_ID_GLONASS, false},                           \
       {"BeiDou", SFE_UBLOX_GNSS_ID_BEIDOU, false},                             \
       {"QZSS", SFE_UBLOX_GNSS_ID_QZSS, false},                                 \
@@ -228,8 +224,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -20  // while advertising
-#define BLE_TX_POWER_CONN_DBM -20 // while client is connected
+#define BLE_TX_POWER_ADV_DBM -12  // while advertising
+#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -288,9 +284,7 @@
 // {voltage, percent} pairs. Must be sorted high voltage -> low.
 //
 // Deliberately simplified to just two endpoints - a straight line, not a
-// real LiPo discharge curve. 3.90V/100% is an actual measured resting
-// voltage of a LiPo pack after a full charge; 3.35V/0% matches BATTERY_CUTOFF_V
-// exactly.
+// real LiPo discharge curve.
 #define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.35f, 0}}
 
 // ----------------------------------------------------------------------------
@@ -721,10 +715,6 @@ static_assert(((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H) *
 
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
-static_assert(GNSS_IDLE_NAV_RATE_HZ >= 1 &&
-                  GNSS_IDLE_NAV_RATE_HZ <= GNSS_NAV_RATE_HZ,
-              "ERROR: GNSS_IDLE_NAV_RATE_HZ must be between 1 and "
-              "GNSS_NAV_RATE_HZ.");
 
 // Enforce a sane satellite elevation mask (a real angle above the horizon)
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,

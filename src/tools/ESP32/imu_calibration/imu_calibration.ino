@@ -20,7 +20,7 @@
 // Measures per-axis zero-point offsets for the external MPU-6050 in the
 // sensor's RAW axis frame (before any axis remap), logs every session to
 // LittleFS, and aggregates them into six paste-ready #define lines for
-// config.h. Independent of IMU_SWAP_XY / IMU_SIGN_* - the offsets stay valid
+// config.h. Independent of the IMU_AXIS_* remap - the offsets stay valid
 // across mounting changes.
 //
 // This is the ESP32 counterpart of tools/nRF52840/imu_calibration and follows
