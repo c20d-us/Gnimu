@@ -4,7 +4,7 @@
 [![Platform: nRF52840][Platform-shield]][Platform-link]
 [![Language: C++ (Arduino)][Language-shield]][Language-link]
 
-This section of the repository is a **battery-powered** evolution of [Gnimu][0], re-targeted from the original always-on ESP32-based build to a **Seeed Studio XIAO nRF52840 Sense** [MCU][9] (MicroController Unit). It integrates a GNSS module and an IMU into a device that emulates a [RaceBox Mini][1] streaming telemetry meter. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE ([Bluetooth Low Energy][2]) and read live position, speed, and motion data at or near **25 Hz**. This version runs off a **3.7V LiPo battery** instead of a USB supply, uses the XIAO's **onboard 6-axis IMU**, and adds a full battery subsystem (charge detection, state-of-charge reporting, and a firmware low-voltage cutoff).
+This section of the repository is a **battery-powered** evolution of [Gnimu][0], re-targeted from the original always-on ESP32-based build to a **Seeed Studio XIAO nRF52840 Sense** [MCU][9] (MicroController Unit). It integrates a GNSS module and an IMU into a device that emulates a [RaceBox Mini][1] streaming telemetry meter. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE ([Bluetooth Low Energy][2]) and read live position, speed, and motion data at up to **25 Hz** (more details on the nav rate is below). This version runs off a **3.7V LiPo battery** instead of a USB supply, uses the XIAO's **onboard 6-axis IMU**, and adds a full battery subsystem (charge detection, state-of-charge reporting, and a firmware low-voltage cutoff).
 
 The advertised BLE identity and data streaming protocol stay exactly the same for RaceBox Mini app compatibility. The two streaming data changes compared to the ESP32-based version are actual battery charge percentage value (rather than reporting a fixed 100%), and charging status.
 
@@ -15,9 +15,9 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
 
 ## What it does
 
-- Reads a live [**GNSS fix**][3] (lat/long position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at up to **25 Hz**.
-- Reads **acceleration and rotation** from the XIAO's **onboard 6-axis IMU** (LSM6DS3TR-C) at 100 Hz. Each axis is smoothed with an EMA (Exponential Moving Average) filter and gets **transient-peak blending** so genuine short events (impacts, sharp inputs) survive the low-pass filter that would otherwise wash them out. Per-chip zero-point offsets are subtracted before any axis remap. These offsets default to 0, and should be measured per board via the IMU bench-calibration sketch that lives in the tools directory.
-- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to any RaceBox-compatible client at or near 25 Hz.
+- Reads a live [**GNSS fix**][3] (lat/long position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
+- Reads **acceleration and rotation** from the XIAO's **onboard 6-axis IMU** (LSM6DS3TR-C). Each axis is smoothed with an EMA (Exponential Moving Average) filter and gets **transient-peak blending** so genuine short events (impacts, sharp inputs) survive the low-pass filter that would otherwise wash them out. Per-chip zero-point offsets are subtracted before any axis remap. These offsets default to 0, and should be measured per board via the IMU bench-calibration sketch that lives in the tools directory.
+- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to any RaceBox-compatible client.
 - **Runs on battery.** Reads its own LiPo voltage, reports state-of-charge and charging status in the RaceBox protocol's battery byte, and enforces a **firmware low-voltage cutoff** to protect the cell rather than rely on the presence of over-discharge protection circuitry in the LiPo (most LiPos do have over-discharge protection, so this is belt-and-braces).
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) and a **Battery Service** so official apps recognize, pair with it, and display cell state.
 - Drives an **RGB status LED** for advertising / connected / low-battery / charging / idle, and prints a human-readable **serial status line** at 1 Hz for debugging.
@@ -42,7 +42,7 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0CB5N8RQ8"><strong>u-blox GNSS module</strong></a></td>
-    <td>A u-blox M10-class GNSS receiver.Must stay u-blox/UBX. The compass pins are unused.</td>
+    <td>A u-blox M10-class GNSS receiver. The compass pins are unused.</td>
   </tr>
   <tr>
     <td>
@@ -76,7 +76,7 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
         </strong>
     </td>
     <td>
-        JST PH2.0 and 1.25 male and female connector leads. Used for the connections to the LiPo, switch, TPS VIN/GND and XIOA BAT+/- pads.
+        JST PH2.0 and 1.25 male and female connector leads. Used for the connections to the LiPo, switch, TPS VIN/GND and XIOA BAT± pads.
     </td>
   </tr>
   <tr>
@@ -84,7 +84,7 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
         <strong><a href="https://www.amazon.com/dp/B08QRGJF5G">Resistors</a></strong>
     </td>
     <td>
-        510kΩ resistors used in the voltage divider that supplies a signal for the power switch on-off sense controller.
+        510kΩ resistors used in the voltage divider that supplies a signal for the power switch on/off sense controller.
     </td>
   </tr>
   <tr>
@@ -234,10 +234,10 @@ The [`tools/`](../tools/nRF52840/) folder contains small standalone sketches tha
 - `ble_mtu` — validate the raised BLE MTU + notify path.
 - `gnss_en` — verify the TPS63020 EN gate truly disconnects the GNSS rail.
 - `gnss_pmreq` — validate GNSS RXM-PMREQ backup mode and the GPIO wake pulse used by LIGHT_SLEEP.
-- [`gnss_reset`](../tools/common/gnss_reset/gnss_reset.ino) — full GNSS factory reset, useful for recovering a receiver left in an unexpected config state. Lives in `src/tools/common/` rather than this variant's folder, since it is platform-neutral.
+- `gnss_reset` — full GNSS factory reset, useful for recovering a receiver left in an unexpected config state. Lives in `src/tools/common/` rather than this variant's folder, since it is platform-neutral.
 - `battery_presence` — check the A4 switch-sense divider reads clean 0mV ON / ~2V OFF.
 - `battery_log` — logs VBAT through a full plug-in → charge → unplug → settle cycle to internal flash (survives being unplugged from Serial), auto-flagging when charging plateaus and when the post-unplug reading has truly settled. Use this to capture the cell's real resting voltage at full charge for tuning `BATTERY_DISCHARGE_CURVE`'s 100% anchor — something you can't read directly off BAT+/- while USB is still driving it. Holds the GNSS rail off for the whole test so its ~30mA load doesn't skew the readings. Reconnect USB + open Serial anytime (mid-test or after) and type `d`/`e` to dump or erase the log.
-- [`storage_check`][storage-check] — standalone QSPI + LittleFS hardware validation (chip detection, mount, format, read/write/delete). Not currently used by the main firmware; kept as a diagnostic for the onboard flash chip itself.
+- `storage_check` — standalone QSPI + LittleFS hardware validation (chip detection, mount, format, read/write/delete). Not currently used by the main firmware; kept as a diagnostic for the onboard flash chip itself.
 
 ---
 
@@ -273,11 +273,21 @@ Many values are checked with `static_assert` at compile time, so an invalid conf
 
 ### A note on BLE power and GNSS lock
 
-GNSS reception is sensitive to nearby RF noise, and a compact build puts the BLE radio right next to the GNSS front end. Keeping the BLE TX power low (`BLE_TX_POWER_ADV` / `BLE_TX_POWER_CONN`, both default **−12 dBm** — advertising and connected are set independently) keeps the radio quiet. The receiver is usually close by, so high power isn't needed. Lower BLE transmit power can dramatically improve fix quality. Running the GNSS from the **3.3V buck-boost rail** (rather than 5 V) further reduces supply noise.
+GNSS reception is sensitive to nearby RF noise, and a compact build puts the BLE radio right next to the GNSS front end. Keeping the BLE TX power low (`BLE_TX_POWER_ADV` / `BLE_TX_POWER_CONN`, both default **−12dBm**, with advertising and connected set independently) keeps the radio quiet. The receiver is usually close by, so high power isn't needed. Lower BLE transmit power can dramatically improve fix quality. Running the GNSS from the **3.3V buck-boost rail** (rather than 5V) further reduces supply noise.
 
 ### A note on GNSS fix rate and enabled constellations
 
-The HGLRC M100-5883, while a very good consumer-grade GNSS chip, does not seem to have quite enough horsepower to maintain a 25Hz PVT rate with multiple constellations enabled. Based on my testing with GPS+Galileo enabled, the fix rate will drop to around 24Hz once there are >12 SVs locked. If you want a rock-solid 25Hz fix rate, stick with just the GPS constellation enabled. I have been able to get to sub-2.0 pDOP and horizontal accuracy under 250mm with just GPS, which is more than sufficient for this type of device.
+The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable. This is a documented platform limit, not a tuning problem. Published u-blox specifications [UBX-23006557][ubx-m10-specs]:
+
+| Concurrent constellations | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| Max nav rate | **25Hz** | **20Hz** | 16Hz | 10Hz |
+
+Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo** enabled. Bench testing matches the spec: 20Hz holds rock-solid at 15+ SVs, while asking for 25Hz with both constellations enabled causes noticeable rate fluctuations. For use as a motorsports telemetry device, a solidly consistent nav rate and higher position accuracy are key attributes, so two constellations at 20Hz is a good compromise to get high-resolution position and speed.
+
+A valid alternative is to run **GPS only at 25Hz**. This costs you the second constellation's geometry, and the accuracy difference can be visible. If you would rather have the higher rate at the expense of potentially lower accuracy, set `GNSS_NAV_RATE_HZ 25` and disable Galileo (or GPS, depending on where you are in the world) in `GNSS_CONSTELLATIONS`.
+
+**Why the real RaceBox Mini delivers 25Hz:** it uses a [u-blox NEO-M9N][ubx-m9n-specs] GNSS, which is a different platform that does not derate at higher constellation counts. The M9N datasheet lists 25Hz for *every* configuration, from a single constellation up to GPS+GLO+GAL+BDS concurrently. The drawback is higher power consumption and cost. The M10 is an economical choice for a small battery-powered device, but the 20 Hz ceiling for GPS+GAL is the downside. If you want to try and fully emulate a RaceBox Mini, a NEO-M9N module shouldn't be too hard to integrate with this code (it's perhaps even a drop-in), but it will likely run 3x the cost or more than an M10 unit and draw substantially more power.
 
 ---
 
@@ -378,7 +388,8 @@ Released under the **GNU General Public License v3.0** — see [`LICENSE`](../..
 [Platform-link]: https://wiki.seeedstudio.com/XIAO_BLE/
 [Language-link]: https://www.arduino.cc/
 [config]: ./config.h
-[storage-check]: ../tools/nRF52840/storage_check/storage_check.ino
+[ubx-m10-specs]: https://content.u-blox.com/sites/default/files/documents/u-bloxM10-with-25Hz-Navigation-UpdateRate_IN_UBX-23006557.pdf
+[ubx-m9n-specs]: https://content.u-blox.com/sites/default/files/NEO-M9N-00B_DataSheet_UBX-19014285.pdf
 
 [0]: ../Gnimu-ESP32/README.md
 [1]: https://www.racebox.pro/products/racebox-mini

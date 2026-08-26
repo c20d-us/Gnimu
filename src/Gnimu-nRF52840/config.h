@@ -170,29 +170,10 @@
 // pullup silently win every write, defeating our rail-cutoff.
 #define GNSS_EN_PIN D9
 
-// LOWER is better here, within reason - this setting buys loop-latency
-// tolerance, not throughput.
-//
-// What matters is how long the ~64-byte Serial1 RX buffer takes to fill, since
-// that is the deadline by which gnssPoll() must service it or UBX bytes are
-// lost and the observed PVT rate sags. Halving the baud doubles that deadline:
-//
-//   baud     RX fill window   NAV-PVT airtime   link use @25Hz
-//   460800   ~1.4 ms          ~2.2 ms           5%
-//   115200   ~5.6 ms          ~8.7 ms           22%
-//   57600    ~11.1 ms         ~17.4 ms          43%
-//   38400    ~16.7 ms         ~26 ms            65%
-//
-// Throughput is nowhere near the constraint: NAV-PVT is a fixed 100 bytes
-// (92 payload + 8 framing) regardless of SV count, so 25Hz is only ~2500
-// bytes/sec and link utilisation does not grow as satellites are added.
-//
-// gnssBegin's connectAndConfigureBaud() sweeps common rates, reconfigures the
-// receiver, and saves to flash if it is found at a different rate - so changing
-// this value is a one-line edit that survives the next boot on its own.
-#define GNSS_BAUD 57600
+// No need for greater than 115200; higher can reduce PVT rate.
+#define GNSS_BAUD 115200
 #define GNSS_NAV_RATE_HZ 20
-#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---

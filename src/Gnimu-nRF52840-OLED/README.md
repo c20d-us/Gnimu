@@ -54,7 +54,7 @@ Plus one addition: **[JST 1.25mm 4-pin pre-crimped connector pairs](https://www.
 > [!TIP]
 > **Use opposite genders on harnesses that share a connector type.** Several 4-pin runs in this build use the same part, so the wrong plug physically fits the wrong socket. Putting the male half board-side on one harness and the female half board-side on its neighbour makes an incorrect mating impossible to assemble — no labels to read. It matters most on the battery / buck-boost / `BAT±` runs, where a crossed connection carries raw cell voltage and can destroy the XIAO or the regulator. See [`DESIGN.md`](DESIGN.md#gender-convention-makes-mis-plugging-impossible).
 
-The rest — XIAO, TPS63020, switch, other JST leads, resistors, USB-C adapter, project box — is identical to [Gnimu nRF52840][0]; see that README for part links and notes. The existing 45×75×20mm project box is a tight fit even before the display, so case fit is an open item (see [`DESIGN.md`](DESIGN.md#7-open-items)).
+The rest — XIAO, TPS63020, switch, other JST leads, resistors, USB-C adapter, project box — is identical to [Gnimu nRF52840][0]; see that README for part links and notes. The existing 45×75×20mm project box is a tight fit even before the display, so case fit is snug. Be careful when closing up the case or you might pinch some wires.
 
 ---
 
@@ -156,7 +156,7 @@ The XIAO's own charge LED is wired to the charge controller and can't be driven 
 
 ### M100 Mini GNSS LED indicators
 
-These are the GNSS module's own LEDs (not driven by our firmware) — useful for judging fix status without a serial connection. **This variant's M100 Mini uses the opposite color convention from the M100-5883** documented for [Gnimu nRF52840][0] — confirmed on the bench 2026-08-06, not a wiring issue:
+These are the GNSS module's own LEDs (not driven by our firmware) — useful for judging fix status without a serial connection. **This variant's M100 Mini uses the opposite color convention from the M100-5883** documented for [Gnimu nRF52840][0]:
 
 | LED | Pattern | Meaning |
 |---|---|---|
@@ -180,7 +180,7 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 - [`tools/oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino) — update-cost benchmark and partial-update validation. `b` times full-frame and partial writes at the current bus clock, labelling each against the GNSS UART's ~5.5ms tolerance; `p` animates a counter inside one region against a static backdrop to prove `updateDisplayArea()` doesn't corrupt anything outside it; `f` gives the full-frame cost for comparison. `1`/`4`/`8` switch the I2C clock. This is the sketch that decided the display library — results in [`DESIGN.md`](DESIGN.md#measured-update-cost).
 
-- [`tools/imu_calibration`](../tools/nRF52840-OLED/imu_calibration/imu_calibration.ino) — per-chip IMU zero-point offsets, this tree's own copy. Warms up until the die temperature plateaus, then runs repeating 10000-sample sessions a minute apart, each gated on a stability check and appended to internal flash; press any key and then `a` to aggregate the run into six paste-ready `#define` lines for `config.h`. The measurement core is byte-identical to the [base tree's copy](../tools/nRF52840/imu_calibration/imu_calibration.ino), so results from the two are directly comparable. What differs is this variant's own settings baked in — the panel is brought up as part of the thermal load the die settles against (production keeps it lit), which also makes the run readable with **no USB attached**, and BLE advertises at this tree's `-20` dBm rather than the base tree's `-16`. Requires **u8g2**.
+- [`tools/imu_calibration`](../tools/nRF52840-OLED/imu_calibration/imu_calibration.ino) — per-chip IMU zero-point offsets, this tree's own copy. Warms up until the die temperature plateaus, then runs repeating 10000-sample sessions a minute apart, each gated on a stability check and appended to internal flash; press any key and then `a` to aggregate the run into six paste-ready `#define` lines for `config.h`. The measurement core is byte-identical to the [base tree's copy](../tools/nRF52840/imu_calibration/imu_calibration.ino), so results from the two are directly comparable. What differs is this variant's own settings baked in — the panel is brought up as part of the thermal load the die settles against (production keeps it lit), which also makes the run readable with **no USB attached**. Requires **u8g2**.
 
 The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
 

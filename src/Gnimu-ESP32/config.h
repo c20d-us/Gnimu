@@ -159,10 +159,10 @@
 // --- GNSS (u-blox) ---
 // ----------------------------------------------------------------------------
 
-// No need for greater than 57600; higher can reduce PVT rate.
-#define GNSS_BAUD 57600 // one of 9600/38400/57600/115200/230400/460800
+// No need for greater than 115200; higher can reduce PVT rate.
+#define GNSS_BAUD 115200
 #define GNSS_NAV_RATE_HZ 20
-#define GNSS_SV_MINELEV_DEG 10 // ignore SVs below this angle (anti-multipath)
+#define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // GNSS UART wiring - which ESP32 GPIOs you routed the receiver's TX/RX to.
