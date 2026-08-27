@@ -363,12 +363,6 @@ These are the M100 module's own LEDs (not driven by our firmware) — useful for
 
 ---
 
-## Design notes
-
-[`DESIGN.md`](DESIGN.md) is the working engineering log for this variant — architecture decisions, bench-validation write-ups, and open items, kept as a historical record rather than polished documentation.
-
----
-
 ## Credits
 
 Gnimu nRF52840 is the battery-powered port of the original **Gnimu ESP32** build, which itself is a major evolution of the [**Open-Source RaceBox Mini Emulator**][6] by [**Anchit Chandra Sekhar**][7]. This version re-targets the whole design to a battery-powered platform: a full BLE rewrite (ESP32 → Nordic Bluefruit), the onboard LSM6DS3TR-C IMU, and a new battery subsystem with a low-voltage cutoff. Anchit has developed an nRF52840 port as well, but this firmware was not based on that code.

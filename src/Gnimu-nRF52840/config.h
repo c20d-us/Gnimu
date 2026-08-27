@@ -676,8 +676,6 @@ static_assert(IMU_AXIS_PARITY != 0,
               "sensor 0, 1 and 2 used exactly once. Two vehicle axes are "
               "currently fed by the same sensor axis.");
 
-// The determinant check, and the reason this scheme is worth having.
-//
 // The target output frame is right-handed, so any valid mounting map is a
 // proper rotation: determinant +1. Determinant = permutation parity x the
 // product of the signs, so an even permutation needs an even number of sign
@@ -689,7 +687,7 @@ static_assert(IMU_AXIS_PARITY != 0,
 // for accel and gyro alike, since remapAxes() applies the same matrix to both.
 // THIS config carried exactly that bug for months - X had been flipped without
 // Y - and it survived a drive test and an app-side investigation before the
-// arithmetic caught it. See DESIGN.md section 4.
+// arithmetic caught it.
 static_assert(IMU_AXIS_PARITY * IMU_AXIS_X_SIGN * IMU_AXIS_Y_SIGN *
                       IMU_AXIS_Z_SIGN ==
                   1.0f,

@@ -25,13 +25,10 @@ This repo hosts three builds of the same concept, targeting different microcontr
 |---|---|---|---|
 | MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense | Seeed XIAO nRF52840 Sense |
 | Power | USB-powered | 3.7V LiPo battery or USB | 3.7V LiPo battery or USB |
-| GNSS | HGLRC M100-5883 | HGLRC M100-5883 | HGLRC M100-5883 |
+| GNSS | HGLRC M100-5883 | HGLRC M100-5883 | HGLRC M100 Mini |
 | IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C | Onboard 6-axis, LSM6DS3TR-C |
 | Status readout | RGB LED | RGB LED | 0.96" 128×64 OLED |
-| Status | Complete | Complete | **In development** |
-| Best for | A simple, always-plugged-in build | A portable, battery-powered build | Seeing fix quality and battery state without a phone |
-
-**Gnimu nRF52840-OLED** is an evolution of the nRF52840 build that swaps the RGB status LED for a small OLED. It shows device state, BLE connection and battery level as readable text, plus GNSS quality the LED could never convey — satellites locked, fix type, pDOP, horizontal accuracy and PVT rate. It is **not finished**: the hardware, wiring and screen layout are settled and bench-tested, but the display module itself isn't written yet, so the firmware currently behaves identically to the nRF52840 build. See its [`DESIGN.md`](src/Gnimu-nRF52840-OLED/DESIGN.md) for what's decided and what's outstanding.
+| Best for | A simple, always-plugged-in build | A portable, battery-powered build | Seeing fix quality and battery state without a receiver |
 
 Start with the README for whichever hardware you're building. Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
 

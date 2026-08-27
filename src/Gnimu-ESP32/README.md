@@ -4,7 +4,7 @@
 [![Platform: ESP32](https://img.shields.io/badge/platform-ESP32-000000.svg)](https://www.espressif.com/en/products/socs/esp32)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-The code in this repo lets you turn an ESP32 development board, a GNSS (Global Navigation Satellite System) module, and an IMU (Inertial Measurement Unit) module into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools should be able to connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at or near 25Hz.
+The code in this repo lets you turn an ESP32 development board, a GNSS (Global Navigation Satellite System) module, and an IMU (Inertial Measurement Unit) module into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools should be able to connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz (more details on the nav rate is below).
 
 This is a low-cost, hackable platform for experimenting with GNSS+IMU data logging, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
 
@@ -19,9 +19,9 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## What it does
 
-- Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver at **20 Hz**.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, subtracts per-chip zero-point offsets, smooths it with a transient-aware filter, and decimates it to the 25Hz transmission rate — see [IMU smoothing](#imu-smoothing).
-- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client at or near 25Hz.
+- Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
+- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, subtracts per-chip zero-point offsets, smooths it with a transient-aware filter, and decimates it to the BLE transmission rate — see [IMU smoothing](#imu-smoothing).
+- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client.
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
 - Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
 
@@ -213,19 +213,17 @@ With the BLE power level set to -12db, I have seen simultaneuous lock on as many
 
 ### A note on GNSS fix rate and enabled constellations
 
-The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable. This is a documented platform limit, not a tuning problem — u-blox publishes the figures in [UBX-23006557](https://content.u-blox.com/sites/default/files/documents/u-bloxM10-with-25Hz-Navigation-UpdateRate_IN_UBX-23006557.pdf):
+The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable. This is a documented platform limit, not a tuning problem. Published u-blox specifications [UBX-23006557][ubx-m10-specs]:
 
-| Concurrent constellations | 1 (GPS only) | 2 (GPS+GAL) | 3 | 4 |
+| Concurrent constellations | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|
-| Max nav update rate | **25 Hz** | **20 Hz** | 16 Hz | 10 Hz |
+| Max nav rate | **25Hz** | **20Hz** | 16Hz | 10Hz |
 
-Those are the rates with the M10's high-rate setting active; without it the same configurations cap at 18 / 10 / 10 / 5 Hz.
+Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo** enabled. Bench testing matches the spec: 20Hz holds rock-solid at 15+ SVs, while asking for 25Hz with both constellations enabled causes noticeable rate fluctuations. For use as a motorsports telemetry device, a solidly consistent nav rate and higher position accuracy are key attributes, so two constellations at 20Hz is a good compromise to get high-resolution position and speed.
 
-Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo**, which is exactly the ceiling for two constellations. Bench testing on the M100-5883 matches the spec: 20 Hz holds rock-solid at 15–18 SVs, while asking for 25 Hz with both constellations enabled fluctuates between 24 and 25 Hz, because it is above the platform limit. Raising `GNSS_BAUD` does not help — the constraint is in the receiver, not the serial link.
+A valid alternative is to run **GPS only at 25Hz**. This costs you the second constellation's geometry, and the accuracy difference can be visible. If you would rather have the higher rate at the expense of potentially lower accuracy, set `GNSS_NAV_RATE_HZ 25` and disable Galileo (or GPS, depending on where you are in the world) in `GNSS_CONSTELLATIONS`.
 
-The alternative the table allows is **25 Hz with GPS only**. That costs you the second constellation's geometry, and the accuracy difference is visible: GPS + Galileo at 20 Hz measures **1.3 pDOP and 0.24 m hAcc at 18 SVs**, meaningfully better than GPS alone at 25 Hz. For a device of this type the accuracy is worth more than the extra 5 Hz, which is why 20 Hz is the default. If you would rather have the rate, set `GNSS_NAV_RATE_HZ 25` and disable Galileo in `GNSS_CONSTELLATIONS`.
-
-**Why the real RaceBox Mini does 25 Hz:** it uses a [u-blox NEO-M9N](https://content.u-blox.com/sites/default/files/NEO-M9N-00B_DataSheet_UBX-19014285.pdf), a different platform that does not derate at all — its datasheet lists 25 Hz for *every* configuration, from a single constellation up to GPS+GLO+GAL+BDS concurrently. It pays for that in power: 36–50 mA acquisition current against 6.5–10.5 mA for the [MAX-M10S](https://cdn.sparkfun.com/assets/7/5/9/a/a/MAX-M10S_DataSheet_UBX-20035208.pdf), and 100 mA peaks against 25 mA. The M10 is the right part for a small battery-powered device; the 20 Hz ceiling is what that choice costs.
+**Why the real RaceBox Mini delivers 25Hz:** it uses a [u-blox NEO-M9N][ubx-m9n-specs] GNSS, which is a different platform that does not derate at higher constellation counts. The M9N datasheet lists 25Hz for *every* configuration, from a single constellation up to GPS+GLO+GAL+BDS concurrently. The drawback is higher power consumption and cost. The M10 is an economical choice for a small battery-powered device, but the 20 Hz ceiling for GPS+GAL is the downside. If you want to try and fully emulate a RaceBox Mini, a NEO-M9N module shouldn't be too hard to integrate with this code (it's perhaps even a drop-in), but it will likely run 3x the cost or more than an M10 unit and draw substantially more power.
 
 ---
 
