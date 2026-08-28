@@ -129,9 +129,6 @@
 //      up vs down.
 //   2. Raise the forward end - the axis going positive is vehicle X.
 //   3. Raise the left side  - the axis going positive is vehicle Y.
-//
-// CURRENT VALUES: order XYZ with no sign flips. The XIAO board is in standard
-// orientation with USB plug facing rearward and SoC face up.
 #define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
 #define IMU_AXIS_X_SIGN +1.0f
 #define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
@@ -172,7 +169,7 @@
 
 // No need for greater than 115200; higher can reduce PVT rate.
 #define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 20
+#define GNSS_NAV_RATE_HZ 20    // 20 is max for 2 enabled constellations
 #define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
@@ -184,6 +181,8 @@
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
 // from. Enabling too many can reduce the PVT rate.
+// For 20Hz PVT rate, enable up to 2 constellaations.
+// For 25Hz PVT rate, enable only 1 constellation.
 // For North American use you should always include GPS.
 // Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
@@ -417,12 +416,9 @@
 // ----------------------------------------------------------------------------
 
 // Master switch for all Serial diagnostic output.
+// Logging OFF reduced loop latency.
 // 1 = normal verbose output
 // 0 = silent
-// Every LOG_PRINT / LOG_PRINTLN / LOG_PRINTF / LOG_FLUSH call is a
-// preprocessor-level no-op, so when set to 0 both the call AND its arguments
-// vanish before the compiler sees them. Turning this off eliminates a small
-// amount of once-per-second stats-printf loop-latency.
 #define LOG_ENABLED 0
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
@@ -508,13 +504,6 @@
 //   XIAO D7 (Serial1 RX) <- GNSS TX
 #define GNSS_RX_PIN D7
 #define GNSS_TX_PIN D6
-
-// --- GNSS power gate polarity (TPS63020 buck-boost EN) ---
-// Firmware pulls this LOW to disable the rail for low-voltage cutoff and idle
-// sleep, and releases it hi-Z (TPS63020's own EN pullup takes over) to
-// enable (HIGH/hi-Z = rail on, LOW = rail off). Polarity is fixed by the
-// TPS63020's own EN behavior, not a wiring choice - see GNSS_EN_PIN in the
-// Tunables section above for the pin itself.
 
 // ----------------------------------------------------------------------------
 // --- Battery ---

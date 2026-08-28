@@ -52,36 +52,30 @@
 // guard always takes the "connected" branch there and is a no-op, identical
 // to today's behavior. Safe to share verbatim across all three variants: real
 // benefit on the nRF52 boards, neutral elsewhere.
-//
-// One thing this does NOT cover: `Serial` being true only means something
-// opened the port, not that it is actively being read. A terminal left open
-// but paused/not scrolling still reads as connected, and write()'s internal
-// wait loop can still stall against a full USB buffer in that case - a
-// different, rarer hazard than the one this guards against.
 // ============================================================================
 
 #if LOG_ENABLED
 
-#define LOG_PRINT(...)                                                       \
-  do {                                                                       \
-    if (Serial)                                                              \
-      Serial.print(__VA_ARGS__);                                             \
+#define LOG_PRINT(...)                                                         \
+  do {                                                                         \
+    if (Serial)                                                                \
+      Serial.print(__VA_ARGS__);                                               \
   } while (0)
-#define LOG_PRINTLN(...)                                                     \
-  do {                                                                       \
-    if (Serial)                                                              \
-      Serial.println(__VA_ARGS__);                                          \
+#define LOG_PRINTLN(...)                                                       \
+  do {                                                                         \
+    if (Serial)                                                                \
+      Serial.println(__VA_ARGS__);                                             \
   } while (0)
 // ##__VA_ARGS__ swallows the preceding comma when fmt is the only argument.
-#define LOG_PRINTF(fmt, ...)                                                 \
-  do {                                                                       \
-    if (Serial)                                                              \
-      Serial.printf(fmt, ##__VA_ARGS__);                                     \
+#define LOG_PRINTF(fmt, ...)                                                   \
+  do {                                                                         \
+    if (Serial)                                                                \
+      Serial.printf(fmt, ##__VA_ARGS__);                                       \
   } while (0)
-#define LOG_FLUSH()                                                          \
-  do {                                                                       \
-    if (Serial)                                                              \
-      Serial.flush();                                                        \
+#define LOG_FLUSH()                                                            \
+  do {                                                                         \
+    if (Serial)                                                                \
+      Serial.flush();                                                          \
   } while (0)
 
 #else

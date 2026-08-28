@@ -64,7 +64,7 @@
 #define IMU_SAMPLE_INTERVAL_MS 10 // 10 == 100Hz sample rate
 
 // Sensor full-scale ranges and the built-in low-pass bandwidth
-// (Adafruit MPU6050 enum tokens).
+// (Uses Adafruit MPU6050 enum tokens)
 #define IMU_ACCEL_RANGE_G MPU6050_RANGE_4_G        // 4g, ample for auto-x
 #define IMU_GYRO_RANGE_DPS MPU6050_RANGE_500_DEG   // 500 deg/s for auto-x
 #define IMU_FILTER_BANDWIDTH_HZ MPU6050_BAND_21_HZ // built-in low-pass filter
@@ -78,13 +78,8 @@
 // The default is NOT 400kHz and has to be set explicitly. Wire.begin() leaves
 // the ESP32 bus at 100kHz; Adafruit_BusIO exposes setSpeed() but the MPU-6050
 // library never calls it, so nothing raises it on its own. g_imu.cpp applies
-// this AFTER myIMU.begin(), which is required - begin() brings the bus up and
-// would overwrite an earlier setting.
-//
-// Unlike the nRF52 variants, only this half of the fix applies here: Adafruit's
-// _read() already fetches all six axes plus temperature as a single 14-byte
-// burst, so there is no per-axis transaction overhead to remove. The MPU-6050
-// supports 400kHz per InvenSense's datasheet.
+// this AFTER myIMU.begin(). begin() brings the bus up and would overwrite any
+// earlier setting.
 #define IMU_I2C_CLOCK_HZ 400000
 
 // ImuAxis smoothing rates and transient thresholds.
@@ -96,11 +91,12 @@
 #define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 2.0f // ~0.2g
 #define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // ~28.6 deg/s
 
-// --- Per-axis zero-point offsets (raw sensor frame) ---
+// Per-axis zero-point offsets (raw sensor frame)
+//
 // Subtracted from each raw axis inside g_imu's readImuRaw(), correcting the
 // chip's intrinsic bias before any smoothing or protocol conversion. Units
 // match the Adafruit MPU6050 driver's native output: m/s^2 for accel, rad/s
-// for gyro. The accel Z offset is a bias ONLY - gravity is not included (the
+// for gyro. The accel Z offset is a bias ONLY. Gravity is not included (the
 // calibration sketch removes 9.80665 m/s^2 before reporting), so a level board
 // still reads ~1g on Z after correction.
 #define IMU_ACCEL_OFFSET_X_MPS2 +0.367034f
@@ -110,14 +106,12 @@
 #define IMU_GYRO_OFFSET_Y_RADPS +0.003458f
 #define IMU_GYRO_OFFSET_Z_RADPS -0.009113f
 
-// --- Axis orientation (installed mounting) ---
+// Axis orientation (installed mounting)
+//
 // Corrects the sensor's raw axes into the vehicle frame. What varies per BUILD
-// is how the MPU-6050 module sits in your enclosure - unlike the nRF52840
-// builds, whose sensor is fixed to a known board, this is a separate module
-// you mounted yourself, so its axes are whatever your wiring and placement
-// made them. Each VEHICLE axis below names which SENSOR axis feeds it
-// (0=X, 1=Y, 2=Z) plus a sign. This covers all 24 physically-realizable
-// orientations.
+// is how the MPU-6050 module sits in your enclosure. Each VEHICLE axis below
+// names which SENSOR axis feeds it (0=X, 1=Y, 2=Z) plus a sign. This covers all
+// 24 physically-realizable orientations.
 //
 // TARGET OUTPUT FRAME: X forward+, Y left+, Z up+ (ISO 8855, right-handed).
 //
@@ -135,19 +129,12 @@
 //   ZXY     2, 0, 1       even     even (0 or 2)
 //   ZYX     2, 1, 0       odd      odd  (1 or 3)
 //
-// TO DERIVE A NEW MAP, no drive test is needed - hold the assembled unit in
-// its installed orientation and read the 1 Hz serial milliG line:
+// TO DERIVE A NEW MAP: hold the assembled unit in its installed orientation and
+// read the 1 Hz serial milliG line (LOG must be enabled):
 //   1. At rest, the axis reading ~+/-1000 is vehicle-vertical; sign gives
 //      up vs down.
 //   2. Raise the forward end - the axis going positive is vehicle X.
 //   3. Raise the left side  - the axis going positive is vehicle Y.
-// Derive against the RAW SERIAL NUMBERS, not the Gnimu Monitor readout -
-// Monitor is a display layer that has masked a mirrored map on a sibling
-// variant before and cannot validate firmware signs.
-//
-// CURRENT VALUES: order XYZ with no sign flips - the identity map, leaving the
-// raw sensor frame untouched. Even permutation, zero flips, determinant +1.
-// Confirmed correct for this build 2026-08-06.
 #define IMU_AXIS_X_SRC 0 // vehicle forward <- sensor X
 #define IMU_AXIS_X_SIGN +1.0f
 #define IMU_AXIS_Y_SRC 1 // vehicle left    <- sensor Y
@@ -161,7 +148,7 @@
 
 // No need for greater than 115200; higher can reduce PVT rate.
 #define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 20
+#define GNSS_NAV_RATE_HZ 20    // 20 is max for 2 enabled constellations
 #define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
@@ -172,6 +159,8 @@
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
 // from. Enabling too many can reduce the PVT rate.
+// For 20Hz PVT rate, enable up to 2 constellaations.
+// For 25Hz PVT rate, enable only 1 constellation.
 // For North American use you should always include GPS.
 // Reference: https://app.qzss.go.jp/GNSSView/gnssview.html
 #define GNSS_CONSTELLATIONS                                                    \
@@ -223,12 +212,9 @@
 // ----------------------------------------------------------------------------
 
 // Master switch for all Serial diagnostic output.
+// Logging OFF reduced loop latency.
 // 1 = normal verbose output
 // 0 = silent
-// Every LOG_PRINT / LOG_PRINTLN / LOG_PRINTF / LOG_FLUSH call is a
-// preprocessor-level no-op, both the call AND its arguments vanish before the
-// compiler sees them. Turning this off eliminates a small amount of
-// once-per-second stats-printf loop-latency.
 #define LOG_ENABLED 0
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
@@ -260,7 +246,7 @@
 
 // This build has no battery gauge: the shared telemetry module omits the
 // battery segment from the serial stats line, and g_battery is a constant
-// stub. (1 on builds with real VBAT sensing, e.g. the nRF52840 variant.)
+// stub.
 #define BATTERY_HAS_GAUGE 0
 
 // ----------------------------------------------------------------------------

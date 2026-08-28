@@ -86,7 +86,7 @@ void bleBegin() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
-  // Create RaceBox Service
+  // Create the RaceBox Service
   BLEService *pService = pServer->createService(RACEBOX_SERVICE_UUID);
   pCharacteristicTx = pService->createCharacteristic(
       RACEBOX_CHARACTERISTIC_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);

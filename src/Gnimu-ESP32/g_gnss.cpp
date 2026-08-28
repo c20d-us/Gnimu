@@ -185,12 +185,7 @@ void gnssBegin() {
   // Constellation setup
   setConstellations();
 
-  // Set the GNSS PVT update frequency. Written exactly once, here: every
-  // CFG-RATE change makes the receiver re-initialise its navigation filter,
-  // so hAcc degrades and has to re-converge over the following seconds. An
-  // earlier build dropped to a lower rate while no BLE client was connected
-  // and restored it on connect, which put that re-convergence right at the
-  // start of every session. One fixed rate avoids it entirely.
+  // Set the GNSS PVT update frequency.
   if (myGNSS.setNavigationFrequency(GNSS_NAV_RATE_HZ)) {
     LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", GNSS_NAV_RATE_HZ);
   } else {

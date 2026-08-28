@@ -37,12 +37,6 @@ void telemetrySendIfReady();
 
 // Observed GNSS epoch rate in Hz, averaged over the most recently completed
 // LOG_STATS_INTERVAL_MS window. Returns 0.0f until the first window closes.
-//
-// This is NOT compiled out in silent builds. The rate used to be derived
-// inline inside the LOG_ENABLED-guarded serial report, which meant it simply
-// did not exist when LOG_ENABLED was 0 - the configuration
-// intended for shipping. Any non-logging consumer (a display, a health check)
-// would have silently read nothing there.
 float telemetryGnssRateHz();
 
 // Observed BLE packet send rate in Hz, same window and the same rationale.

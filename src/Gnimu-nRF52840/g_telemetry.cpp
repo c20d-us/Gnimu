@@ -169,14 +169,6 @@ static void sendPacket() {
 
 // Close the stats window: convert the epoch/packet counts accumulated since
 // the last window into rates, publish them, and reset the counters.
-//
-// Deliberately OUTSIDE the LOG_ENABLED guard. This used to live inline in the
-// guarded serial report, so in a silent build (LOG_ENABLED 0 -
-// the shipping configuration) the rates were never computed and the counters
-// never reset. Anything that wanted the rate for a reason other than printing
-// it would have read zero, in production only. Rate accounting is now a plain
-// always-on function of the telemetry module and the serial report is just one
-// of its consumers.
 static void updateRates(unsigned long now) {
   const float elapsed = (now - lastReportMs) / 1000.0f;
   if (elapsed <= 0.0f) {
@@ -193,8 +185,6 @@ float telemetryGnssRateHz() { return gnssRateHz; }
 float telemetryBleRateHz() { return bleRateHz; }
 
 // Periodically print packet rate and GNSS/IMU debug stats over serial.
-// The printing compiles away in silent builds (LOG_ENABLED 0); the rate
-// accounting in updateRates() does not - see above.
 // Called only when a stats window has just closed, so it does no timing of its
 // own - it reads the rates updateRates() has already published.
 static void telemetrySerialReport(unsigned long now) {
