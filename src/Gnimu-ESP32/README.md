@@ -213,15 +213,20 @@ With the BLE power level set to -12db, I have seen simultaneuous lock on as many
 
 ### A note on GNSS fix rate and enabled constellations
 
-The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable. This is a documented platform limit, not a tuning problem. Published u-blox specifications [UBX-23006557][ubx-m10-specs]:
+The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable and, less obviously, on a CPU clock setting that ships at a lower rate. Both rows are published u-blox specifications [UBX-23006557][ubx-m10-specs]:
 
 | Concurrent constellations | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|
-| Max nav rate | **25Hz** | **20Hz** | 16Hz | 10Hz |
+| Stock CPU clock (as shipped) | 18Hz | 10Hz | 10Hz | 5Hz |
+| High CPU clock (see below) | **25Hz** | **20Hz** | 16Hz | 10Hz |
 
-Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo** enabled. Bench testing matches the spec: 20Hz holds rock-solid at 15+ SVs, while asking for 25Hz with both constellations enabled causes noticeable rate fluctuations. For use as a motorsports telemetry device, a solidly consistent nav rate and higher position accuracy are key attributes, so two constellations at 20Hz is a good compromise to get high-resolution position and speed.
+The high row is the one every M10 spec sheet quotes, and the datasheets footnote it as *"Configuration required."* That footnote means something specific: u-blox ships M10 silicon at a reduced CPU clock (128/128/128/64MHz) to save power, and the higher rates need a **one-time, permanent write of a faster clock (192/192/192/96MHz) into the receiver's OTP memory** per the MAX-M10S Integration manual UBX-20053088 §2.1.7. Simply choosing constellations and setting `GNSS_NAV_RATE_HZ` does *not* get you there without the CPU clock rate change.
 
-A valid alternative is to run **GPS only at 25Hz**. This costs you the second constellation's geometry, and the accuracy difference can be visible. If you would rather have the higher rate at the expense of potentially lower accuracy, set `GNSS_NAV_RATE_HZ 25` and disable Galileo (or GPS, depending on where you are in the world) in `GNSS_CONSTELLATIONS`.
+Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo** enabled, which require the higher clock rate. On a stock-clock module that is twice the rated 10Hz. u-blox permits running past the rating ("the navigation update rate can be increased beyond the maximum value stated in the datasheet. However, this may result in a reduced fix rate"), so the receiver does not reject the setting; it silently skips navigation epochs when it cannot keep up. Measured fix rates on a stock-clock module at 7–9 satellites show no loss at all, while asking for 25Hz on two constellations does produce visible rate fluctuation. But the manual attributes rate loss to *"a very large number of satellites"*, so a thin sky is the easy case and a clean result there does not generalise to an open one. For use as a motorsports telemetry device, a solidly consistent nav rate and higher position accuracy are key attributes, so two constellations at 20Hz is a good compromise to get high-resolution position and speed.
+
+**Check your own module rather than trusting either row.** [`tools/common/gnss_ver`](../tools/common/gnss_ver/gnss_ver.ino) reports which row your receiver is on, what it is currently configured for, and the fix rate it actually delivers over a 60-second window. [`tools/common/gnss_otp_clock`](../tools/common/gnss_otp_clock/gnss_otp_clock.ino) performs the OTP write, behind a typed confirmation. **That write cannot be undone**, and it consumes 18 of the receiver's 64 bytes of OTP space.
+
+A valid alternative is to run **GPS only at 25Hz**. This is also a high-clock figure, so it needs the OTP write as well. A stock-clock module tops out at 18Hz on a single constellation. This costs you the second constellation's geometry, and the accuracy difference can be visible. If you would rather have the higher rate at the expense of potentially lower accuracy, set `GNSS_NAV_RATE_HZ 25` and disable Galileo (or GPS, depending on where you are in the world) in `GNSS_CONSTELLATIONS`.
 
 **Why the real RaceBox Mini delivers 25Hz:** it uses a [u-blox NEO-M9N][ubx-m9n-specs] GNSS, which is a different platform that does not derate at higher constellation counts. The M9N datasheet lists 25Hz for *every* configuration, from a single constellation up to GPS+GLO+GAL+BDS concurrently. The drawback is higher power consumption and cost. The M10 is an economical choice for a small battery-powered device, but the 20 Hz ceiling for GPS+GAL is the downside. If you want to try and fully emulate a RaceBox Mini, a NEO-M9N module shouldn't be too hard to integrate with this code (it's perhaps even a drop-in), but it will likely run 3x the cost or more than an M10 unit and draw substantially more power.
 
@@ -267,3 +272,6 @@ Protocol details follow the *RaceBox BLE Protocol Description (rev 8)*, [availab
 ## License
 
 Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE).
+
+[ubx-m10-specs]: https://content.u-blox.com/sites/default/files/documents/u-bloxM10-with-25Hz-Navigation-UpdateRate_IN_UBX-23006557.pdf
+[ubx-m9n-specs]: https://content.u-blox.com/sites/default/files/NEO-M9N-00B_DataSheet_UBX-19014285.pdf

@@ -97,6 +97,33 @@ static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
   everReceivedPvt = true;
 }
 
+// Every NMEA sentence the u-blox M10 interface description defines for UART1.
+//
+// setUART1Output(COM_TYPE_UBX) below clears the port's NMEA protocol bit, which
+// suppresses NMEA at the output stage but leaves each sentence's CFG-MSGOUT
+// rate untouched - a factory M10 keeps GGA, GLL, GSA, GSV, RMC and VTG at rate
+// 1 underneath the filter, which tools/common/gnss_ver phase 5 will show you.
+// Whether the receiver still composes a sentence it is going to discard is not
+// documented either way, so the rates are zeroed as well rather than relying on
+// the filter alone: it makes the intent explicit, and removes any composition
+// cost if one exists.
+//
+// The full set is listed rather than only the six a factory module enables, so
+// a receiver carrying some other stored config is covered too. A rejected key
+// means that sentence does not exist on this firmware - there is nothing to
+// disable, so it is not an error.
+static const uint32_t NMEA_MSGOUT_KEYS[] = {
+    UBLOX_CFG_MSGOUT_NMEA_ID_DTM_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GBS_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GGA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GLL_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GNS_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GRS_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GSA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GST_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GSV_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_RLM_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_RMC_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_VLW_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_VTG_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_ZDA_UART1,
+};
+static const int NUM_NMEA_MSGOUT_KEYS =
+    sizeof(NMEA_MSGOUT_KEYS) / sizeof(NMEA_MSGOUT_KEYS[0]);
+
 // Set up the constellations defined in config.h
 // Explicitly disable unwanted constellations to ensure that only the desired
 // constellations are active.
@@ -188,6 +215,21 @@ void gnssBegin() {
     LOG_PRINTLN("✅ NMEA messages disabled.");
   } else {
     LOG_PRINTLN("❌ Failed to disable NMEA messages.");
+  }
+
+  // Zero the NMEA sentence rates sitting behind that protocol filter. See
+  // NMEA_MSGOUT_KEYS above for why the filter alone isn't the whole job.
+  {
+    int zeroed = 0;
+    for (const auto &key : NMEA_MSGOUT_KEYS) {
+      if (myGNSS.setVal8(key, 0, VAL_LAYER_RAM_BBR)) {
+        zeroed++;
+      }
+    }
+    LOG_PRINTF("✅ NMEA sentence rates zeroed (%d of %d; any remainder is "
+               "unsupported by this firmware).\n",
+               zeroed, NUM_NMEA_MSGOUT_KEYS);
+    (void)zeroed; // only read by the log line, which silent builds compile out
   }
 
   // Set the minimum elevation of satellites to track (anti-multipath)

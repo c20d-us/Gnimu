@@ -37,20 +37,42 @@
 // main firmware - gnssBegin()'s baud sweep will find the receiver back at its
 // factory baud (typically 38400) and reconfigure it from config.h as usual.
 //
-// Requires: XIAO nRF52840 Sense wired per DESIGN.md (GNSS TX -> D7, GNSS RX
-// <- D6), USB for serial, and the SparkFun_u-blox_GNSS_v3 library installed.
+// Requires: on the nRF52840 variants, a XIAO nRF52840 Sense wired per
+// DESIGN.md (GNSS TX -> D7, GNSS RX <- D6); on the ESP32 variant, the receiver
+// on the UART2 pins set below. Plus USB for serial and the
+// SparkFun_u-blox_GNSS_v3 library installed.
 // ============================================================================
 
 #include <Arduino.h>
 
-// Serial (USB CDC) needs the TinyUSB library linked; this sketch pulls in no
-// other library that would include it transitively.
+// --- Platform wiring -------------------------------------------------------
+// The only architecture-dependent part of this sketch: which UART object the
+// receiver hangs off, and whether opening it needs pin arguments.
+#if defined(ARDUINO_ARCH_ESP32)
+
+// ESP32 variant: UART2 on the GPIOs from Gnimu-ESP32/config.h. Change these to
+// match your wiring if you routed the receiver elsewhere.
+static const int GNSS_RX_PIN = 16; // ESP32 RX <- GNSS TX
+static const int GNSS_TX_PIN = 17; // ESP32 TX -> GNSS RX
+static HardwareSerial gnssSerial(2);
+#define GNSS_SERIAL_BEGIN(baud)                                                \
+  gnssSerial.begin((baud), SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN)
+
+#else
+
+// nRF52840 (XIAO) variants: Serial (USB CDC) needs the TinyUSB library linked,
+// and this sketch pulls in nothing else that would include it transitively.
 #include <Adafruit_TinyUSB.h>
+
+// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as g_gnss.cpp.
+static Uart &gnssSerial = Serial1;
+#define GNSS_SERIAL_BEGIN(baud) gnssSerial.begin(baud)
+
+#endif
 
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
-static Uart &gnssSerial = Serial1;
 
 // Common u-blox baud rates.
 static const uint32_t BAUD_RATES[] = {9600,   19200,  38400, 57600,
@@ -64,7 +86,7 @@ static bool connectAtAnyBaud() {
     uint32_t baud = BAUD_RATES[i];
     Serial.printf("Trying GNSS at %lu baud...\n", (unsigned long)baud);
 
-    gnssSerial.begin(baud);
+    GNSS_SERIAL_BEGIN(baud);
     delay(100); // let the serial port stabilize
 
     if (myGNSS.begin(gnssSerial)) {
