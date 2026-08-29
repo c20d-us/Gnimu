@@ -169,8 +169,8 @@
 
 // No need for greater than 115200; higher can reduce PVT rate.
 #define GNSS_BAUD 115200
-#define GNSS_NAV_RATE_HZ 20    // 20 is max for 2 enabled constellations
-#define GNSS_SV_MINELEV_DEG 15 // ignore SVs below this angle (anti-multipath)
+#define GNSS_NAV_RATE_HZ 20   // 20 is max for 2 enabled constellations
+#define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
 
 // --- LIGHT_SLEEP wake pulse ---
