@@ -196,11 +196,25 @@ void gnssBegin() {
   // still the single source of truth, but BBR is what lets these settings
   // survive a LIGHT_SLEEP backup-mode cycle intact
 
-  // Enable AssistNow Autonomous
-  if (myGNSS.setAopCfg(1, 0, VAL_LAYER_RAM_BBR)) {
-    LOG_PRINTLN("✅ AssistNow Autonomous enabled.");
+  // AssistNow Autonomous is explicitly DISABLED.
+  //
+  // It works by computing predicted satellite orbits and holding them in the
+  // receiver's backup RAM, to shorten TTFF on a later start where the broadcast
+  // ephemeris has expired but the prediction is still good. That payoff needs
+  // the stored data to survive the off period, and on this design it cannot:
+  // g_power's peripheral-off paths cut the GNSS rail, which takes the module's
+  // backup supply with it. LIGHT_SLEEP doesn't need it either - RXM-PMREQ keeps
+  // the rail up, so ephemeris survives and the wake is already a hot start. The
+  // window where AOP could help is therefore about as long as the rail stays up
+  // after we stop using it, which is seconds.
+  //
+  // This is a write rather than a deleted call on purpose: earlier firmware
+  // enabled AOP into the BBR config layer, so simply not asking for it would
+  // leave it on wherever that layer survived.
+  if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
+    LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
   } else {
-    LOG_PRINTLN("❌ Failed to enable AssistNow Autonomous.");
+    LOG_PRINTLN("❌ Failed to disable AssistNow Autonomous.");
   }
 
   // Set the GNSS dynamic model
