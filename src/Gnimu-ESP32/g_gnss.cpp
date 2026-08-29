@@ -179,21 +179,7 @@ void gnssBegin() {
   delay(500);
   drainSerial();
 
-  // AssistNow Autonomous is explicitly DISABLED.
-  //
-  // It works by computing predicted satellite orbits and holding them in the
-  // receiver's backup RAM, to shorten TTFF on a later start where the broadcast
-  // ephemeris has expired but the prediction is still good. That payoff needs
-  // the stored data to survive the off period, and on this design it cannot:
-  // g_power's peripheral-off paths cut the GNSS rail, which takes the module's
-  // backup supply with it. LIGHT_SLEEP doesn't need it either - RXM-PMREQ keeps
-  // the rail up, so ephemeris survives and the wake is already a hot start. The
-  // window where AOP could help is therefore about as long as the rail stays up
-  // after we stop using it, which is seconds.
-  //
-  // This is a write rather than a deleted call on purpose: earlier firmware
-  // enabled AOP into the BBR config layer, so simply not asking for it would
-  // leave it on wherever that layer survived.
+  // AssistNow Autonomous is explicitly DISABLED to save CPU cycles.
   if (myGNSS.setAopCfg(0, 0)) {
     LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
   } else {
