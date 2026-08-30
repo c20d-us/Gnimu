@@ -297,7 +297,7 @@
 // When 0, USB presence is ignored and the device stays in RUNNING while plugged
 // in. Use this mode for bench development so a plugged-in device continues
 // streaming/serving BLE.
-#define STATE_CHARGE_ONLY_ON_USB 0
+#define STATE_CHARGE_ONLY_ON_USB 1
 
 // --- LIGHT_SLEEP timing (Phase 2) ---
 // Defensive power-shedding for a device left running with no BLE client
