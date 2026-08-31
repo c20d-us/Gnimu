@@ -204,8 +204,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -12  // while advertising
-#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
+#define BLE_TX_POWER_ADV_DBM 0    // while advertising
+#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---

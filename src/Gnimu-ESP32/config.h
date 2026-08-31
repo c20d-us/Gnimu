@@ -215,7 +215,7 @@
 // Logging OFF reduced loop latency.
 // 1 = normal verbose output
 // 0 = silent
-#define LOG_ENABLED 0
+#define LOG_ENABLED 1
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
