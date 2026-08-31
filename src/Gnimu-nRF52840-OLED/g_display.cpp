@@ -45,6 +45,14 @@ static const int SLICES_PER_ROW = DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W;
 static const int SLICE_COUNT = SLICES_PER_ROW * DISPLAY_TILES_H;
 static int pushCursor = -1;
 
+// --- Phase lock to the navigation epoch -------------------------------------
+// iTOW of the last epoch this module acted on, and the local time it was seen.
+// iTOW is ms-of-week, so it never reaches this sentinel and no separate "have
+// we seen one" flag is needed.
+static const uint32_t ITOW_NONE = 0xFFFFFFFFUL;
+static uint32_t lastSeenITOW = ITOW_NONE;
+static unsigned long lastEpochSeenMs = 0;
+
 // --- Burn-in pixel shift ----------------------------------------------------
 // Walks the perimeter of a 3x3 grid so every element visits 8 distinct pixel
 // positions rather than sliding along one diagonal.
@@ -313,6 +321,16 @@ void displayBegin() {
 
 bool displayIsPresent() { return present; }
 
+// Push one slice of the frame in flight, retiring the cursor on the last one.
+static void pushSlice() {
+  const uint8_t tx = (pushCursor % SLICES_PER_ROW) * DISPLAY_CHUNK_TILES_W;
+  const uint8_t ty = pushCursor / SLICES_PER_ROW;
+  oled.updateDisplayArea(tx, ty, DISPLAY_CHUNK_TILES_W, 1);
+  if (++pushCursor >= SLICE_COUNT) {
+    pushCursor = -1;
+  }
+}
+
 void displayUpdate() {
   if (!present || asleep) {
     return;
@@ -320,28 +338,61 @@ void displayUpdate() {
 
   const unsigned long now = millis();
 
-  // Finish any frame already in flight before starting another.
+  // Did a navigation epoch land during this loop iteration?
   //
-  // Slices are SPACED, not pushed back to back. Total I2C time was never the
-  // constraint - a whole frame is ~31 ms spread across a second. The constraint
-  // was density: consecutive slices left the GNSS UART without a clear stretch
-  // in which to be drained, and NAV-PVT bytes were lost. The gap leaves roughly
-  // four RX-buffer fill windows between hits. See DISPLAY_SLICE_INTERVAL_MS.
+  // iTOW is the receiver's label for the epoch, not the moment it reached us,
+  // so it cannot say how far into the gap we are - and it does not need to.
+  // This runs directly after gnssPoll() in loop(), so a changed iTOW means the
+  // message was parsed moments ago and the clear air is just beginning. We act
+  // at that instant instead of measuring a position within it.
+  //
+  // gnssLatestPvt() is the non-consuming reader: g_telemetry owns the
+  // consuming one, and taking an epoch from it here would cost a BLE packet.
+  // Only inequality is tested, so the end-of-week iTOW wrap is harmless, and
+  // iTOW advances every epoch with or without a fix, so this keeps working
+  // while the receiver is still searching.
+  bool epochJustLanded = false;
+  const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
+  if (pvt != nullptr && pvt->iTOW != lastSeenITOW) {
+    lastSeenITOW = pvt->iTOW;
+    lastEpochSeenMs = now;
+    epochJustLanded = true;
+  }
+
+  // Epochs stop entirely when the receiver is asleep or its rail is cut, and
+  // LIGHT_SLEEP, CHARGE_ONLY and BATTERY_WAIT all have a screen to draw with no
+  // NAV-PVT to key off. Fall back to the old metered spacing there rather than
+  // waiting forever on an epoch that is not coming.
+  const bool epochsFlowing = (lastSeenITOW != ITOW_NONE) &&
+                             ((now - lastEpochSeenMs) < DISPLAY_EPOCH_STALE_MS);
+
+  // Finish any frame already in flight before starting another.
   if (pushCursor >= 0) {
-    if ((now - lastSliceMs) < DISPLAY_SLICE_INTERVAL_MS) {
-      return; // not yet - let the UART breathe
-    }
-    lastSliceMs = now;
-    const uint8_t tx = (pushCursor % SLICES_PER_ROW) * DISPLAY_CHUNK_TILES_W;
-    const uint8_t ty = pushCursor / SLICES_PER_ROW;
-    oled.updateDisplayArea(tx, ty, DISPLAY_CHUNK_TILES_W, 1);
-    if (++pushCursor >= SLICE_COUNT) {
-      pushCursor = -1;
+    if (epochsFlowing) {
+      if (!epochJustLanded) {
+        return; // mid-period - the UART may be receiving, so stay off the CPU
+      }
+      for (int i = 0; i < DISPLAY_SLICES_PER_EPOCH && pushCursor >= 0; i++) {
+        pushSlice();
+      }
+      lastSliceMs = now;
+    } else {
+      if ((now - lastSliceMs) < DISPLAY_SLICE_INTERVAL_MS) {
+        return; // not yet - let the UART breathe
+      }
+      lastSliceMs = now;
+      pushSlice();
     }
     return;
   }
 
   if ((now - lastRenderMs) < DISPLAY_REFRESH_INTERVAL_MS) {
+    return;
+  }
+
+  // renderFrame() is CPU rather than I2C, but it blocks the loop just the same
+  // and so belongs in the clear air alongside the pushes.
+  if (epochsFlowing && !epochJustLanded) {
     return;
   }
   lastRenderMs = now;
@@ -354,8 +405,8 @@ void displayUpdate() {
   }
 
   renderFrame();
-  pushCursor = 0;    // hand the frame to the metered push above
-  lastSliceMs = now; // first slice waits one full interval, like the rest
+  pushCursor = 0;    // hand the frame to the push paths above
+  lastSliceMs = now; // fallback path waits one full interval, like the rest
 }
 
 void displaySleep() {

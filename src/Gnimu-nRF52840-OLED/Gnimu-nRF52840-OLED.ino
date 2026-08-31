@@ -87,10 +87,6 @@ void loop() {
   // voltage sampler, ledUpdate reflects the current state.
   batteryPoll();
   ledUpdate();
-  // Safe in every live state; it renders whatever stateCurrent() reports and
-  // meters its own I2C cost across iterations.
-  displayUpdate();
-
   // Peripheral polls are gated by the live state.
   if (stateCurrent() == STATE_RUNNING) {
     gnssPoll();
@@ -98,4 +94,14 @@ void loop() {
     telemetrySendIfReady();
     bleUpdate();
   }
+
+  // Safe in every live state; it renders whatever stateCurrent() reports and
+  // meters its own I2C cost across iterations.
+  //
+  // Order matters: this MUST follow gnssPoll(). displayUpdate() phase-locks its
+  // I2C pushes to the navigation epoch by watching for a changed iTOW, and
+  // gnssPoll() is what parses the message that changes it. Called before, it
+  // would see the previous iteration's epoch and lose the alignment that keeps
+  // it off the UART while a NAV-PVT is arriving.
+  displayUpdate();
 }

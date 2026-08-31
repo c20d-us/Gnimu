@@ -388,6 +388,37 @@
 // condition at compile time instead of leaving it as a warning in a comment.
 #define DISPLAY_SLICE_INTERVAL_MS 20
 
+// Slices pushed in one go immediately after a NAV-PVT has been parsed.
+//
+// This is the phase-locked path, and it is what actually solved the GNSS rate
+// sag on this variant. The receiver's UART is only vulnerable while a message
+// is arriving: SERIAL_BUFFER_SIZE on this core is 64 bytes and a NAV-PVT is
+// 100, so the MCU must be draining DURING the ~8 ms the message is on the wire
+// or bytes are lost mid-message. Outside that there is ~42 ms of clear air at
+// 20 Hz in which the MCU can do whatever it likes.
+//
+// displayUpdate() runs directly after gnssPoll(), so a changed iTOW means the
+// message landed moments ago and the clear air is just starting. Pushing a
+// small burst there is free; the old DISPLAY_SLICE_INTERVAL_MS metering spread
+// pushes evenly instead, which lands them on the arriving message as often as
+// not - and does so more as the SV count rises and the receiver's emission
+// point drifts later in the period.
+//
+// Two slices is ~2 ms against that ~42 ms window, and completes a frame in 16
+// epochs (0.8 s), inside DISPLAY_REFRESH_INTERVAL_MS. Raise it for a snappier
+// frame; the static_assert below stops it eating the window.
+#define DISPLAY_SLICES_PER_EPOCH 2
+
+// How long without a new epoch before the display stops waiting for one.
+//
+// Epochs stop entirely when the receiver is asleep or its rail is cut, and
+// CHARGE_ONLY, BATTERY_WAIT and LIGHT_SLEEP all have a screen to draw with no
+// NAV-PVT to key off. Past this, displayUpdate() reverts to the
+// DISPLAY_SLICE_INTERVAL_MS metering below so the panel keeps updating instead
+// of freezing on its last frame. A few epoch periods, generous enough that
+// normal jitter never trips it.
+#define DISPLAY_EPOCH_STALE_MS 250
+
 // Burn-in pixel shift. The layout is nudged around a 3x3 grid of offsets so no
 // element sits on the same pixels for a whole 8-hour run. Slow on purpose: a
 // shift dirties the entire frame, and it is visible if it happens often enough
@@ -682,6 +713,67 @@ static_assert(((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H) *
               "interval - the display would push continuously. Raise "
               "DISPLAY_REFRESH_INTERVAL_MS, or raise DISPLAY_CHUNK_TILES_W, or "
               "lower DISPLAY_SLICE_INTERVAL_MS.");
+
+// --- Phase-locked display push: derived timing ------------------------------
+// All of it falls out of GNSS_NAV_RATE_HZ and GNSS_BAUD rather than being
+// tuned by hand, so raising the nav rate cannot silently shrink the window the
+// display is relying on. At 25 Hz the clear air drops from ~42 ms to ~32 ms.
+
+// Nominal interval between navigation epochs.
+#define GNSS_EPOCH_PERIOD_MS (1000 / GNSS_NAV_RATE_HZ)
+
+// Time one UBX-NAV-PVT occupies on the wire: 92-byte payload + 8 bytes of
+// frame, at 10 bits per byte for 8N1.
+#define GNSS_PVT_WIRE_MS ((100UL * 10UL * 1000UL) / GNSS_BAUD)
+
+// The window in which the MCU may block without costing NAV-PVT bytes.
+#define DISPLAY_CLEAR_AIR_MS (GNSS_EPOCH_PERIOD_MS - GNSS_PVT_WIRE_MS)
+
+// Per-slice push cost.
+//
+// The display bus runs at 400 kHz. Nothing here sets it: u8g2 takes it from the
+// SSD1306 descriptor (i2c_bus_clock_100kHz = 4) and applies Wire.setClock() at
+// the start of every transfer, which is why the display needed no equivalent of
+// the explicit IMU_I2C_CLOCK_HZ call - and why that call targets Wire1 only.
+//
+// This is still scaled from the MEASURED full-frame figure rather than computed
+// from the bus rate, because the measurement includes what the arithmetic
+// misses: per-transaction addressing, u8g2's command bytes, and its per-
+// transfer setClock(). 1024 bytes at 400 kHz is ~23 ms of pure bus time; ~31 ms
+// is what tools/nRF52840-OLED/oled_bench actually reports. Re-run it and update
+// this if the panel or bus speed changes.
+#define DISPLAY_FRAME_PUSH_MS 31
+#define DISPLAY_BUFFER_BYTES ((DISPLAY_WIDTH * DISPLAY_HEIGHT) / 8)
+#define DISPLAY_SLICE_BYTES (DISPLAY_CHUNK_TILES_W * 8)
+#define DISPLAY_SLICE_PUSH_MS                                                  \
+  (((DISPLAY_FRAME_PUSH_MS * DISPLAY_SLICE_BYTES) + DISPLAY_BUFFER_BYTES -     \
+    1) /                                                                       \
+   DISPLAY_BUFFER_BYTES)
+
+// The burst must fit the clear air with room to spare. This is the guard that
+// makes a nav-rate change a build error instead of a field mystery: the whole
+// point of pushing after the epoch is that the burst ends before the next
+// message starts arriving.
+static_assert((DISPLAY_SLICES_PER_EPOCH * DISPLAY_SLICE_PUSH_MS) * 2 <
+                  DISPLAY_CLEAR_AIR_MS,
+              "ERROR: DISPLAY_SLICES_PER_EPOCH pushes more than half the clear "
+              "air between NAV-PVT messages. Lower it, lower "
+              "DISPLAY_CHUNK_TILES_W, or lower GNSS_NAV_RATE_HZ.");
+
+// A frame now takes ceil(SLICE_COUNT / DISPLAY_SLICES_PER_EPOCH) epochs. Same
+// runaway condition the assert above this section guards for the fallback
+// path: if that exceeds the refresh interval the next render is due before the
+// last has landed.
+#define DISPLAY_FRAME_EPOCHS                                                   \
+  (((((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H)) +          \
+    DISPLAY_SLICES_PER_EPOCH - 1) /                                            \
+   DISPLAY_SLICES_PER_EPOCH)
+
+static_assert(DISPLAY_FRAME_EPOCHS * GNSS_EPOCH_PERIOD_MS <
+                  DISPLAY_REFRESH_INTERVAL_MS,
+              "ERROR: a phase-locked frame push takes longer than the refresh "
+              "interval. Raise DISPLAY_SLICES_PER_EPOCH or "
+              "DISPLAY_REFRESH_INTERVAL_MS, or raise DISPLAY_CHUNK_TILES_W.");
 
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
