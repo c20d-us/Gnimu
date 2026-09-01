@@ -41,9 +41,10 @@ images/
   ESP32/                 Build photos for the Gnimu ESP32 variant
   nRF52840/              Build photos for the Gnimu nRF52840 variant
 src/
+  README.md              Guide to the folders below
   Gnimu-ESP32/           ESP32 firmware + README
-  Gnimu-nRF52840/        nRF52840 firmware + README + DESIGN notes
-  Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README + DESIGN notes
+  Gnimu-nRF52840/        nRF52840 firmware + README
+  Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README
   tools/
     check_common.sh      Verifies the modules shared across variants are identical
     common/              Diagnostic sketches not tied to any one platform

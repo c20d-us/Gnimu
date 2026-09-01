@@ -68,7 +68,7 @@ using namespace Adafruit_LittleFS_Namespace;
 // load would run the whole test and contaminate every VBAT reading. D6 must
 // also be idled low, or the GNSS phantom-powers itself through its RX ESD
 // diode off D6's floating/high idle level even with EN cut (same gotcha as
-// production - see DESIGN.md's low-voltage cutoff notes). The IMU needs no
+// production - see g_power.cpp's powerHoldPeripheralsOff()). The IMU needs no
 // equivalent handling here: unlike GNSS_EN, its power pin defaults OFF
 // (nothing drives it HIGH), so it simply never turns on in this sketch.
 static const uint8_t GNSS_EN_PIN = D9;

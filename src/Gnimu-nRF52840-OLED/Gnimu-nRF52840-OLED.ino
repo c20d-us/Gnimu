@@ -18,7 +18,7 @@
 
 // Settings live in config.h. Hardware & protocol logic lives in the
 // battery/power/state/ble/gnss/imu/led/telemetry modules. This top-level
-// sketch orchestrates lifecycles per the state machine (DESIGN §5).
+// sketch orchestrates lifecycles per the state machine (see g_state.h).
 #include "config.h"
 #include "g_battery.h"
 #include "g_display.h"

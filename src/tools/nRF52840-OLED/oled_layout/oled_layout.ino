@@ -22,7 +22,7 @@
 // 128x64 do not survive being reasoned about on paper - font legibility and
 // density have to be looked at.
 //
-// Structure under test (see DESIGN.md 5):
+// Structure under test:
 //   - A persistent STATUS BAR (rows 0..11): BLE icon, status label, battery
 //     percent + drawn bar. Same in every state that has a battery in circuit.
 //     In RUNNING the label is the BLE link state ("Connected"/"Advertising"),
@@ -57,7 +57,7 @@
 //   a auto-cycle states             ? help
 //
 // Requires: XIAO nRF52840 Sense + SSD1306 128x64 I2C module, u8g2 library.
-// Wiring per DESIGN.md 4: 3V3/GND, D4=SDA, D5=SCL.
+// Wiring: 3V3/GND, D4=SDA, D5=SCL.
 // ============================================================================
 
 #include <Arduino.h>
@@ -175,8 +175,8 @@ static void strCenter(int y, const char *s) {
   display.drawStr(ox((LAYOUT_W - display.getStrWidth(s)) / 2), oy(y), s);
 }
 
-// Proportionally-filled battery: the approach DESIGN.md 5 recommends over an
-// icon glyph, since g_battery produces a continuous 0-100%.
+// Proportionally-filled battery: preferred over an icon glyph, since g_battery
+// produces a continuous 0-100%.
 static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
   display.drawFrame(ox(x), oy(y), w, h);
   display.drawBox(ox(x + w), oy(y + h / 4), 2, h / 2); // terminal nub
@@ -211,7 +211,7 @@ static void statusBar(const char *label, bool bleUp, bool isCharging) {
   // bolt on the same rows as the 8px Bluetooth icon.
   //
   // Production note: gate on g_battery's voltage-based `full` flag rather than
-  // percent, for the same reason the "Full" label does - see DESIGN.md 5.
+  // percent, for the same reason the "Full" label does.
   if (isCharging && d.battPct < 100)
     display.drawXBM(ox(71), oy(1), BOLT_W, BOLT_H, BOLT_XBM);
 

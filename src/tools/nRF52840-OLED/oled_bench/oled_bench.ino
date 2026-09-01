@@ -17,8 +17,8 @@
 // ============================================================================
 // DIAGNOSTIC: SSD1306 update-cost benchmark + partial-update validation
 //
-// Settles the display-library decision (DESIGN.md 5) with numbers instead of
-// argument. Two questions:
+// Settles the display-library decision with numbers instead of argument.
+// Two questions:
 //
 //   1. DOES updateDisplayArea() WORK on this panel? It is the only reason to
 //      prefer u8g2 over Adafruit_SSD1306, which has no partial-update path.
@@ -57,9 +57,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, U8X8_PIN_NONE);
 
 static const uint8_t OLED_ADDR = 0x3C;
 
-// Per the base DESIGN.md: ~64-byte Serial1 RX buffer at 115200 8N1 gives about
-// 5.5 ms before bytes are lost. Any blocking display write longer than this
-// costs GNSS data.
+// The ~64-byte Serial1 RX buffer at 115200 8N1 gives about 5.5 ms before
+// bytes are lost. Any blocking display write longer than this costs GNSS data.
 static const uint32_t GNSS_RX_BUDGET_US = 5500;
 
 static uint32_t busHz = 400000;

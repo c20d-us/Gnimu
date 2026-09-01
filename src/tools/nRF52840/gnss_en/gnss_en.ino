@@ -30,7 +30,7 @@
 //
 // States (config.h GNSS_EN_ACTIVE_HIGH == 1 -> HIGH/hi-Z on, LOW off):
 //   - hi-Z (INPUT): board pullup should hold EN high -> rail ON (also confirms
-//                   the onboard pullup, DESIGN.md section 3).
+//                   the onboard pullup).
 //   - HIGH:         driven high -> rail ON.
 //   - LOW:          driven low  -> rail should be CUT.
 //
@@ -46,9 +46,9 @@
 // glow was back-feed via RX. Firmware takeaway: a real cutoff must idle TX low
 // too, not just drop EN.
 //
-// Requires: XIAO nRF52840 Sense with the TPS63020 + GNSS wired per DESIGN.md
-//           (EN on D8, GNSS TX -> D7), USB for serial. A meter on VOUT is ideal
-//           but not required - the M100 POWER/PPS LEDs tell the story here.
+// Requires: XIAO nRF52840 Sense with the TPS63020 + GNSS wired (EN on D8,
+//           GNSS TX -> D7), USB for serial. A meter on VOUT is ideal but not
+//           required - the M100 POWER/PPS LEDs tell the story here.
 // ============================================================================
 
 #include <Arduino.h>

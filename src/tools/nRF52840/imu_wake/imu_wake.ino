@@ -18,9 +18,9 @@
 // TOOL: LIGHT_SLEEP IMU wake-up detector validation
 //
 // Validates the LSM6DS3TR-C's embedded, omni-directional wake-up ("activity")
-// detector for LIGHT_SLEEP's exit trigger (DESIGN.md Phase 2 - v1 uses
-// omni-directional shake-to-wake, not directional tap). The Seeed Arduino
-// LSM6DS3 library exposes no high-level API for this, so it's configured via
+// detector for LIGHT_SLEEP's exit trigger (v1 uses omni-directional
+// shake-to-wake, not directional tap). The Seeed Arduino LSM6DS3 library
+// exposes no high-level API for this, so it's configured via
 // direct register writes per ST AN4650 (LSM6DS3 always-on 3D accelerometer
 // and 3D gyroscope):
 //   https://cdn.sparkfun.com/assets/learn_tutorials/4/1/6/AN4650_DM00157511.pdf

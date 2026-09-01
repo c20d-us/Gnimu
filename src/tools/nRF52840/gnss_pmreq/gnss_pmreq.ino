@@ -40,9 +40,9 @@
 // re-decoding ephemeris off the air (~20-30 s), barely faster than a true
 // cold start. So the result here should be unambiguous either way.
 //
-// Requires: XIAO nRF52840 Sense wired per DESIGN.md (GNSS TX -> D7, GNSS RX
-// <- D6), USB for serial, clear sky view (a fix is required to measure TTFF),
-// and the SparkFun_u-blox_GNSS_v3 library installed. Optional: a multimeter on
+// Requires: XIAO nRF52840 Sense wired GNSS TX -> D7, GNSS RX <- D6, USB for
+// serial, clear sky view (a fix is required to measure TTFF), and the
+// SparkFun_u-blox_GNSS_v3 library installed. Optional: a multimeter on
 // the M100's supply rail to observe current draw during the "asleep" phases,
 // and watching the M100's POWER/PPS LEDs.
 // ============================================================================

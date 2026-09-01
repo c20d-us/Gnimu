@@ -40,7 +40,7 @@
 //     - the stock library's default bus is wrong for this board.)
 //   - With the board resting flat, one accel axis reads ~+1.0 g (that axis is
 //     "up"); previews the axis frame (full remap decided in the final installed
-//     orientation - DESIGN.md section 4).
+//     orientation).
 //
 // Requires: XIAO nRF52840 Sense + USB only.
 // ============================================================================

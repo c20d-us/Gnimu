@@ -35,7 +35,7 @@
 // Hold the board still in a pose; this prints ONE line naming the up-axis. Move
 // it and hold a new pose for the next line.
 //
-// How to use (results feed imu.cpp - DESIGN.md section 4):
+// How to use (results feed config.h's IMU_AXIS_* block):
 //   1. Board FLAT, component/LED side UP (the installed under-the-lid pose).
 //      Expect "UP = +Z" -> confirms IMU_AXIS_Z_SRC = 2, IMU_AXIS_Z_SIGN = +1.
 //   2. Stand it on each edge in turn (USB-C edge down, opposite edge down, each

@@ -30,16 +30,16 @@
 // before handing off a board. It is NOT part of the normal boot flow:
 // g_gnss.cpp's gnssBegin() already sets every runtime option with
 // VAL_LAYER_RAM (RAM-only, never persisted), so a factory reset should not be
-// needed in ordinary operation. See the gnss-first-command-ack-bug memory /
-// DESIGN.md for the persistence bug this tool was built to recover from.
+// needed in ordinary operation. See the gnss-first-command-ack-bug notes for
+// the persistence bug this tool was built to recover from.
 //
 // After this sketch reports success, power-cycle the board and flash/run the
 // main firmware - gnssBegin()'s baud sweep will find the receiver back at its
 // factory baud (typically 38400) and reconfigure it from config.h as usual.
 //
-// Requires: on the nRF52840 variants, a XIAO nRF52840 Sense wired per
-// DESIGN.md (GNSS TX -> D7, GNSS RX <- D6); on the ESP32 variant, the receiver
-// on the UART2 pins set below. Plus USB for serial and the
+// Requires: on the nRF52840 variants, a XIAO nRF52840 Sense wired GNSS TX ->
+// D7, GNSS RX <- D6; on the ESP32 variant, the receiver on the UART2 pins set
+// below. Plus USB for serial and the
 // SparkFun_u-blox_GNSS_v3 library installed.
 // ============================================================================
 

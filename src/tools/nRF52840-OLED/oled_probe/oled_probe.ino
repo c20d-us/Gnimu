@@ -18,8 +18,8 @@
 // DIAGNOSTIC: SSD1306 128x64 OLED bring-up + power characterization
 //
 // First-light test for the OLED added in the nRF52840-OLED variant. Answers the
-// open items in DESIGN.md that have to be settled on hardware before any
-// g_display code is worth writing:
+// open items that had to be settled on hardware before any g_display code was
+// worth writing:
 //
 //   1. I2C ADDRESS + BUS. Raw Wire scan BEFORE any display library loads, so a
 //      wiring/power fault is distinguishable from a library problem. These
@@ -29,17 +29,17 @@
 //      128x32 panel or a wrong "NONAME" variant shows up immediately here).
 //   3. ICON / FONT capability - draws the Open Iconic Bluetooth glyph and a
 //      proportionally-filled battery bar, the two rendering approaches
-//      DESIGN.md 5 recommends (icon font for static marks, drawn primitives
+//      the variant settled on (icon font for static marks, drawn primitives
 //      for anything with a continuous value).
 //   4. POWER. Holds discrete states on command so a meter inline with the
 //      module's VCC can be read at each: all-pixels-on (worst case), sparse
 //      content (realistic), all-pixels-off-but-active (controller baseline),
 //      and DISPLAYOFF (sleep). The DISPLAYOFF number is the one that decides
-//      whether the load switch discussed in DESIGN.md 3 is worth its parts.
+//      whether a load switch on the panel's supply is worth its parts.
 //   5. SUNLIGHT READABILITY - mode 'r' parks a high-contrast screen so the
 //      unit can be carried outdoors without a host attached.
 //
-// WIRING (breadboard, matching DESIGN.md 4):
+// WIRING (breadboard, matching the variant's as-built wiring):
 //   XIAO 3V3 -> OLED VCC        XIAO D4 (SDA) -> OLED SDA
 //   XIAO GND -> OLED GND        XIAO D5 (SCL) -> OLED SCL
 //
@@ -51,7 +51,7 @@
 //
 // Requires: XIAO nRF52840 Sense + one SSD1306 128x64 I2C module.
 // Library: u8g2 (olikraus) via Library Manager. u8g2 is used rather than
-// Adafruit_SSD1306 because the library choice is still open (DESIGN.md 5) and
+// Adafruit_SSD1306 because the library choice was still open and
 // it hinges on u8g2's updateDisplayArea() partial-update support - so the
 // bring-up sketch may as well exercise the candidate. Nothing here depends on
 // u8g2 specifically except the icon font in mode 3.
@@ -141,8 +141,8 @@ static void drawText() {
   display.sendBuffer();
 }
 
-// A proportionally-filled battery bar - the approach DESIGN.md 5 recommends
-// over an icon glyph, since g_battery produces a continuous 0-100%.
+// A proportionally-filled battery bar - preferred over an icon glyph, since
+// g_battery produces a continuous 0-100%.
 static void drawBatteryBar(int x, int y, int w, int h, uint8_t pct) {
   display.drawFrame(x, y, w, h);                    // body
   display.drawBox(x + w, y + (h / 4), 2, h / 2);    // terminal nub
@@ -282,7 +282,7 @@ static void runMode(char c) {
 void setup() {
   Serial.begin(115200);
   // Battery-less bench sketch, USB always present: a bounded wait is fine here
-  // (the shipped firmware must never gate startup on Serial - see DESIGN.md 4).
+  // (the shipped firmware must never gate startup on Serial).
   unsigned long t0 = millis();
   while (!Serial && (millis() - t0) < 3000)
     delay(10);
