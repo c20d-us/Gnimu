@@ -20,20 +20,21 @@
 // *** THIS MAKES A PERMANENT, IRREVERSIBLE CHANGE TO THE RECEIVER. ***
 //
 // u-blox ships M10 silicon at a reduced CPU clock to save power. At that stock
-// clock the maximum navigation update rate is the low row below; the row every
-// M10 spec sheet quotes is the high one, and the datasheets footnote it as
-// "Configuration required":
+// clock the maximum navigation update rate is the "Default" row below; the row
+// every M10 spec sheet quotes is the "High" one, and the datasheets footnote it
+// as "Configuration required":
 //
 //   Constellations enabled        1       2       3       4
+//   ---------------------------------------------------------
 //   Default CPU clock          18 Hz   10 Hz   10 Hz    5 Hz
 //   High CPU clock             25 Hz   20 Hz   16 Hz   10 Hz
 //
-// The configuration in question is a one-time write of a higher CPU clock into
-// the receiver's OTP (one-time programmable) memory, per MAX-M10S Integration
-// manual UBX-20053088 sec 2.1.7. It moves three clocks from 128 to 192 MHz and
-// one from 64 to 96 MHz, costs 18 of the receiver's 64 bytes of OTP space, and
-// CANNOT BE UNDONE. Read `gnss_ver`'s output before running this, and burn a
-// spare module first if you have one.
+// The configuration in question is a one-time write of a higher CPU clock rate
+// into the receiver's OTP (one-time programmable) memory, per MAX-M10S
+// Integration manual UBX-20053088 sec 2.1.7. It moves three clocks from 128 to
+// 192 MHz and one from 64 to 96 MHz, costs 18 of the receiver's 64 bytes of OTP
+// space, and CANNOT BE UNDONE. Read `gnss_ver`'s output before running this,
+// and test burn a spare module first if you have one.
 //
 // This sketch follows the manual's procedure exactly:
 //
@@ -62,8 +63,8 @@
 // narrow: there is exactly one window where it cannot drain the UART, and that
 // is the blocking wait for the operator to type the confirmation word, which
 // lasts as long as they take to read the warning. A Gnimu-configured receiver
-// pushes ~2 KB/s, so a 256-byte RX ring - the nRF52 core's compile-time size -
-// overflows in about 130 ms of that wait. The overflow is not itself fatal,
+// pushes ~2 KB/s, so a 256-byte RX ring (the nRF52 core's compile-time size)
+// overflows in about 130 ms of wait. The overflow is not itself fatal,
 // since the buffer is drained before the write, but a UART left in an overrun
 // state is not what anyone wants immediately before an irreversible operation.
 //
@@ -76,12 +77,12 @@
 //
 // The manual says to power-cycle or send UBX-CFG-RST. This sketch sends its own
 // CFG-RST with navBbrMask = 0x0000 (hot start) rather than calling the SparkFun
-// library's hardReset(), which uses 0xFFFF and would additionally wipe BBR -
+// library's hardReset(), which uses 0xFFFF and would additionally wipe BBR,
 // discarding ephemeris for a cold-start TTFF and dropping the saved baud rate.
 // Neither is needed to apply an OTP setting: OTP is read at startup regardless.
 // resetMode is 0x00, the hardware (watchdog) reset the manual asks for.
 //
-// The receiver does not ACK CFG-RST - it resets immediately - so the sketch
+// The receiver does not ACK CFG-RST, but reset immediately, so the sketch
 // re-sweeps the baud rates afterwards rather than assuming the link survived.
 //
 // PASS CRITERIA
@@ -89,9 +90,8 @@
 // The OTP-layer reply matches the manual's expected frame byte-for-byte. That
 // is the manual's own verification step and the authoritative result. The
 // Default layer follows it to 192/192/192/96; the RAM layer does NOT, and keeps
-// reporting the stock 128/128/128/64 even after a fully successful write - so
-// RAM must not be used to judge the outcome. At that point GNSS_NAV_RATE_HZ 20
-// on two constellations is within rating rather than 2x over it.
+// reporting the stock 128/128/128/64 even after a fully successful write, so
+// RAM must not be used to judge the outcome.
 //
 // Requires: the GNSS wired as the variant's README describes, USB for serial,
 // and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial monitor at
@@ -129,7 +129,7 @@ static HardwareSerial gnssSerial(2);
 // and this sketch pulls in nothing else that would include it transitively.
 #include <Adafruit_TinyUSB.h>
 
-// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as g_gnss.cpp.
+// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52.
 static Uart &gnssSerial = Serial1;
 #define GNSS_SERIAL_PREPARE() ((void)0)
 #define GNSS_SERIAL_BEGIN(baud) gnssSerial.begin(baud)
@@ -145,7 +145,7 @@ static const char CONFIRM_WORD[] = "BURN";
 
 // Common u-blox baud rates. 115200 first (GNSS_BAUD in every variant's
 // config.h), then the factory default, then the rest.
-static const uint32_t BAUD_RATES[] = {115200, 38400, 9600,
+static const uint32_t BAUD_RATES[] = {115200, 38400,  9600,
                                       57600,  230400, 460800};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
 
@@ -404,9 +404,12 @@ static bool connectAtAnyBaud() {
 // g_gnss.cpp's gnssBegin() reconfigures everything from config.h at boot
 // regardless. Nothing here needs undoing.
 static const uint32_t PERIODIC_NAV_MSGS[] = {
-    UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1,    UBLOX_CFG_MSGOUT_UBX_NAV_SAT_UART1,
-    UBLOX_CFG_MSGOUT_UBX_NAV_SIG_UART1,    UBLOX_CFG_MSGOUT_UBX_NAV_STATUS_UART1,
-    UBLOX_CFG_MSGOUT_UBX_NAV_DOP_UART1,    UBLOX_CFG_MSGOUT_UBX_NAV_POSLLH_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_SAT_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_SIG_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_STATUS_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_DOP_UART1,
+    UBLOX_CFG_MSGOUT_UBX_NAV_POSLLH_UART1,
     UBLOX_CFG_MSGOUT_UBX_NAV_TIMEGPS_UART1};
 static const int NUM_PERIODIC_NAV_MSGS =
     sizeof(PERIODIC_NAV_MSGS) / sizeof(PERIODIC_NAV_MSGS[0]);
@@ -490,11 +493,14 @@ static bool printIdentity() {
   // what the affected-products list in information note UBX-23006557 covers.
   bool looksLikeM10 = (protHigh == 34);
   if (!looksLikeM10) {
-    Serial.println("  This is not PROTVER 34.x, so it is not the M10 generation");
-    Serial.println("  this procedure is written for. No write will be offered.");
+    Serial.println(
+        "  This is not PROTVER 34.x, so it is not the M10 generation");
+    Serial.println(
+        "  this procedure is written for. No write will be offered.");
   } else if (protLow != 10) {
     Serial.println("  NOTE: PROTVER 34.10 (ROM SPG 5.10) is the firmware the");
-    Serial.println("  manual documents this procedure against. Yours differs -");
+    Serial.println(
+        "  manual documents this procedure against. Yours differs -");
     Serial.println("  check your own product's integration manual first.");
   }
 
@@ -576,7 +582,8 @@ static ClockState printClockState(bool *otpMatchedExpected) {
       *otpMatchedExpected = true;
       Serial.println("    MATCHES the manual's expected programmed reply.");
     } else {
-      Serial.println("    does not match the programmed reply (expected if the");
+      Serial.println(
+          "    does not match the programmed reply (expected if the");
       Serial.println("    high clock has not been burned yet).");
     }
   }
@@ -599,13 +606,18 @@ static ClockState printClockState(bool *otpMatchedExpected) {
 // Blocks until a line arrives. Returns true only on an exact match for
 // CONFIRM_WORD - anything else, including an empty line, aborts.
 static bool waitForConfirmation() {
-  Serial.println("############################################################");
-  Serial.println("#  PERMANENT CHANGE - THIS CANNOT BE UNDONE                #");
-  Serial.println("############################################################");
+  Serial.println(
+      "############################################################");
+  Serial.println(
+      "#  PERMANENT CHANGE - THIS CANNOT BE UNDONE                #");
+  Serial.println(
+      "############################################################");
   Serial.println();
   Serial.println("  About to write the high CPU clock into this receiver's");
-  Serial.println("  one-time programmable memory. It will consume 18 of its 64");
-  Serial.println("  bytes of OTP space, apply at every startup from now on, and");
+  Serial.println(
+      "  one-time programmable memory. It will consume 18 of its 64");
+  Serial.println(
+      "  bytes of OTP space, apply at every startup from now on, and");
   Serial.println("  there is no way back. The receiver will then be rated for");
   Serial.println("  25 Hz single-GNSS / 20 Hz two-GNSS instead of 18 / 10.");
   Serial.println();
@@ -649,8 +661,8 @@ static bool waitForConfirmation() {
   input[length] = '\0';
 
   if (strcmp(input, CONFIRM_WORD) != 0) {
-    Serial.printf("  Got \"%s\", not %s. ABORTED - nothing was written.\n", input,
-                  CONFIRM_WORD);
+    Serial.printf("  Got \"%s\", not %s. ABORTED - nothing was written.\n",
+                  input, CONFIRM_WORD);
     return false;
   }
 
@@ -678,10 +690,13 @@ static bool performOtpWrite() {
   Serial.println();
 
   if (!ack1 || !ack2) {
-    Serial.println("  The manual expects an ACK-ACK for each frame. At least one");
+    Serial.println(
+        "  The manual expects an ACK-ACK for each frame. At least one");
     Serial.println("  is missing, so the write may not have taken. The verify");
-    Serial.println("  step below is what settles it - do not simply re-run this");
-    Serial.println("  sketch, since OTP space is finite and already partly spent");
+    Serial.println(
+        "  step below is what settles it - do not simply re-run this");
+    Serial.println(
+        "  sketch, since OTP space is finite and already partly spent");
     Serial.println("  if the first frame did land.");
     Serial.println();
     return false;
@@ -705,9 +720,11 @@ static bool resetReceiver() {
 
   Serial.println("  reconnecting...");
   if (!connectAtAnyBaud()) {
-    Serial.println("  Could not reconnect after the reset. Power-cycle the board");
+    Serial.println(
+        "  Could not reconnect after the reset. Power-cycle the board");
     Serial.println("  and re-run this sketch: it will read the clock back and");
-    Serial.println("  tell you whether the write landed, without writing again.");
+    Serial.println(
+        "  tell you whether the write landed, without writing again.");
     Serial.println();
     return false;
   }
@@ -727,8 +744,10 @@ void setup() {
   delay(5000); // give USB CDC time to enumerate before the first print
 
   Serial.println("\n=== u-blox M10 high-performance CPU clock (OTP) ===");
-  Serial.println("Reads the current clock; writes ONLY on explicit confirmation,");
-  Serial.println("and only when the receiver is an M10 still at the stock clock.");
+  Serial.println(
+      "Reads the current clock; writes ONLY on explicit confirmation,");
+  Serial.println(
+      "and only when the receiver is an M10 still at the stock clock.");
   Serial.println();
 
   myGNSS.setPacketCfgPayloadSize(MAX_PAYLOAD_SIZE);
@@ -763,7 +782,8 @@ void setup() {
   if (!looksLikeM10 || state == CLOCK_UNKNOWN) {
     Serial.println("NOT PROCEEDING. The receiver is either not the M10 this");
     Serial.println("procedure is written for, or its clock keys did not read");
-    Serial.println("back cleanly as the stock 128/128/128/64 MHz. The write is");
+    Serial.println(
+        "back cleanly as the stock 128/128/128/64 MHz. The write is");
     Serial.println("permanent, so it is only offered on the exact case it is");
     Serial.println("for. Nothing was written.");
     Serial.println("\nDone. Halting.");
@@ -777,8 +797,10 @@ void setup() {
     // these keys surface. Burning again would spend more of a finite 64 bytes
     // for nothing.
     Serial.println("ALREADY PROGRAMMED. The OTP layer returns the manual's");
-    Serial.println("expected frame, which is the manual's own pass criterion, so");
-    Serial.println("the high clock is written and in effect. RAM still reading");
+    Serial.println(
+        "expected frame, which is the manual's own pass criterion, so");
+    Serial.println(
+        "the high clock is written and in effect. RAM still reading");
     Serial.println("the stock values is expected for these keys - check the");
     Serial.println("Default column above, which should read 192/192/192/96.");
     Serial.println();
@@ -815,30 +837,41 @@ void setup() {
   // stock 128/128/128/64 even after a fully successful burn. Judging on RAM
   // produced a false FAILED on the first board through this tool.
   if (otpMatchedAfter) {
-    Serial.println("SUCCESS. The OTP-layer reply matches the manual's expected");
-    Serial.println("frame byte-for-byte, which is its own verification step and");
+    Serial.println(
+        "SUCCESS. The OTP-layer reply matches the manual's expected");
+    Serial.println(
+        "frame byte-for-byte, which is its own verification step and");
     Serial.println("the authoritative answer. This receiver is now rated for");
     Serial.println("25 Hz single-GNSS / 20 Hz two-GNSS.");
     if (after != CLOCK_HIGH) {
       Serial.println();
-      Serial.println("The RAM column above still reads the stock clock. That is");
-      Serial.println("expected for these keys and is NOT a failure - compare it");
+      Serial.println(
+          "The RAM column above still reads the stock clock. That is");
+      Serial.println(
+          "expected for these keys and is NOT a failure - compare it");
       Serial.println("against the Default column, which should now read");
-      Serial.println("192/192/192/96. Nothing further is needed, and this sketch");
+      Serial.println(
+          "192/192/192/96. Nothing further is needed, and this sketch");
       Serial.println("must NOT be run against this receiver again.");
     }
     Serial.println();
-    Serial.println("Next: run gnss_ver under an open sky and compare phase 6's");
-    Serial.println("fix rate at a high satellite count against your pre-burn run.");
+    Serial.println(
+        "Next: run gnss_ver under an open sky and compare phase 6's");
+    Serial.println(
+        "fix rate at a high satellite count against your pre-burn run.");
   } else if (after == CLOCK_HIGH) {
-    Serial.println("PARTIAL. RAM reads the high clock but the OTP layer did not");
+    Serial.println(
+        "PARTIAL. RAM reads the high clock but the OTP layer did not");
     Serial.println("return the manual's expected frame. Compare the hex dump");
-    Serial.println("above against the manual before trusting this across power");
+    Serial.println(
+        "above against the manual before trusting this across power");
     Serial.println("cycles - re-run after a full power-down to be sure.");
   } else {
-    Serial.println("FAILED. Neither the OTP layer nor RAM came back at the high");
+    Serial.println(
+        "FAILED. Neither the OTP layer nor RAM came back at the high");
     Serial.println("values. Do NOT re-run this sketch blindly: OTP space is");
-    Serial.println("finite and a partial write may already have consumed some.");
+    Serial.println(
+        "finite and a partial write may already have consumed some.");
     Serial.println("Compare the hex above with the manual and work out what");
     Serial.println("landed first.");
   }
