@@ -66,13 +66,42 @@
 
 // ImuAxis smoothing rates and transient thresholds. The deviation that a
 // sample window's peak must exceed before it gets blended into the transmitted
-// value instead of the plain EMA baseline. These are PLACEHOLDER starting
-// points only. The right value depends on this specific car's vibration floor
-// (engine/tire/kerb noise) versus genuine events, and must be tuned empirically
-// against real track data per axis.
-#define IMU_ACCEL_ALPHA 0.2f // EMA smoothing: 1.0=raw, 0.1=heavy
-#define IMU_GYRO_ALPHA 0.2f  // EMA smoothing: 1.0=raw, 0.1=heavy
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_G 0.2f   // 0.2g = ~2.0m/s^2
+// value instead of the plain EMA baseline.
+//
+// The ACCEL values are tuned from 13 autocross runs (2018 M2, RE-71RS) checked
+// against the GNSS solution: longitudinal against d(speed)/dt, lateral against
+// v * yaw-rate. The GYRO values are still placeholders - the logging app
+// records no gyro channel, so nothing here has been tested against real data.
+//
+// The threshold must sit ABOVE the car's vibration floor. At the original 0.2g
+// it sat below it: the blend fired on 50-100% of transmit windows, and since
+// maxDeviation_ is a max over the window it can only push the output away from
+// the baseline, never toward it. Logged lateral peaks ran up to +105% over the
+// true value (2.57g against a real 1.16g) and correlation with the GNSS
+// reference fell to 0.92.
+//
+// 1.5g is a HOLDING value for a mount known to be too springy, where the
+// vibration floor alone drives |raw - smoothedValue_| to ~1.55g. No threshold
+// below that separates vibration from genuine events, so the blend is
+// deliberately parked out of reach and the output is the plain EMA baseline.
+// Re-tune after the mount is stiffened: log the real floor, then set this to
+// roughly 1.2x the observed peak deviation (~0.6-0.8g on a rigid mount) to
+// bring the blend back for the impacts and kerb strikes it exists to catch.
+//
+// The two settings are NOT independent. A lower alpha makes the EMA baseline
+// lag further, which INCREASES |raw - smoothedValue_| and so makes the blend
+// fire MORE. Lowering the alpha without raising the threshold first makes the
+// output worse, not smoother.
+//
+// The alpha also serves as the anti-alias filter for the 100Hz -> transmit-rate
+// decimation, so it cannot be raised freely: mount resonance above the
+// transmit Nyquist folds into the signal band, where no later filter can
+// remove it. 0.09 puts the corner at ~1.5Hz, which measured best against the
+// GNSS reference (0.99 correlation) while leaving real cornering amplitude
+// intact - below ~0.06 it starts eating genuine signal.
+#define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0=raw, 0.1=heavy. ~1.5Hz
+#define IMU_GYRO_ALPHA 0.2f   // EMA smoothing: 1.0=raw, 0.1=heavy. ~3.6Hz
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_G 1.5f   // 1.5g = ~14.7m/s^2
 #define IMU_GYRO_TRANSIENT_THRESHOLD_DPS 28.6f // 28.6deg/s = ~0.5rad/s
 
 #define IMU_ACCEL_RANGE_G 4       // +/- g sensor range: one of 2, 4, 8, 16

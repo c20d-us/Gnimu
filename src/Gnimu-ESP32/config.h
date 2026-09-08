@@ -86,9 +86,27 @@
 // The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
 // window's peak must exceed before it gets blended into the transmitted value
 // instead of the plain EMA baseline.
-#define IMU_ACCEL_ALPHA 0.2f // EMA smoothing: 1.0 = raw, 0.1 = heavy
-#define IMU_GYRO_ALPHA 0.2f  // EMA smoothing: 1.0 = raw, 0.1 = heavy
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 2.0f // ~0.2g
+//
+// The ACCEL values carry over the tuning done on the nRF52840 build against 13
+// autocross runs cross-checked with the GNSS solution; see that config.h for
+// the full reasoning. They have NOT been re-measured on this board, which
+// carries a different IMU (MPU6050, not LSM6DS3TR-C). The GYRO values are
+// untested placeholders on every build.
+//
+// The short version: the threshold must sit ABOVE the car's vibration floor.
+// At the original 2.0 m/s^2 it sat below it, so the blend fired on nearly every
+// transmit window and inflated logged peaks by up to +105%. The two settings
+// are NOT independent - a lower alpha makes the EMA baseline lag further, which
+// increases |raw - smoothedValue_| and makes the blend fire MORE, so the
+// threshold has to be raised first. The alpha is also the anti-alias filter for
+// the 100Hz -> transmit-rate decimation; 0.09 puts its corner at ~1.5Hz.
+//
+// 14.7 m/s^2 (~1.5g) is a HOLDING value matching the nRF52840 build, chosen for
+// a mount too springy to separate vibration from genuine events. It parks the
+// blend out of reach, leaving the plain EMA baseline. Re-tune after remounting.
+#define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~1.5Hz
+#define IMU_GYRO_ALPHA 0.2f   // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~3.6Hz
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 14.7f // ~1.5g
 #define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // ~28.6 deg/s
 
 // Per-axis zero-point offsets (raw sensor frame)
