@@ -294,7 +294,9 @@ is simply not a term in the error budget.
 So the thresholds were raised to admit an idling engine: `IMU_TRIM_GYRO_VAR_MAX`
 0.5 → 1.0 °/s (1.6× clear of cold idle, still 4.2× under driving), and
 `IMU_TRIM_ACCEL_MAG_TOL` 3 % → 4 % (cold idle peaked at 2.44 %, only 1.2× margin,
-measured over a fifth of the samples the gate really sees).
+measured over a fifth of the samples the gate really sees). *That second constant
+was retired the next day — see §5.6a; the tight magnitude test it belonged to was
+the wrong shape, not merely the wrong value.*
 
 *An earlier proposal to low-pass the gate inputs — separating vibration from
 vehicle motion by frequency rather than amplitude — was dropped. It was the
@@ -305,6 +307,55 @@ a threshold change covers it. Keep it in mind if a rougher engine ever needs it.
 **Caveat: n = 1 vehicle**, and a reasonably smooth six. A four-cylinder or a
 diesel could sit well above these figures. `IMU_TRIM_GYRO_VAR_MAX` is the first
 constant to look at if trim will not converge in a rougher car.
+
+### 5.6a Rotation is not enough: the magnitude residual
+
+**Found on the ESP32's first run, 2026-09-09** — it never converged, and the
+cause was a defect this design carried from the start.
+
+`readImuRaw()` was reading `X=39 Y=0 Z=924.5` mg at rest, so `|a| = 925 mg`, and
+the magnitude gate (then ±4 %) rejected **every sample**. No window could ever
+qualify. The numbers traced exactly to the offsets §10 step 4 deleted: the
+MPU-6050 carries **−69 mg on Z**, and its hand-measured `IMU_ACCEL_OFFSET_Z_MPS2`
+had been covering that. Removing it exposed the bias with nothing left to
+correct it.
+
+Two separate defects, and both had to be fixed:
+
+**1. The magnitude gate had the same circularity §5.3 fixed for the gyro.** It
+tested whether `|a|` *equals* 1 g — but `|a|` at rest is contaminated by the
+chip's own zero-g bias, which is exactly what the trim exists to remove. A tight
+band therefore holds the gate shut against the very measurement that would fix
+it. We identified this trap for the gyro and left it in place for the
+accelerometer.
+
+Replaced with the same two-part shape the gyro uses: a **wide plausibility band**
+on the mean (`IMU_TRIM_ACCEL_SANITY_TOL`, 25 % — only catching a misconfigured
+`IMU_GRAVITY_NATIVE`, a dead axis, a failed read) plus a tight test on the
+**spread** (`IMU_TRIM_ACCEL_VAR_MAX`, 0.04 g — idle measures 6–10 mg per axis,
+driving 70–118 mg). The mean is what we are measuring; the spread is what says
+whether we are moving.
+
+**2. A rotation preserves length, so it can never fix a short reading.** Even
+with the gate open, `|a|` would have stayed 925 mg forever and `gZ` would read
+925 instead of 1000. The deleted `IMU_*_OFFSET_*` defines corrected the whole
+*vector*; replacing them with a pure rotation silently dropped the magnitude
+half. So the lock now also stores `accelZBias_ = |a_rest| − g` and subtracts it
+along the corrected vertical, making a resting device read exactly `(0, 0, 1 g)`.
+
+Verified against the ESP32's actual logged readings: converges, reports 2.42°
+of tilt — which is the 39 mg X bias correctly absorbed as apparent tilt,
+`asin(39/925)` — and corrects to `(0, 0, 1000)` milli-g with the gyro at zero.
+
+*Note the asymmetry this leaves:* the horizontal part of a chip bias is absorbed
+as apparent tilt, the vertical part as the residual. Conceptually untidy, but it
+produces the correct resting vector either way and the error left on real
+accelerations is second order at the angles in scope. It is the same
+bias-vs-tilt ambiguity §4 already accepted.
+
+*This also vindicates keeping `imu_calibration` (§11).* A −69 mg part is exactly
+what its QC role exists to surface, and it was the only thing that could have
+predicted this before the hardware did.
 
 ### 5.7 Do not gate on BLE connection state — rejected
 
@@ -342,8 +393,10 @@ against `sampleIntervalMs`), no GNSS dependency (speed is passed in).
 **Gate** — all three, every sample:
 
 - `speedValid && speed < speedMaxMps` (or `!requireFix && !speedValid`)
-- `| |a|/g − 1 | < accelMagTol` — note `|a|` is rotation-invariant, so this
-  criterion is immune to mounting orientation by construction
+- `| |a|/g − 1 | < accelSanityTol` — a wide plausibility band only, not an
+  equality test; see §5.6a for why a tight one is circular. Note `|a|` is
+  rotation-invariant, so it is immune to mounting orientation by construction
+- per-axis accel **standard deviation** < `accelVarMax`
 - per-axis gyro **standard deviation** < `gyroVarMax`
 
 **Qualify** — the gate must hold continuously for `qualifyMs`. Any failing
@@ -404,7 +457,8 @@ struct ImuTrimConfig {
   uint32_t blockMs;
   uint32_t lockBlocks;        // blocks averaged before the lock
   float    speedMaxMps;
-  float    accelMagTol;       // fraction of gravity - unit-free
+  float    accelSanityTol;    // plausibility band, fraction of gravity
+  float    accelVarMax;       // per-axis accel std-dev, native units
   float    gyroVarMax;        // native units (dps or rad/s)
   float    maxTiltDeg;
   bool     requireFix;
@@ -445,7 +499,8 @@ IMU_TRIM_QUALIFY_MS         30000
 IMU_TRIM_BLOCK_MS           1000
 IMU_TRIM_LOCK_BLOCKS        5
 IMU_TRIM_SPEED_MAX_MPS      0.5f
-IMU_TRIM_ACCEL_MAG_TOL      0.04f
+IMU_TRIM_ACCEL_SANITY_TOL   0.25f
+IMU_TRIM_ACCEL_VAR_MAX      0.04f     // g; 0.392f m/s^2 on ESP32
 IMU_TRIM_GYRO_VAR_MAX       1.0f      // dps; ~0.01745f rad/s on ESP32
 IMU_TRIM_MAX_TILT_DEG       15.0f
 IMU_TRIM_REQUIRE_FIX        1
@@ -459,8 +514,10 @@ intrinsically different (g / °/s vs m/s² / rad/s) and always have been:
 | `IMU_GRAVITY_NATIVE` | `1.0f` (g) | `9.80665f` (m/s²) |
 | `IMU_TRIM_GYRO_VAR_MAX` | `1.0f` (°/s) | `0.017453f` (rad/s) |
 
-Everything else is identical everywhere. `IMU_TRIM_ACCEL_MAG_TOL` is expressed as
-a fraction of gravity specifically so it does not need a per-variant value.
+`IMU_TRIM_ACCEL_VAR_MAX` is a third (0.04 g vs 0.392 m/s², the same value in each
+family's units). Everything else is identical everywhere.
+`IMU_TRIM_ACCEL_SANITY_TOL` is expressed as a fraction of gravity specifically so
+it does not need a per-variant value.
 
 **Removed:** all six `IMU_ACCEL_OFFSET_*` / `IMU_GYRO_OFFSET_*` per variant, and
 the subtractions in `readImuRaw()`. This makes the firmware image identical
@@ -468,8 +525,37 @@ across boards — the offsets were the only per-chip data in the configuration.
 
 ## 9. Mounting guard (deferred)
 
-Not implemented in this change; the values it needs (`imuTrimTiltDegrees()`,
-`imuTrimConverged()`) are exposed so it becomes a one-line policy addition later.
+**Partially landed on the OLED variant (2026-09-09)** as the status-bar trim
+indicator — the first consumer of these values, and it went in exactly as
+predicted, with no change to `g_imu_trim` and nothing propagating to the other
+two trees:
+
+```c
+if (imuTrimConverged())                                  -> check
+else if (imuTrimTiltDegrees() > IMU_TRIM_MAX_TILT_DEG)   -> X
+else                                                      -> nothing
+```
+
+Two simplifications versus the table below. The **three tiers were folded to
+two** — anything the trim refuses gets the X, with no separate warn band. And
+**blank covers two distinct cases**: no stationary window has closed yet
+(`tiltDegrees()` reads 0 until the first block, so a badly mounted device shows
+blank for ~31 s before the X appears) and a correctable mount that has not
+converged. Neither was worth distinguishing on an 8x8 glyph; the check is the
+thing being waited for.
+
+Gated to RUNNING, since `imuPoll()` is gated there in the `.ino` and the panel's
+own rule is that each screen shows only what its state can know.
+
+**The 1 Hz serial line carries the same three states** (`✅` / `❌` / `⏳`) on all
+three variants, using the identical threshold. That matters more than the panel
+does: `g_telemetry.cpp` is in the all-variant shared set, so the base nRF52840
+and the ESP32 — which have no display — get the refusal signal too, and for them
+this line is the only trim indicator there is.
+
+The fuller tiering below is still unimplemented, and the other two variants have
+no indicator at all — they have no panel, and the LED is already carrying state
+colour.
 
 Two cautions for whoever plugs it in:
 

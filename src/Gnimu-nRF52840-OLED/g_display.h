@@ -21,13 +21,16 @@
 // Display module - drives the SSD1306 OLED that replaces this variant's RGB
 // status LED. Like g_led it owns no state of its own: it observes
 // stateCurrent() (g_state), batteryGetStatus(), bleIsConnected(),
-// gnssLatestPvt() and telemetryGnssRateHz(), and renders what it finds.
+// gnssLatestPvt(), telemetryGnssRateHz() and the g_imu_trim accessors, and
+// renders what it finds.
 //
 // A persistent STATUS BAR sits over a per-state BODY, so each screen shows only
 // what that state can actually know:
 //
-//   RUNNING       "Connected"/"Advertising" + battery | SV count and fix type
-//                 large, with pDOP, PVT rate, hAcc and runtime below
+//   RUNNING       "Connected"/"Advertising", runtime  | SV count and fix type
+//                 trim state + battery                  large, with pDOP, PVT
+//                                                       rate, hAcc and runtime
+//                                                       below
 //   CHARGE_ONLY   "Charging"/"Full" + battery         | cell voltage only - the
 //                 GNSS is held off in this state, so there is no fix data and
 //                 showing stale numbers would be actively misleading

@@ -24,6 +24,7 @@
 #include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
+#include "g_imu_trim.h"
 #include "g_log.h"
 #include "g_state.h"
 #include "g_telemetry.h"
@@ -80,6 +81,20 @@ static const int USB_W = 7, USB_H = 8;
 
 static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded encoding
 
+// open_iconic_check encodings. The set holds five glyphs at 64-68; these two
+// were confirmed by decoding the font's own bitmaps rather than inferred from
+// the icon names, since the naming order does not match the encoding order.
+// 64 is 8x6 and 68 is 8x8, but drawGlyph positions from the baseline and each
+// glyph carries its own y-offset, so both sit correctly at the same oy().
+static const uint16_t ICON_TRIM_OK = 64;  // check
+static const uint16_t ICON_TRIM_BAD = 68; // X
+
+// Trim indicator column. Lives in the gap between the status label and the USB
+// icon: the longest label ("Advertising", 11 chars in the 5px-advance 5x7 font)
+// ends at x=66, and USB starts at 88, so 78-85 is dead space in every case with
+// 12px of margin for a longer label later.
+static const int TRIM_X = 78;
+
 // --- Draw helpers -----------------------------------------------------------
 static void strAt(int x, int y, const char *s) {
   oled.drawStr(ox(x), oy(y), s);
@@ -121,7 +136,13 @@ static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
 // well enough at a glance, and a number that close to the noise floor of a
 // voltage-derived SoC estimate implied more precision than exists. Dropping it
 // also freed the width the USB icon now uses.
-static void drawStatusBar(const char *label, bool bleUp,
+//
+// showTrim gates the runtime-trim indicator to RUNNING. imuPoll() is gated to
+// that state in the .ino, so the trim is not advancing anywhere else; the
+// correction does persist across CHARGE_ONLY and LIGHT_SLEEP, but showing it
+// there would cut against this module's rule that each screen shows only what
+// its state can actually know.
+static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
                           const BatteryStatus &bat) {
   if (bleUp) {
     oled.setFont(u8g2_font_open_iconic_embedded_1x_t);
@@ -130,6 +151,27 @@ static void drawStatusBar(const char *label, bool bleUp,
 
   oled.setFont(u8g2_font_5x7_tf);
   strAt(11, 8, label);
+
+  // Runtime trim: check once locked, X once it has measured a mount too far
+  // off level to correct, nothing while it is still deciding.
+  //
+  // Blank covers two cases deliberately - no stationary window has closed yet
+  // (tiltDegrees() reads 0 until the first block, so a badly mounted device
+  // shows blank for the first ~31s before the X appears), and a mount inside
+  // the correctable range that simply has not converged. Neither is worth
+  // distinguishing here: the check is the thing being waited for.
+  //
+  // This is the mounting guard of docs/imu-trim-design.md section 9 arriving in
+  // its cheapest form, with the 15/35 degree tiering folded down to one
+  // threshold - anything the trim refuses gets the X.
+  if (showTrim) {
+    oled.setFont(u8g2_font_open_iconic_check_1x_t);
+    if (imuTrimConverged()) {
+      oled.drawGlyph(ox(TRIM_X), oy(8), ICON_TRIM_OK);
+    } else if (imuTrimTiltDegrees() > IMU_TRIM_MAX_TILT_DEG) {
+      oled.drawGlyph(ox(TRIM_X), oy(8), ICON_TRIM_BAD);
+    }
+  }
 
   // bat.charging is `usbPresent && switchOn`. Every state that draws a status
   // bar already has the switch on (switch-off routes to BATTERY_WAIT, which
@@ -270,19 +312,20 @@ static void renderFrame() {
 
   case STATE_CHARGE_ONLY:
     // No BLE icon: bleStop() has run, so the radio is genuinely down.
-    drawStatusBar(bat.full ? "Full" : "Charging", false, bat);
+    drawStatusBar(bat.full ? "Full" : "Charging", false, false, bat);
     drawChargeOnlyBody(bat);
     break;
 
   case STATE_LIGHT_SLEEP:
     // Still advertising and connectable - that is the whole point of the state.
-    drawStatusBar("Advertising", true, bat);
+    drawStatusBar("Advertising", true, false, bat);
     drawLightSleepBody();
     break;
 
   case STATE_RUNNING:
   default:
-    drawStatusBar(bleIsConnected() ? "Connected" : "Advertising", true, bat);
+    drawStatusBar(bleIsConnected() ? "Connected" : "Advertising", true, true,
+                  bat);
     drawRunningBody();
     break;
   }

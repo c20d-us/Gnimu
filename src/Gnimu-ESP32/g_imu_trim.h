@@ -23,10 +23,20 @@
 // Learns two corrections while the vehicle is confirmed stationary, and holds
 // them frozen while it moves:
 //
-//   * ACCELEROMETER: the rotation that carries the measured gravity vector
-//     back onto vehicle-up, correcting a slightly off-level mount. This also
-//     subsumes the chip's own accelerometer zero-bias - the two are
-//     indistinguishable at rest and one correction removes both.
+//   * ACCELEROMETER: the rotation that carries the measured gravity vector back
+//     onto vehicle-up, correcting a slightly off-level mount, PLUS a residual
+//     along the corrected vertical so the resting magnitude comes out at
+//     exactly 1 g. Both are needed: a rotation preserves length, so it can
+//     straighten a tilted reading but can never fix one that is short. A
+//     rotation alone leaves a chip with a real zero-g bias reading (say)
+//     0.925 g forever - which is what an MPU-6050 with -69 mg on Z does.
+//
+//     Together these subsume the chip's own accelerometer zero-bias: it is
+//     indistinguishable from mounting tilt at rest, and one correction removes
+//     both. The horizontal part of a bias is absorbed as apparent tilt and the
+//     vertical part as the residual - a slight conceptual mismatch, but it
+//     produces the correct resting vector either way, and the error it leaves
+//     on real accelerations is second order at the small angles in scope.
 //
 //     Measured ONCE per power cycle and then LOCKED. A resting accelerometer
 //     cannot separate mount tilt from the slope of the ground under the car,
@@ -71,8 +81,8 @@
 //
 // UNITS: the module is unit-agnostic. accel values, gravityNative, and
 // gyroVarMax are all in whatever native units that variant's driver produces;
-// they only ever get compared against each other. accelMagTol is expressed as
-// a FRACTION of gravity precisely so it needs no per-variant value.
+// they only ever get compared against each other. accelSanityTol is expressed
+// as a FRACTION of gravity precisely so it needs no per-variant value.
 struct ImuTrimConfig {
   float gravityNative;    // 1 g expressed in native accel units
   float sampleIntervalMs; // pacing of imuTrimUpdate() calls
@@ -80,7 +90,8 @@ struct ImuTrimConfig {
   uint32_t blockMs;       // averaging block length once open
   uint32_t lockBlocks;    // blocks averaged before the orientation locks
   float speedMaxMps;      // GNSS speed below which we may be stationary
-  float accelMagTol;      // |a| tolerance, as a fraction of gravity
+  float accelSanityTol;   // |a| plausibility band, as a fraction of gravity
+  float accelVarMax;      // per-axis accel std-dev ceiling, native units
   float gyroVarMax;       // per-axis gyro std-dev ceiling, native units
   float maxTiltDeg;       // largest tilt this module will correct
   bool requireFix;        // demand a valid GNSS fix before trimming at all

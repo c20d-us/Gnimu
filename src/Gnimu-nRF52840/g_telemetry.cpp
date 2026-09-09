@@ -210,13 +210,25 @@ static void telemetrySerialReport(unsigned long now) {
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
 
-    // Runtime trim state. The angle is the MEASURED tilt and is reported even
-    // when it exceeded IMU_TRIM_MAX_TILT_DEG and the rotation was refused -
-    // that is the case worth seeing on the console, so it must survive the
-    // refusal. "⏳" therefore means either "not yet stationary long enough" or
-    // "mounted too far off level to correct".
+    // Runtime trim state, three-way. The angle is the MEASURED tilt and is
+    // reported even when it exceeded IMU_TRIM_MAX_TILT_DEG and the rotation was
+    // refused - that is the case worth seeing on the console, so it must
+    // survive the refusal.
+    //
+    //   ✅  locked
+    //   ❌  measured a mount too far off level to correct; never converges
+    //   ⏳  still deciding - either no stationary window has closed yet
+    //       (tiltDegrees() reads 0 until the first block, so a badly mounted
+    //       device shows ⏳ for ~31s before the ❌), or a correctable mount
+    //       that has not converged
+    //
+    // Same policy as the OLED status-bar indicator, and the same collapse of
+    // docs/imu-trim-design.md section 9's tiers onto one threshold. On the two
+    // variants with no panel this line is the ONLY trim indicator.
     const float trimTilt = imuTrimTiltDegrees();
-    const char *trimState = imuTrimConverged() ? "✅" : "⏳";
+    const char *trimState = imuTrimConverged() ? "✅"
+                            : (trimTilt > IMU_TRIM_MAX_TILT_DEG) ? "❌"
+                                                                 : "⏳";
 
 #if BATTERY_HAS_GAUGE
     // Battery voltage/percent/charging for debugging
