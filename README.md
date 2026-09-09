@@ -45,6 +45,26 @@ Start with the README for whichever hardware you're building (links at the top o
 
 ---
 
+## A note about mounting and self-calibration
+
+The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary for 30 seconds with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point, applies them, and holds that calibration until the device is powered off.
+
+That means you don't have to get the mount perfectly level, and there's no per-board calibration step before you flash. Earlier versions of this firmware needed six hand-measured zero-point offsets pasted into `config.h` for every individual board; those are gone, and the firmware image is now identical on every unit.
+
+A few practical notes:
+
+- **Mount the device in your desired location, power it on while parked, and let it sit.** The calibration happens during the *first* qualifying stationary period, which is what keeps it from calibrating itself to a sloped staging lane later on.
+- **Give it a minute or two.** The calibration window doesn't start until there's a usable 3D fix, and on a cold start that's usually the largest part of the stabilization period. In my testing it's taken anywhere from 70 to 95 seconds from power-on to get to the calibration window.
+- If you're connected to serial, **Watch the `Trim:` field** on the log line. `⏳` means it hasn't locked yet; `✅` means it has, and the number beside it is the mounting tilt it measured.
+- **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting, and keeps saying `⏳` — so if you see that with a `Trim:` angle above 15°, the mount is the problem, not the firmware.
+- **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car.
+
+Engine vibration doesn't interfere with this process. I checked, and a calibration captured at cold idle is repeatable to about 0.02°, which is miniscule for our purposes. So it doesn't matter whether you start the car before calibration or calibrate first.
+
+For what it's worth, the real RaceBox Mini handles this differently. The user manual instructs to run an accelerometer calibration from the app, and says to *"perform this procedure every time you mount the device."* That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
+
+---
+
 ## A note about obscure settings and latency tweaks
 
 I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M100 modules, in service of squeezing every last bit of performance and latency out of the Gnimu firmware builds. There are several places in the code where bus rates get tweaked, various features get turned on or off, and techniques are used to eliminate as much latency and blocking in the code as possible. I'm sure I've missed some opportunities somewhere, but if you see something odd in the code that makes you scratch your head and wonder, there is a high probably that it was done to ensure that the telemetry data flows as fast and (most importantly) as consistently as possible. This kind of device is not very useful if the data flow is inconsistent, so I've focused on consistent performance as a primary design goal.
@@ -54,6 +74,8 @@ I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M10
 ## Repo layout
 
 ```
+docs/
+  imu-trim-design.md     Design record for the runtime mounting/gyro calibration
 images/
   ESP32/                 Build photos for the Gnimu ESP32 variant
   nRF52840/              Build photos for the Gnimu nRF52840 variant

@@ -6,7 +6,7 @@ open it directly.
 
 | Sketch | Purpose | Pass criteria |
 |---|---|---|
-| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis MPU-6050 zero-point offsets in the raw sensor frame, independent of the `IMU_AXIS_*` remap (feeds `config.h`'s `IMU_ACCEL_OFFSET_*_MPS2` / `IMU_GYRO_OFFSET_*_RADPS`). Warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to LittleFS. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `#define` lines. | Gate passes on a still bench; `a` reports a median and 20% trimmed mean that agree within 1 sd, and a median tilt under 1°. |
+| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis MPU-6050 zero-point offsets in the raw sensor frame, independent of the `IMU_AXIS_*` remap (formerly fed `config.h`; now a bench diagnostic only). Warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to LittleFS. Press any key over Serial to halt, then `a` to aggregate the run into six `#define`-formatted lines. **Those no longer go anywhere** — see the note below. | Gate passes on a still bench; `a` reports a median and 20% trimmed mean that agree within 1 sd, and a median tilt under 1°. |
 
 > **Also usable here:** [`tools/common/gnss_ver`](../common/gnss_ver/gnss_ver.ino)
 > — GNSS identity and high-rate capability report (which M10 part, which
@@ -48,3 +48,18 @@ open it directly.
 > - **Storage isn't the limit.** LittleFS has megabytes free, so `LOG_BUDGET_BYTES`
 >   is sized just under `MAX_RECORDS` rows on purpose — you can never log more
 >   than `a` can aggregate. Raise both together or neither.
+
+> [!NOTE]
+> **`imu_calibration` no longer feeds `config.h`.** The six `IMU_*_OFFSET_*`
+> defines were removed from every variant when `g_imu_trim` landed: the firmware
+> now measures the same correction at runtime, after 30 s stationary with a valid
+> 3D fix, and that deleted the last per-chip data in the configuration. The
+> `#define` lines this sketch prints are a convenient format for the numbers,
+> not something to paste.
+>
+> It's still worth having for three things the runtime trim *created* rather than
+> removed: screening a chip whose bias is out of spec (auto-correction hides a
+> bad part), providing the independent ground truth to validate the trim against
+> a known tilt — this sketch measures chip bias alone, where the trim measures
+> bias plus mounting tilt and can't decompose it — and sizing a mounting-guard
+> threshold. See [`docs/imu-trim-design.md`](../../../docs/imu-trim-design.md).

@@ -109,20 +109,106 @@
 #define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 14.7f // ~1.5g
 #define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 0.5f // ~28.6 deg/s
 
-// Per-axis zero-point offsets (raw sensor frame)
+// Runtime IMU trim (levelling + gyro de-bias)
 //
-// Subtracted from each raw axis inside g_imu's readImuRaw(), correcting the
-// chip's intrinsic bias before any smoothing or protocol conversion. Units
-// match the Adafruit MPU6050 driver's native output: m/s^2 for accel, rad/s
-// for gyro. The accel Z offset is a bias ONLY. Gravity is not included (the
-// calibration sketch removes 9.80665 m/s^2 before reporting), so a level board
-// still reads ~1g on Z after correction.
-#define IMU_ACCEL_OFFSET_X_MPS2 +0.367034f
-#define IMU_ACCEL_OFFSET_Y_MPS2 +0.055432f
-#define IMU_ACCEL_OFFSET_Z_MPS2 -0.676274f
-#define IMU_GYRO_OFFSET_X_RADPS -0.080341f
-#define IMU_GYRO_OFFSET_Y_RADPS +0.003458f
-#define IMU_GYRO_OFFSET_Z_RADPS -0.009113f
+// Learned while the vehicle is confirmed stationary, frozen while it moves.
+// Corrects a slightly off-level mount and the gyro zero point without any
+// per-board calibration step. Design record: docs/imu-trim-design.md.
+//
+// These are per-DESIGN values, not per-board: identical on every unit. Only
+// IMU_GRAVITY_NATIVE and IMU_TRIM_GYRO_VAR_MAX differ from the nRF52840
+// trees, and only because the MPU6050 driver reports m/s^2 and rad/s where
+// the LSM6DS3 reports g and deg/s.
+
+// 1 g expressed in this variant's native accel units. The trim module is
+// otherwise unit-agnostic; this is the single magnitude it needs.
+#define IMU_GRAVITY_NATIVE 9.80665f // m/s^2, the MPU6050 driver's native unit
+
+// How long every stillness criterion must hold CONTINUOUSLY before a window
+// opens.
+//
+// Sensor noise is NOT what sets this: at ~90ug/sqrt(Hz) and 50Hz bandwidth,
+// half a second of averaging lands under 0.1mg, two orders finer than anything
+// relevant.
+//
+// Nor is it what keeps a sloped staging lane out of the calibration - locking
+// after the first qualifying window does that, because the first stop of a
+// session is the paddock. Selection happens by ORDERING, not by duration.
+//
+// What the length actually buys is a backstop for when that ordering does not
+// hold: the device is switched on as the car leaves the paddock, so the first
+// qualifying stop is a staging lane or a red light on a cambered road. 30s
+// clears a rolling pause or a stop sign. It cannot fix the case properly -
+// only powering the device on where it is parked does that.
+#define IMU_TRIM_QUALIFY_MS 30000
+
+// Averaging block length once the window is open. A long stop yields a steady
+// run of blocks rather than re-serving the qualification delay between each.
+#define IMU_TRIM_BLOCK_MS 1000
+
+// Blocks averaged into the orientation before it LOCKS for the rest of the
+// power cycle. 5 blocks = 5s of data on top of the qualification wait.
+//
+// Not a noise requirement - the gate already rejects any block containing a
+// disturbance, and one block is far more than enough for precision. This is
+// margin against a sub-threshold disturbance (someone leaning on the car)
+// biasing a measurement that is never revisited.
+#define IMU_TRIM_LOCK_BLOCKS 5
+
+// GNSS ground speed below which we may be stationary.
+#define IMU_TRIM_SPEED_MAX_MPS 0.5f
+
+// |a| tolerance as a FRACTION of gravity - unit-free, hence no per-variant
+// value. Note |a| is rotation-invariant, so this criterion is immune to
+// mounting orientation by construction.
+//
+// Raised from 0.03 on the same 2026-09-08 idle capture: cold idle peaked at
+// 2.44% deviation, only 1.2x under the old limit, and that was measured over
+// a fifth of the samples the gate actually sees. Driving hits 46.9%, so the
+// extra headroom costs nothing in motion rejection.
+#define IMU_TRIM_ACCEL_MAG_TOL 0.04f
+
+// Per-axis gyro STANDARD DEVIATION ceiling, in native units. Variance, not
+// magnitude: gating on |gyro| would be circular, since a chip whose resting
+// bias exceeds the threshold would hold the gate shut against the very
+// measurement that would correct it (one board here sits at -4 deg/s).
+//
+// MEASURED, not guessed. Raw stationary capture in a 2018 M2 (2026-09-08):
+// cold idle 0.62 deg/s, warm idle 0.37 deg/s, driving 3.6-4.2 deg/s. The
+// original 0.5 blocked a cold idle entirely - trim would never converge if the
+// logger was switched on after starting the car, which is the natural order.
+// 1.0 clears cold idle by 1.6x and still sits 4.2x under driving.
+//
+// Allowing an idling engine is safe, and that was checked rather than assumed:
+// simulating the real 5-block capture on that data gives 0.019 deg
+// repeatability at cold idle and 0.019 deg at warm idle - identical despite
+// 68% more vibration, because the block mean removes a zero-mean signal.
+// Against 3.2 deg of ground-slope difference measured between two ordinary
+// parking spots, vibration is ~150x down and simply not in the error budget.
+//
+// n=1 vehicle, and a reasonably smooth six. A four-cylinder or a diesel could
+// sit well above this; if trim will not converge in a rougher car, start here.
+#define IMU_TRIM_GYRO_VAR_MAX 0.017453f // rad/s, == 1.0 deg/s
+
+// Largest tilt this module will correct. Beyond it the rotation is REFUSED
+// rather than clamped and imuTrimConverged() stays false, but the measured
+// angle is still reported so a mounting guard can see it. Past ~15 degrees the
+// user has most likely made a mistake rather than a choice.
+#define IMU_TRIM_MAX_TILT_DEG 15.0f
+
+// Demand a valid 3D GNSS fix before trimming at all. Closes the hole in
+// the gate: constant-velocity cruise on smooth pavement reads ~1g magnitude
+// with near-zero gyro variance and is otherwise indistinguishable from parked.
+// The cold-start window this costs is not scarce - powering on parked gives
+// minutes of stillness after first fix. SET TO 0 FOR BENCH TESTING, which
+// never gets a fix indoors.
+#define IMU_TRIM_REQUIRE_FIX 1
+
+// How long the last PVT epoch may go without advancing before its speed stops
+// counting as valid. gnssLatestPvt() returns the last epoch however stale, so
+// a receiver that dies mid-drive would otherwise freeze at a stale 0 m/s and
+// let the gate pass while moving.
+#define IMU_TRIM_PVT_STALE_MS 1000
 
 // Axis orientation (installed mounting)
 //
@@ -417,6 +503,28 @@ static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,
               "ERROR: LOG_ENABLED must be 0 or 1.");
 
 // Enforce each axis sign is a true sign, not a scale factor
+// --- Runtime IMU trim ---
+static_assert(IMU_GRAVITY_NATIVE > 0.0f,
+              "ERROR: IMU_GRAVITY_NATIVE must be greater than 0.");
+static_assert(IMU_TRIM_QUALIFY_MS >= IMU_SAMPLE_INTERVAL_MS,
+              "ERROR: IMU_TRIM_QUALIFY_MS must span at least one IMU sample.");
+static_assert(IMU_TRIM_BLOCK_MS >= IMU_SAMPLE_INTERVAL_MS,
+              "ERROR: IMU_TRIM_BLOCK_MS must span at least one IMU sample.");
+static_assert(IMU_TRIM_LOCK_BLOCKS >= 1,
+              "ERROR: IMU_TRIM_LOCK_BLOCKS must be at least 1.");
+static_assert(IMU_TRIM_SPEED_MAX_MPS > 0.0f,
+              "ERROR: IMU_TRIM_SPEED_MAX_MPS must be greater than 0.");
+static_assert(IMU_TRIM_ACCEL_MAG_TOL > 0.0f && IMU_TRIM_ACCEL_MAG_TOL < 1.0f,
+              "ERROR: IMU_TRIM_ACCEL_MAG_TOL must be in the range (0.0, 1.0).");
+static_assert(IMU_TRIM_GYRO_VAR_MAX > 0.0f,
+              "ERROR: IMU_TRIM_GYRO_VAR_MAX must be greater than 0.");
+// Kept well under 90 degrees: the rotation build is singular at 180, and the
+// small-angle regime is the whole design scope.
+static_assert(IMU_TRIM_MAX_TILT_DEG > 0.0f && IMU_TRIM_MAX_TILT_DEG < 60.0f,
+              "ERROR: IMU_TRIM_MAX_TILT_DEG must be in the range (0, 60).");
+static_assert(IMU_TRIM_PVT_STALE_MS > 0,
+              "ERROR: IMU_TRIM_PVT_STALE_MS must be greater than 0.");
+
 static_assert(IMU_AXIS_X_SIGN == 1.0f || IMU_AXIS_X_SIGN == -1.0f,
               "ERROR: IMU_AXIS_X_SIGN must be exactly +1.0f or -1.0f.");
 static_assert(IMU_AXIS_Y_SIGN == 1.0f || IMU_AXIS_Y_SIGN == -1.0f,
