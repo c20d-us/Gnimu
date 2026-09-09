@@ -20,6 +20,7 @@
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
+#include "g_imu_trim.h"
 #include "g_log.h"
 #include "g_ubx_helpers.h"
 
@@ -209,6 +210,14 @@ static void telemetrySerialReport(unsigned long now) {
     // Convert filtered IMU values to protocol units for display
     ImuProtocolUnits imu = imuReadProtocolUnits();
 
+    // Runtime trim state. The angle is the MEASURED tilt and is reported even
+    // when it exceeded IMU_TRIM_MAX_TILT_DEG and the rotation was refused -
+    // that is the case worth seeing on the console, so it must survive the
+    // refusal. "⏳" therefore means either "not yet stationary long enough" or
+    // "mounted too far off level to correct".
+    const float trimTilt = imuTrimTiltDegrees();
+    const char *trimState = imuTrimConverged() ? "✅" : "⏳";
+
 #if BATTERY_HAS_GAUGE
     // Battery voltage/percent/charging for debugging
     const BatteryStatus bat = batteryGetStatus();
@@ -221,10 +230,10 @@ static void telemetrySerialReport(unsigned long now) {
     LOG_PRINTF(
         "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
         "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
-        "centiDeg/s: X=%d Y=%d Z=%d | Batt: %.2fV%s\n",
+        "centiDeg/s: X=%d Y=%d Z=%d | Trim: %.1fdeg %s | Batt: %.2fV%s\n",
         (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
         tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
-        bat.voltage, bat.charging ? "⚡" : "");
+        trimTilt, trimState, bat.voltage, bat.charging ? "⚡" : "");
 #else
     // No battery gauge on this build - the same report minus the Batt segment
     // (the battery byte in the packet itself still carries the constant
@@ -232,9 +241,10 @@ static void telemetrySerialReport(unsigned long now) {
     LOG_PRINTF(
         "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
         "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
-        "centiDeg/s: X=%d Y=%d Z=%d\n",
+        "centiDeg/s: X=%d Y=%d Z=%d | Trim: %.1fdeg %s\n",
         (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
-        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ);
+        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
+        trimTilt, trimState);
 #endif
     // Counters and the window timestamp are reset by updateRates(), which runs
     // whether or not this report is compiled in.

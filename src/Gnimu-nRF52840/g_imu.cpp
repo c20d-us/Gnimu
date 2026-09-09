@@ -17,6 +17,8 @@
 #include "g_imu.h"
 #include "ImuAxis.h"
 #include "config.h"
+#include "g_gnss.h"
+#include "g_imu_trim.h"
 #include "g_log.h"
 #include <LSM6DS3.h>
 #include <Wire.h> // Wire1, for the setClock() below
@@ -84,17 +86,68 @@ static int16_t toProtocolInt16(float value) {
   return (int16_t)value;
 }
 
-// Read the IMU and return the raw accel (g) / gyro (deg/s) values for this
-// instant, zero-corrected and remapped into the vehicle frame.
+// Read the IMU and return the accel (g) / gyro (deg/s) values for this
+// instant, remapped into the vehicle frame and runtime-trimmed.
 //
-// Order matters: per-chip zero-point offsets (IMU_*_OFFSET_*) are subtracted
-// FIRST, in the sensor's raw axis frame. That keeps the offsets intrinsic to
-// the chip so they don't need to change if the mounting orientation flips
-// the IMU_AXIS_* mapping. The mounting remap runs AFTER the correction.
+// There is no build-time zero correction here any more. Hand-measured per-chip
+// offsets (IMU_*_OFFSET_*) were removed once g_imu_trim learned the same
+// correction at runtime: the trim measures the total resting error and cannot
+// separate chip bias from mounting tilt - and does not need to, since one
+// correction removes both. That deleted the only per-chip data in the whole
+// configuration, so the firmware image is now identical across boards.
+//
 // Reassemble a little-endian register pair, matching the byte order the
 // library's own readRegisterInt16() uses (low byte first).
 static inline int16_t rawPair(const uint8_t *p) {
   return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+// Fetch GNSS ground speed for the trim gate, in m/s.
+//
+// gnssLatestPvt() rather than gnssConsumePvt(): the latter is consume-once and
+// belongs to g_telemetry, so a second consumer here would race it and drop BLE
+// packets. See g_gnss.h.
+//
+// Staleness is this caller's problem - gnssLatestPvt() hands back the last
+// epoch however old, so a receiver that died mid-drive would otherwise freeze
+// at a stale 0 m/s and let the stationary gate pass while moving. Watch iTOW
+// and stop trusting the speed once it has stalled for IMU_TRIM_PVT_STALE_MS.
+static bool trimSpeedMps(float *speedMps) {
+  static uint32_t lastITOW = 0;
+  static uint16_t staleSamples = 0;
+  static const uint16_t kStaleMax =
+      (uint16_t)(IMU_TRIM_PVT_STALE_MS / IMU_SAMPLE_INTERVAL_MS);
+
+  const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
+  if (pvt == nullptr)
+    return false;
+
+  if (pvt->iTOW != lastITOW) {
+    lastITOW = pvt->iTOW;
+    staleSamples = 0;
+  } else if (staleSamples < kStaleMax) {
+    staleSamples++;
+  }
+  if (staleSamples >= kStaleMax)
+    return false;
+
+  // 3D fix only - the same strict read of "valid" that g_telemetry reserves for
+  // lat/lon. This was briefly relaxed to accept a 2D fix, on the grounds that
+  // requiring 3D suspended trim learning under marginal sky. Locking the
+  // orientation after one window removed that argument: there is no ongoing
+  // accelerometer learning left to protect, and the single window that matters
+  // happens in the paddock under clear sky, where a 3D fix is a given. Strict
+  // costs nothing there and buys a stronger validity guarantee.
+  //
+  // One gate serves both halves, so this also pauses GYRO refinement under a
+  // poor fix. Accepted deliberately: the gyro only needs to land occasionally
+  // to track thermal drift, and a second gate is not worth the extra constant
+  // or the longer explanation.
+  if (pvt->fixType != 3 || !pvt->flags.bits.gnssFixOK)
+    return false;
+
+  *speedMps = (float)pvt->gSpeed * 0.001f; // mm/s -> m/s
+  return true;
 }
 
 static ImuRawSample readImuRaw() {
@@ -128,15 +181,30 @@ static ImuRawSample readImuRaw() {
     return lastGood;
   }
 
-  s.gyro[0] = myIMU.calcGyro(rawPair(&raw[0])) - IMU_GYRO_OFFSET_X_DPS;
-  s.gyro[1] = myIMU.calcGyro(rawPair(&raw[2])) - IMU_GYRO_OFFSET_Y_DPS;
-  s.gyro[2] = myIMU.calcGyro(rawPair(&raw[4])) - IMU_GYRO_OFFSET_Z_DPS;
-  s.accel[0] = myIMU.calcAccel(rawPair(&raw[6])) - IMU_ACCEL_OFFSET_X_G;
-  s.accel[1] = myIMU.calcAccel(rawPair(&raw[8])) - IMU_ACCEL_OFFSET_Y_G;
-  s.accel[2] = myIMU.calcAccel(rawPair(&raw[10])) - IMU_ACCEL_OFFSET_Z_G;
+  s.gyro[0] = myIMU.calcGyro(rawPair(&raw[0]));
+  s.gyro[1] = myIMU.calcGyro(rawPair(&raw[2]));
+  s.gyro[2] = myIMU.calcGyro(rawPair(&raw[4]));
+  s.accel[0] = myIMU.calcAccel(rawPair(&raw[6]));
+  s.accel[1] = myIMU.calcAccel(rawPair(&raw[8]));
+  s.accel[2] = myIMU.calcAccel(rawPair(&raw[10]));
 
   remapAxes(s.accel);
   remapAxes(s.gyro);
+
+  // Runtime trim, in the vehicle frame. Update BEFORE apply and on the
+  // uncorrected values: feeding the estimator its own output would close the
+  // loop and make imuTrimTiltDegrees() decay toward zero as it converged,
+  // which is exactly wrong for a mounting guard that needs the absolute tilt.
+  //
+  // Both sit after the failed-read early return above, so a bad I2C transfer
+  // never reaches the estimator. That matters more than it looks: a repeated
+  // lastGood sample would read as zero variance and falsely satisfy the
+  // stillness gate.
+  float speedMps = 0.0f;
+  const bool speedValid = trimSpeedMps(&speedMps);
+  imuTrimUpdate(s.accel, s.gyro, speedMps, speedValid);
+  imuTrimApply(s.accel, s.gyro);
+
   lastGood = s;
   return s;
 }
@@ -210,6 +278,22 @@ void imuBegin() {
   pinMode(IMU_POWER_PIN, OUTPUT);
   digitalWrite(IMU_POWER_PIN, HIGH);
   delay(300); // wait for IMU to boot and settle
+
+  // Ahead of configureNormalMode(), which seeds the axis filters with a live
+  // readImuRaw() and would otherwise reach the trim before it has a config.
+  //
+  // Deliberately NOT in configureNormalMode() itself: that also runs on every
+  // LIGHT_SLEEP exit, and the mount has not changed across a sleep. Resetting
+  // there would throw away a good estimate and re-serve the whole convergence
+  // delay for nothing.
+  const ImuTrimConfig trimCfg = {
+      IMU_GRAVITY_NATIVE,      (float)IMU_SAMPLE_INTERVAL_MS,
+      IMU_TRIM_QUALIFY_MS,     IMU_TRIM_BLOCK_MS,
+      IMU_TRIM_LOCK_BLOCKS,    IMU_TRIM_SPEED_MAX_MPS,
+      IMU_TRIM_ACCEL_MAG_TOL,  IMU_TRIM_GYRO_VAR_MAX,
+      IMU_TRIM_MAX_TILT_DEG,   (bool)IMU_TRIM_REQUIRE_FIX,
+  };
+  imuTrimBegin(trimCfg);
 
   configureNormalMode();
   LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");

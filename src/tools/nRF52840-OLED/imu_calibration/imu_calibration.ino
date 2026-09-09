@@ -19,9 +19,45 @@
 //
 // Measures per-axis zero-point offsets for the onboard LSM6DS3TR-C in the
 // sensor's RAW axis frame (before any axis remap), logs every session to
-// internal flash, and aggregates them into six paste-ready #define lines for
-// config.h. Independent of the IMU_AXIS_* remap - the offsets stay valid
+// internal flash, and aggregates them into six #define-formatted lines.
+// Independent of the IMU_AXIS_* remap - the offsets stay valid
 // across mounting changes.
+//
+// ---------------------------------------------------------------------------
+// ITS OUTPUT NO LONGER GOES INTO config.h  (changed 2026-09-08)
+//
+// The six IMU_*_OFFSET_* defines were REMOVED from every variant when
+// g_imu_trim landed. The firmware now learns the same correction at runtime:
+// after 30 s stationary with a valid 3D fix it measures its own resting error
+// and applies it, which deleted the last per-chip data in the configuration
+// and made the firmware image identical across boards. The #define lines this
+// sketch still prints are a convenient FORMAT for the numbers, not something
+// to paste - there is nowhere left to paste them.
+//
+// Three jobs this sketch keeps, all of which the runtime trim CREATED rather
+// than removed:
+//
+//   1. QC SCREENING. Auto-correction silently swallows a bad part. A chip well
+//      outside the sane band is defective or mechanically stressed, and after
+//      the change the only symptom would be quietly lost dynamic range. This
+//      is now the only thing that reports the raw number at all.
+//
+//   2. GROUND TRUTH for validating the trim. This sketch measures chip bias
+//      ALONE - level bench, gravity subtracted. The trim measures bias + tilt
+//      and cannot decompose it. Run here on a level bench for the known bias,
+//      then mount on a known wedge: the trim's reported angle should land on
+//      (wedge + that bias). Without this there is no independent reference,
+//      and no way to tell a working estimator from one converging to
+//      something plausible and wrong.
+//
+//   3. SIZING A MOUNTING GUARD. Knowing how much of the error budget is
+//      normally chip bias says where a guard threshold belongs.
+//
+// Its thermal soak, stability gate and multi-session aggregation make this a
+// far better measurement than 30 s in a car will ever be - of a quantity that
+// no longer needs to be that good. Over-engineered for its old job; about
+// right for its new one. See docs/imu-trim-design.md.
+// ---------------------------------------------------------------------------
 //
 // Units match what g_imu.cpp / config.h use:
 //   * accel:  g       (LSM6DS3 native, x1000 to milli-g downstream)
@@ -49,7 +85,7 @@
 //      SESSION_GAP_MS, repeat forever.
 //   4. Press any key over Serial at any point to halt to a menu:
 //        d - dump the raw CSV log
-//        a - aggregate the most recent run into paste-ready #define lines
+//        a - aggregate the most recent run into #define-formatted lines
 //        e - erase the log
 //        b - reboot (starts a fresh run without touching the device)
 //        ? - reprint this menu
@@ -251,7 +287,7 @@ static const uint32_t LOG_BUDGET_BYTES = 22528; // 22 KiB
 // (immune to outliers, but discards the information in every other session),
 // while the trimmed mean drops the extreme TRIM_FRACTION from each tail and
 // then averages the rest (nearly as robust, and tighter on clean data). The
-// paste-ready block is emitted from the MEDIAN, which is the safe choice at
+// aggregate block is emitted from the MEDIAN, which is the safe choice at
 // any sample count. If the two disagree by more than the spread, the run
 // hasn't converged - that disagreement is the useful signal, and it's why
 // both are printed rather than one being chosen up front.
@@ -263,7 +299,7 @@ static const uint32_t LOG_BUDGET_BYTES = 22528; // 22 KiB
 static const int AGGREGATE_SKIP_FIRST = 0;
 static const float TRIM_FRACTION = 0.10f; // each tail -> 20% trimmed mean
 // Above this median tilt, the accel defines are labelled untrustworthy in the
-// paste-ready block. One degree already leaks ~17 mg into the horizontal
+// aggregate block. One degree already leaks ~17 mg into the horizontal
 // axes, which is several times the bias being measured.
 static const float ACCEL_TRUST_TILT_DEG = 1.0f;
 
@@ -1038,7 +1074,7 @@ static void sortFloats(float *a, int n) {
 }
 
 // Prints one axis's statistics and returns its median (the value the
-// paste-ready block is built from).
+// aggregate block is built from).
 static float summarizeAxis(const char *name, const char *unit, int n) {
   sortFloats(work, n);
 

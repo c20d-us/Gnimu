@@ -16,7 +16,7 @@ core. Open the serial monitor at **115200**.
 |---|---|---|---|
 | [`imu_probe/`](imu_probe/imu_probe.ino) | Onboard LSM6DS3TR-C power pin, library bring-up, units (`g_imu.cpp`) | none | `begin() OK`; resting board reads ~+1 g on one accel axis (total ~1 g, not ~9.8) and ~0 dps gyro. *(Confirmed.)* |
 | [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_AXIS_*_SRC`/`_SIGN` — see note below; usually the firmware's own `milliG` line is enough) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
-| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (feeds `config.h`'s `IMU_ACCEL_OFFSET_*`/`IMU_GYRO_OFFSET_*`). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six paste-ready `IMU_*_OFFSET_*` `#define` lines. |
+| [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (formerly fed `config.h`; now a bench diagnostic only). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six `IMU_*_OFFSET_*`-formatted lines. **Those no longer go anywhere** — see the note below. |
 | [`imu_wake/`](imu_wake/imu_wake.ino) | LSM6DS3TR-C's embedded wake-up (activity) detector register config (`CTRL1_XL`, `WAKE_UP_THS`, `WAKE_UP_DUR`) used by LIGHT_SLEEP's shake-to-wake exit trigger | none | Threshold/debounce tuned so a real pickup/shake reliably fires without false-triggering from bench vibration or handling. *(Bench-tuned.)* |
 | [`led_check/`](led_check/led_check.ino) | RGB LED pins + active-LOW polarity + status colors (`g_led.cpp`) | none | The LED color matches each name printed over serial; OFF goes fully dark. *(Confirmed.)* |
 | [`ble_mtu/`](ble_mtu/ble_mtu.ino) | Advertising name, TX power, MTU ≥ 91, `BLEUart` 88-byte notify (`g_ble.cpp`) | phone w/ nRF Connect | Advertises as `RaceBox Mini <id>`; "Negotiated MTU" line reports ≥ 91; the 88-byte test notify is received. *(Confirmed — MTU 23→247.)* |
@@ -25,6 +25,22 @@ core. Open the serial monitor at **115200**.
 | [`battery_presence/`](battery_presence/battery_presence.ino) | Switch-sense divider tap (A1) — the authoritative battery-present signal in `g_power.cpp` — plus the non-blocking VBAT sampler and divider-recovery math that feeds `g_battery`'s state-of-charge fuel gauge | LiPo, multimeter, USB | Self-check mV matches the meter on the cell; switch-sense reads ~2 V OFF / ~0 V ON, powered, matching the meter. |
 | [`battery_log/`](battery_log/battery_log.ino) | The LiPo's true resting voltage at full charge, for `BATTERY_DISCHARGE_CURVE`'s 100% anchor — VBAT logged to internal flash through a full plug-in → charge → unplug → settle cycle (survives a Serial disconnect mid-run) | LiPo, USB | Log flags `CHARGE_PLATEAU` near full charge and `SETTLED` after unplug; the settled reading is the value to paste into `BATTERY_DISCHARGE_CURVE`. |
 | [`storage_check/`](storage_check/storage_check.ino) | QSPI flash + LittleFS stack in isolation (chip detection, mount, format, read/write/delete) on the XIAO Sense's Puya P25Q16H chip | none | Phase 1 (read-only) reports the chip correctly; Phase 2 formats only after typing `FORMAT`, then a read/write/delete round-trip succeeds. Not currently used by the main firmware — kept as a standalone diagnostic for the flash chip itself. |
+
+
+> [!NOTE]
+> **`imu_calibration` no longer feeds `config.h`.** The six `IMU_*_OFFSET_*`
+> defines were removed from every variant when `g_imu_trim` landed: the firmware
+> now measures the same correction at runtime, after 30 s stationary with a valid
+> 3D fix, and that deleted the last per-chip data in the configuration. The
+> `#define` lines this sketch prints are a convenient format for the numbers,
+> not something to paste.
+>
+> It's still worth having for three things the runtime trim *created* rather than
+> removed: screening a chip whose bias is out of spec (auto-correction hides a
+> bad part), providing the independent ground truth to validate the trim against
+> a known tilt — this sketch measures chip bias alone, where the trim measures
+> bias plus mounting tilt and can't decompose it — and sizing a mounting-guard
+> threshold. See [`docs/imu-trim-design.md`](../../../docs/imu-trim-design.md).
 
 > **`imu_calibration` is per-tree.** Since 2026-08-14 the OLED variant carries
 > [its own copy](../nRF52840-OLED/imu_calibration/imu_calibration.ino) rather
@@ -75,7 +91,7 @@ core. Open the serial monitor at **115200**.
   error). Only the **gyro** offsets are immune to pose. Tilt therefore does
   not block calibration: the sketch records it per session and, if the run's
   median tilt exceeds ~1°, comments the accel `#define`s out of the
-  paste-ready block while still emitting the gyro ones. Separating accel X/Y
+  aggregate block while still emitting the gyro ones. Separating accel X/Y
   properly needs a multi-position tumble calibration, which this hands-off
   tool deliberately does not attempt. **On the nRF52840-OLED board set
   `CAL_DISPLAY_ENABLED` to 1** — that variant runs its panel continuously, so

@@ -57,6 +57,8 @@ VARIANTS=(
 COMMON_FILES=(
   ImuAxis.h
   ImuAxis.cpp
+  g_imu_trim.h
+  g_imu_trim.cpp
   g_log.h
   g_telemetry.h
   g_telemetry.cpp
