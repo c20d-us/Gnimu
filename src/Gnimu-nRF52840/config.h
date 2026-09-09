@@ -100,8 +100,8 @@
 // GNSS reference (0.99 correlation) while leaving real cornering amplitude
 // intact - below ~0.06 it starts eating genuine signal.
 #define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0=raw, 0.1=heavy. ~1.5Hz
-#define IMU_GYRO_ALPHA 0.09f   // EMA smoothing: 1.0=raw, 0.1=heavy. ~3.6Hz
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_G 1.5f   // 1.5g = ~14.7m/s^2
+#define IMU_GYRO_ALPHA 0.09f  // EMA smoothing: 1.0=raw, 0.1=heavy. ~3.6Hz
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_G 99.0f    // 1.5g = ~14.7m/s^2
 #define IMU_GYRO_TRANSIENT_THRESHOLD_DPS 9999.0f // 28.6deg/s = ~0.5rad/s
 // #define IMU_GYRO_TRANSIENT_THRESHOLD_DPS 28.6f // 28.6deg/s = ~0.5rad/s
 
@@ -158,15 +158,32 @@
 // GNSS ground speed below which we may be stationary.
 #define IMU_TRIM_SPEED_MAX_MPS 0.5f
 
-// |a| tolerance as a FRACTION of gravity - unit-free, hence no per-variant
-// value. Note |a| is rotation-invariant, so this criterion is immune to
-// mounting orientation by construction.
+// |a| PLAUSIBILITY band, as a fraction of gravity - unit-free, hence no
+// per-variant value.
 //
-// Raised from 0.03 on the same 2026-09-08 idle capture: cold idle peaked at
-// 2.44% deviation, only 1.2x under the old limit, and that was measured over
-// a fifth of the samples the gate actually sees. Driving hits 46.9%, so the
-// extra headroom costs nothing in motion rejection.
-#define IMU_TRIM_ACCEL_MAG_TOL 0.04f
+// Deliberately WIDE, and deliberately not a tight "is |a| exactly 1 g" test.
+// A tight band has the same circularity that made us gate the gyro on variance
+// rather than magnitude: |a| at rest is contaminated by the chip's own zero-g
+// bias, which is exactly what the trim exists to remove, so a tight band holds
+// the gate shut against the very measurement that would fix it.
+//
+// That is not hypothetical. The MPU-6050 on the ESP32 build has -69 mg on Z;
+// once its hand-measured offset was deleted it read 0.925 g at rest, failed a
+// 4% band on every single sample, and could never converge (2026-09-09).
+//
+// This band's only job is catching something gross - a misconfigured
+// IMU_GRAVITY_NATIVE (wrong by ~9.8x), a dead axis, a failed read. Motion is
+// caught by IMU_TRIM_ACCEL_VAR_MAX and the GNSS speed gate, not by this.
+#define IMU_TRIM_ACCEL_SANITY_TOL 0.25f
+
+// Per-axis accel STANDARD DEVIATION ceiling, in native units - the real
+// stillness test for the accelerometer, and bias-immune by construction in the
+// same way the gyro's is.
+//
+// Measured: stationary engine-idling in a 2018 M2 gives per-axis sd of 6-10 mg;
+// driving gives 70-118 mg. This sits ~4x above idle and ~2x below driving, and
+// it is the secondary check anyway - GNSS speed is the primary motion gate.
+#define IMU_TRIM_ACCEL_VAR_MAX 0.04f // g
 
 // Per-axis gyro STANDARD DEVIATION ceiling, in native units. Variance, not
 // magnitude: gating on |gyro| would be circular, since a chip whose resting
@@ -758,8 +775,11 @@ static_assert(IMU_TRIM_LOCK_BLOCKS >= 1,
               "ERROR: IMU_TRIM_LOCK_BLOCKS must be at least 1.");
 static_assert(IMU_TRIM_SPEED_MAX_MPS > 0.0f,
               "ERROR: IMU_TRIM_SPEED_MAX_MPS must be greater than 0.");
-static_assert(IMU_TRIM_ACCEL_MAG_TOL > 0.0f && IMU_TRIM_ACCEL_MAG_TOL < 1.0f,
-              "ERROR: IMU_TRIM_ACCEL_MAG_TOL must be in the range (0.0, 1.0).");
+static_assert(IMU_TRIM_ACCEL_SANITY_TOL > 0.0f &&
+                  IMU_TRIM_ACCEL_SANITY_TOL < 1.0f,
+              "ERROR: IMU_TRIM_ACCEL_SANITY_TOL must be in (0.0, 1.0).");
+static_assert(IMU_TRIM_ACCEL_VAR_MAX > 0.0f,
+              "ERROR: IMU_TRIM_ACCEL_VAR_MAX must be greater than 0.");
 static_assert(IMU_TRIM_GYRO_VAR_MAX > 0.0f,
               "ERROR: IMU_TRIM_GYRO_VAR_MAX must be greater than 0.");
 // Kept well under 90 degrees: the rotation build is singular at 180, and the

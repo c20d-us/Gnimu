@@ -46,6 +46,17 @@ static uint32_t lockBlocksSeen_;
 static float R_[3][3];
 
 static float gyroBias_[3];
+
+// Residual along the CORRECTED vertical, subtracted after the rotation so the
+// resting reading comes out at exactly 1 g.
+//
+// A rotation preserves length. It can straighten a tilted gravity vector but
+// can never lengthen a short one, so on its own it leaves a chip with a real
+// zero-g bias reading permanently low - an MPU-6050 with -69 mg on Z sits at
+// 0.925 g forever. The removed IMU_*_OFFSET_* defines used to cover this;
+// this is what replaces them.
+static float accelZBias_;
+
 static float tiltDeg_;
 static bool converged_;
 
@@ -60,19 +71,23 @@ static bool converged_;
 static const float GYRO_VAR_WINDOW_MS = 500.0f;
 static float varMean_[3];
 static float varSq_[3];
+static float aVarMean_[3];
+static float aVarSq_[3];
 static float varAlpha_;
 static uint32_t varSamples_;
 static uint32_t varSamplesNeeded_;
 
 // Squared gate bounds, precomputed in imuTrimBegin().
 //
-// Both stillness tests are naturally written against a magnitude, which would
-// put four sqrtf() calls on the per-sample path. Comparing squares instead is
+// Every stillness test is naturally written against a magnitude, which would
+// put sqrtf() calls on the per-sample path. Comparing squares instead is
 // exactly equivalent - all quantities involved are non-negative and
-// accelMagTol is constrained below 1.0, so squaring is monotonic - and leaves
-// the hot path with no transcendentals at all. The remaining sqrtf/acosf live
-// in consumeBlock(), which runs at 1 Hz and only while stationary.
+// accelSanityTol is constrained below 1.0, so squaring is monotonic - and
+// leaves the hot path with no transcendentals at all. The remaining
+// sqrtf/acosf live in consumeBlock(), which runs at 1 Hz and only while
+// stationary.
 static float gyroVarMaxSq_;
+static float accelVarMaxSq_;
 static float accelMagLoSq_;
 static float accelMagHiSq_;
 
@@ -218,7 +233,10 @@ void imuTrimBegin(const ImuTrimConfig &cfg) {
     gyroBias_[i] = 0.0f;
     varMean_[i] = 0.0f;
     varSq_[i] = 0.0f;
+    aVarMean_[i] = 0.0f;
+    aVarSq_[i] = 0.0f;
   }
+  accelZBias_ = 0.0f;
   lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
   lockBlocksSeen_ = 0;
   tiltDeg_ = 0.0f;
@@ -244,8 +262,9 @@ void imuTrimBegin(const ImuTrimConfig &cfg) {
   varSamples_ = 0;
 
   gyroVarMaxSq_ = cfg_.gyroVarMax * cfg_.gyroVarMax;
-  const float lo = cfg_.gravityNative * (1.0f - cfg_.accelMagTol);
-  const float hi = cfg_.gravityNative * (1.0f + cfg_.accelMagTol);
+  accelVarMaxSq_ = cfg_.accelVarMax * cfg_.accelVarMax;
+  const float lo = cfg_.gravityNative * (1.0f - cfg_.accelSanityTol);
+  const float hi = cfg_.gravityNative * (1.0f + cfg_.accelSanityTol);
   accelMagLoSq_ = lo * lo;
   accelMagHiSq_ = hi * hi;
 
@@ -264,13 +283,19 @@ static bool gatePasses(const float accel[3], const float gyro[3],
                        float speedMps, bool speedValid) {
   for (int i = 0; i < 3; i++) {
     if (varSamples_ == 0) {
-      varMean_[i] = gyro[i]; // seed, else the first sample reads as a spike
+      // Seed, else the first sample reads as a spike against a zero mean.
+      varMean_[i] = gyro[i];
       varSq_[i] = 0.0f;
+      aVarMean_[i] = accel[i];
+      aVarSq_[i] = 0.0f;
       continue;
     }
     const float d = gyro[i] - varMean_[i];
     varMean_[i] += varAlpha_ * d;
     varSq_[i] += varAlpha_ * (d * d - varSq_[i]);
+    const float ad = accel[i] - aVarMean_[i];
+    aVarMean_[i] += varAlpha_ * ad;
+    aVarSq_[i] += varAlpha_ * (ad * ad - aVarSq_[i]);
   }
   if (varSamples_ < varSamplesNeeded_)
     varSamples_++;
@@ -287,9 +312,17 @@ static bool gatePasses(const float accel[3], const float gyro[3],
     return false;
   }
 
-  // Accelerometer magnitude, compared squared. |a| is rotation-invariant, so
-  // this criterion is immune to mounting orientation by construction - only
-  // genuine linear acceleration, chip scale error, or a bad read can move it.
+  // Accelerometer PLAUSIBILITY, not equality. A wide band around 1 g, only
+  // meant to catch something gross: a misconfigured gravityNative (which would
+  // be wrong by ~9.8x), a dead axis, a failed read.
+  //
+  // Deliberately NOT a tight "is |a| exactly 1 g" test. That has the same
+  // circularity as gating the gyro on magnitude would: |a| at rest is
+  // contaminated by the chip's own zero-g bias, which is precisely what the
+  // trim exists to remove, so a tight band holds the gate shut against the
+  // very measurement that would fix it. An MPU-6050 reading 0.925 g failed a
+  // 4% band on every sample and could never converge. Motion is caught by the
+  // variance test below and by the GNSS speed gate, not by this.
   const float magSq = dot3(accel, accel);
   if (magSq < accelMagLoSq_ || magSq > accelMagHiSq_)
     return false;
@@ -299,6 +332,8 @@ static bool gatePasses(const float accel[3], const float gyro[3],
     return false;
   for (int i = 0; i < 3; i++) {
     if (varSq_[i] > gyroVarMaxSq_)
+      return false;
+    if (aVarSq_[i] > accelVarMaxSq_)
       return false;
   }
 
@@ -327,27 +362,27 @@ static void consumeBlock() {
   if (converged_)
     return;
 
-  float u[3];
+  // Accumulate the block mean UNNORMALISED. The direction gives the rotation
+  // and the length gives the residual, and both are needed - see accelZBias_.
+  float m[3];
   for (int i = 0; i < 3; i++)
-    u[i] = accelSum_[i] / n;
-  const float mag = sqrtf(dot3(u, u));
+    m[i] = accelSum_[i] / n;
+  const float mag = sqrtf(dot3(m, m));
   if (mag < 1e-6f)
     return; // degenerate; nothing usable in this block
-  for (int i = 0; i < 3; i++)
-    u[i] /= mag;
 
   // Report this block's tilt while the capture is still filling, so the
   // console shows a live angle rather than a flat 0 during the wait.
+  const float u[3] = {m[0] / mag, m[1] / mag, m[2] / mag};
   tiltDeg_ = tiltOf(u);
 
   for (int i = 0; i < 3; i++)
-    lockSum_[i] += u[i];
+    lockSum_[i] += m[i];
   lockBlocksSeen_++;
   if (lockBlocksSeen_ < cfg_.lockBlocks)
     return;
 
-  // Capture complete. Average, re-normalise (summed unit vectors are not unit
-  // length), and decide.
+  // Capture complete. Split the mean into a direction and a length.
   float mean[3];
   for (int i = 0; i < 3; i++)
     mean[i] = lockSum_[i] / (float)lockBlocksSeen_;
@@ -357,13 +392,12 @@ static void consumeBlock() {
     lockBlocksSeen_ = 0;
     return;
   }
-  for (int i = 0; i < 3; i++)
-    mean[i] /= mn;
+  const float dir[3] = {mean[0] / mn, mean[1] / mn, mean[2] / mn};
 
   // Measured tilt, recorded BEFORE the range test and kept even when that test
   // fails: an out-of-range mount is precisely what a guard exists to report, so
   // the number has to survive the refusal.
-  tiltDeg_ = tiltOf(mean);
+  tiltDeg_ = tiltOf(dir);
 
   if (tiltDeg_ > cfg_.maxTiltDeg) {
     // Out of scope. Refuse the rotation rather than applying a clamped, partly
@@ -376,8 +410,15 @@ static void consumeBlock() {
   }
 
   for (int i = 0; i < 3; i++)
-    gRef_[i] = mean[i];
+    gRef_[i] = dir[i];
   rebuildRotation();
+
+  // R carries the resting vector onto the vertical, giving (0, 0, mn) - the
+  // right direction but still the measured length. Subtracting the shortfall
+  // along that vertical makes a resting device read exactly (0, 0, 1 g), which
+  // is what the removed IMU_*_OFFSET_* defines used to guarantee.
+  accelZBias_ = mn - cfg_.gravityNative;
+
   converged_ = true; // locked for the rest of this power cycle
 }
 
@@ -422,6 +463,9 @@ void imuTrimApply(float accel[3], float gyro[3]) {
   const float in[3] = {accel[0], accel[1], accel[2]};
   for (int r = 0; r < 3; r++)
     accel[r] = R_[r][0] * in[0] + R_[r][1] * in[1] + R_[r][2] * in[2];
+
+  // After the rotation, in the vehicle frame. Zero until the first lock.
+  accel[2] -= accelZBias_;
 
   for (int i = 0; i < 3; i++)
     gyro[i] -= gyroBias_[i];
