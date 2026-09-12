@@ -81,44 +81,21 @@ The display adds four connections on the XIAO's external I2C bus (`Wire`, separa
 
 ## Software & dependencies
 
-Same toolchain as [Gnimu nRF52840][0], plus the display library:
+Same toolchain as [Gnimu nRF52840's Software & dependencies][0-software], including its macOS build gotcha, plus:
 
-- **[Arduino IDE][4]** (2.x recommended).
-- **Board support — "Seeed nRF52 Boards"** (the **non-mbed**, Adafruit-nRF52-based core; **do not use** "Seeed nRF52 mbed-enabled Boards", which lacks Bluefruit). Add this Boards Manager URL, then install the package and select **Seeed XIAO nRF52840 Sense**:
-  ```
-  https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
-  ```
-- Libraries (install via Library Manager):
-  - **Seeed Arduino LSM6DS3** (onboard IMU)
-  - **SparkFun u-blox GNSS Arduino Library** (GNSS)
-  - **u8g2** (olikraus) — the display library, and required by the diagnostic sketches below. Chosen over Adafruit SSD1306 + GFX for its `updateDisplayArea()` partial updates. Used by `g_display.cpp`.
-
-> [!IMPORTANT]
-> **macOS build gotcha:** The Seeed nRF52 core's `platform.txt` invokes bare `python` for its UF2 step, but modern macOS only ships `python3`, so compiling fails with `exec: "python": executable file not found in $PATH`.
->
-> **Fix:** in `~/Library/Arduino15/packages/Seeeduino/hardware/nrf52/<version>/platform.txt`, change `python` to `python3` on the `recipe.objcopy.uf2.pattern` line. (note: this reverts on every core reinstall/update, so it must be re-done afterward)
+- **u8g2** (olikraus), via Library Manager — the display library, and required by the diagnostic sketches below. Chosen over Adafruit SSD1306 + GFX for its `updateDisplayArea()` partial updates. Used by `g_display.cpp`.
 
 ---
 
 ## Build & flash
 
-1. Install the board package and libraries above.
-2. Open [`Gnimu-nRF52840-OLED.ino`][5].
-3. Edit [`config.h`][config] — at minimum, set your `DEVICE_ID`.
-4. Select **Seeed XIAO nRF52840 Sense** as the board and the correct serial port.
-5. Click **Upload**. If the upload can't reset into the bootloader (common with BLE/SoftDevice sketches), **double-tap the reset button on the XIAO** to force it, then upload again.
-6. Open the **Serial Monitor** at **115200 baud** to watch startup and status output.
-
-> [!IMPORTANT]
-> If you are building on an Apple Silicon Mac, you can use the AS-native Arduino IDE but you **must** have Rosetta installed in order to correctly compile the binary. Without Rosetta installed you will get a compilation error.
-
-As of today this produces firmware **identical in behavior** to [Gnimu nRF52840][0] — the display isn't wired into the build yet.
+Same as [Gnimu nRF52840][0-build], opening [`Gnimu-nRF52840-OLED.ino`][5] instead.
 
 ---
 
 ## Configuration
 
-Most of `config.h` matches [Gnimu nRF52840][0] — see that README's [Configuration section][0-config] for the full reference. The settings below are where this variant **differs**; everything not listed here behaves as documented there.
+Settings shared by every Gnimu build are described in the [main README's Configuration section](../../README.md#configuration). Everything else in `config.h` matches [Gnimu nRF52840][0] — see that README's [Configuration section][0-config]. The settings below are where this variant **differs**; anything not listed behaves as documented in those two places.
 
 | Setting | Purpose |
 |---|---|
@@ -127,21 +104,19 @@ Most of `config.h` matches [Gnimu nRF52840][0] — see that README's [Configurat
 | `DISPLAY_SHIFT_INTERVAL_MS`, `DISPLAY_SHIFT_MAX`, `DISPLAY_LAYOUT_W/H` | Burn-in mitigation: the layout is inset by `DISPLAY_SHIFT_MAX` px and walks within that margin every 5 minutes. |
 | `DISPLAY_CONTRAST` | 0–255; full scale by default for daylight readability. |
 | `LED_ENABLED` | **`0` in this variant** — the display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
-| `IMU_ENABLED` | Set automatically from the board selected in the IDE: `1` for the XIAO nRF52840 Sense (which has the onboard IMU), `0` for the plain XIAO nRF52840. With `0` the IMU fields read zero, trim never runs, the Seeed LSM6DS3 library isn't needed to build, and light sleep can only be ended by an app connection or the switch (no motion wake). To override, replace the block with a plain `#define`. |
-| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations rather than the older model's 8 flat ones. A determinant `static_assert` rejects a mirrored (physically impossible) map at compile time. |
 | `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`** — on this board `A4` *is* `PIN_WIRE_SDA`, which the display needs. |
 
 ---
 
 ## Battery & power
 
-Unchanged from [Gnimu nRF52840][0] — same state machine, same low-voltage cutoff, same estimated runtime. The one addition: `powerEnterDeepSleep()` and the other peripheral hold-off paths will send the display a `DISPLAYOFF` command before parking, the same way they already call `gnssEnd()` before holding GNSS pins low.
+Unchanged from [Gnimu nRF52840][0] — same state machine, same low-voltage cutoff, similar estimated runtime. The one addition: both routes into DEEP_SLEEP (at runtime and at boot) blank the panel with the SSD1306's `DISPLAYOFF` command first, because System OFF doesn't cut its 3V3 rail and it would otherwise stay lit on a stale frame. BATTERY_WAIT and CHARGE_ONLY deliberately keep the panel lit.
 
 ---
 
 ## Usage
 
-Follows [Gnimu nRF52840][0] — charge the cell, slide the switch on, let the GNSS acquire, then connect from a RaceBox-compatible app — with one difference: **status comes from the display, not the RGB LED.**
+Follows [Gnimu nRF52840][0] — charge the cell, slide the switch on, let the GNSS acquire, then connect following the [main README's Connecting steps](../../README.md#connecting) — with one difference: **status comes from the display, not the RGB LED.**
 
 The screen shows what state the device is in, whether BLE is advertising or connected, battery percentage with a charging bolt, and GNSS quality (satellites, fix type, pDOP, horizontal accuracy, PVT rate). `BATTERY_WAIT` — switch off while USB is plugged in — takes over the whole screen with a `Switch is OFF` alert.
 
@@ -151,21 +126,9 @@ The XIAO's own charge LED is wired to the charge controller and can't be driven 
 
 ---
 
-### M100 Mini GNSS LED indicators
-
-These are the GNSS module's own LEDs (not driven by our firmware) — useful for judging fix status without a serial connection. **This variant's M100 Mini uses the opposite color convention from the M100-5883** documented for [Gnimu nRF52840][0]:
-
-| LED | Pattern | Meaning |
-|---|---|---|
-| Blue (power) | Solid | GNSS rail powered |
-| Red (PPS) | Steady/flickering | Powered, no fix acquired yet |
-| Red (PPS) | Settles to a slow blink | 3D fix acquired |
-
-On the -5883, red is power and blue is PPS.
-
 ## Troubleshooting
 
-Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-related.
+For everything not display-related, see the [main README's Troubleshooting table](../../README.md#troubleshooting) and [Gnimu nRF52840's][0-troubleshooting].
 
 ---
 
@@ -181,22 +144,6 @@ The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — s
 
 `imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `mG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
 
-> ⚠️ Derive the axis map against the **raw serial `mG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
-
----
-
-## Credits
-
-Gnimu nRF52840-OLED is a further evolution of [**Gnimu nRF52840**][0], which is itself the battery-powered port of the original **Gnimu ESP32** build — a major evolution of the [**Open-Source RaceBox Mini Emulator**][6] by [**Anchit Chandra Sekhar**][7].
-
-Protocol details follow the *RaceBox BLE Protocol Description*, [available from RaceBox][8].
-
----
-
-## License
-
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840-OLED carries the same license.
-
 [License-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
 [Platform-shield]: https://img.shields.io/badge/platform-nRF52840-00A9CE.svg
 [Language-shield]: https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg
@@ -207,10 +154,9 @@ Released under the **GNU General Public License v3.0** — see [`LICENSE`](../..
 
 [0]: ../Gnimu-nRF52840/README.md
 [0-config]: ../Gnimu-nRF52840/README.md#configuration
+[0-software]: ../Gnimu-nRF52840/README.md#software--dependencies
+[0-build]: ../Gnimu-nRF52840/README.md#build--flash
+[0-troubleshooting]: ../Gnimu-nRF52840/README.md#troubleshooting
 [0-tools]: ../tools/nRF52840/
-[4]: https://www.arduino.cc/en/software
 [5]: ./Gnimu-nRF52840-OLED.ino
-[6]: https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator
-[7]: https://github.com/anchit92
-[8]: https://www.racebox.pro/products/mini-micro-protocol-documentation
 [9]: https://en.wikipedia.org/wiki/Microcontroller

@@ -28,7 +28,7 @@
 //               (Presence is what matters, so it holds even at a mismatched
 //               baud.)
 //
-// States (config.h GNSS_EN_ACTIVE_HIGH == 1 -> HIGH/hi-Z on, LOW off):
+// States (EN is active-high, as g_power.cpp assumes -> HIGH/hi-Z on, LOW off):
 //   - hi-Z (INPUT): board pullup should hold EN high -> rail ON (also confirms
 //                   the onboard pullup).
 //   - HIGH:         driven high -> rail ON.

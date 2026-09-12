@@ -4,26 +4,14 @@
 [![Platform: ESP32](https://img.shields.io/badge/platform-ESP32-000000.svg)](https://www.espressif.com/en/products/socs/esp32)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-The code in this repo lets you turn an ESP32 development board, a GNSS (Global Navigation Satellite System) module, and an IMU (Inertial Measurement Unit) module into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry meter. The official RaceBox app and other RaceBox-compatible tools should be able to connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz (more details on the nav rate is below).
-
-This is a low-cost, hackable platform for experimenting with GNSS+IMU data logging, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
-
-I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
-
-I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
+This repository holds the ESP32-based version of Gnimu. This was the first variant that I built, and this version is my recommended starting point for someone who wants a cheap, simple, effective, easy-to-build DIY GNSS+IMU device to stream telemetry data to a compatible app. The single drawback is the requirement that it always be connected to USB power.
 
 > [!IMPORTANT]
 > **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
 
 ---
 
-## What it does
-
-- Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, subtracts per-chip zero-point offsets, smooths it with a transient-aware filter, and decimates it to the BLE transmission rate — see [IMU smoothing](#imu-smoothing).
-- Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client.
-- Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
-- Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
+## Logical design
 
 ```mermaid
 flowchart LR
@@ -91,7 +79,7 @@ flowchart LR
 
 ## Build gallery
 
-Photos of the reference build, from loose components to the finished, enclosed unit. Several shots show an **RF shield** fitted over the electronics — a hardware counterpart to the firmware's reduced BLE power that further isolates the GNSS receiver from radio noise (see [A note on BLE power and GNSS lock](#a-note-on-ble-power-and-gnss-lock)).
+Photos of the reference build, from loose components to the finished, enclosed unit. Several shots show an **RF shield** fitted over the electronics — a hardware counterpart to the firmware's reduced BLE power that further isolates the GNSS receiver from radio noise (see [GNSS module considerations](../../README.md#gnss-module-considerations)).
 
 <div align="center">
   <img src="../../images/ESP32/completed-emulator.jpeg" alt="The finished RaceBox Mini emulator" width="520"><br>
@@ -145,136 +133,44 @@ Photos of the reference build, from loose components to the finished, enclosed u
 
 ## Software & dependencies
 
-- **[Arduino IDE](https://www.arduino.cc/en/software)** (2.x recommended).
+The IDE, the GNSS library and the general build steps are in the [main README's Building section](../../README.md#building). This variant also needs:
+
 - **ESP32 board support** — install the `esp32` package by Espressif via the Boards Manager.
-- Libraries (install via Library Manager):
-  - **Adafruit MPU6050** (pulls in Adafruit Unified Sensor + Adafruit BusIO)
-  - **SparkFun u-blox GNSS v3**
-  - BLE support is built into the ESP32 Arduino core — no extra install needed.
+- **Adafruit MPU6050**, via Library Manager (pulls in Adafruit Unified Sensor + Adafruit BusIO).
+- BLE support is built into the ESP32 Arduino core — no extra install needed.
 
 ---
 
 ## Build & flash
 
-### Arduino IDE
+Follow the [main README's build steps](../../README.md#building), opening [`Gnimu-ESP32.ino`](Gnimu-ESP32.ino) and selecting **ESP32 Dev Module** (or your specific board).
 
-1. Install the ESP32 board package and the libraries listed above.
-2. Open [`Gnimu-ESP32.ino`](Gnimu-ESP32.ino).
-3. Edit [`config.h`](config.h) (at minimum, set your `DEVICE_ID`).
-4. Select your board (e.g. **ESP32 Dev Module**) and the correct serial port.
-5. Click **Upload**.
-6. Open the **Serial Monitor** at **115200 baud** to watch the startup and status output.
-
-> [!IMPORTANT]
-> If you are building on an Apple Silicon Mac, you can use the AS-native Arduino IDE but you **must** have Rosetta installed in order to correctly compile the ESP32 binary. Without Rosetta installed you will get a compilation error.
 ---
 
 ## Configuration
 
-Settings live in [`config.h`](config.h), grouped into sections, with one exception: the IMU tuning (smoothing, transient thresholds, `IMU_TRIM_*`) is the same on every Gnimu board, so it lives in [`g_imu_tuning.h`](g_imu_tuning.h), which `check_common.sh` keeps identical across all three trees. Highlights:
+Settings live in [`config.h`](config.h). Those shared by every Gnimu build are described in the [main README's Configuration section](../../README.md#configuration); these are specific to this hardware:
 
 | Setting | Purpose |
 |---------|---------|
-| `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
-| `TELEMETRY_PROTOCOL` | Which wire protocol this build emits. `PROTO_RACEBOX` is currently the only implemented value. Chosen at compile time, so unselected protocols are never linked and cost no flash — the trade is that switching needs a reflash. A protocol's own constants (identity strings, service and characteristic UUIDs) live in `g_proto_<name>.h` rather than here, so they stay under `check_common.sh`. |
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `LED_ONBOARD_PIN` | Hardware pin assignments. |
-| `GNSS_BAUD` | GNSS serial baud rate. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
-| `GNSS_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25). Set once at startup and held for the life of the session, connected or not. |
-| `GNSS_SV_MINELEV_DEG` | Ignore satellites below this elevation angle (anti-multipath). |
-| `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
 | `IMU_ENABLED` | `1` if an MPU-6050 is fitted, `0` to build without one. With `0` the IMU fields read zero, trim never runs, and the Adafruit MPU6050 library isn't needed to build. GNSS, BLE and lap timing are unaffected. |
 | `IMU_I2C_ADDRESS` | The MPU-6050's I2C address: `0x68` with its AD0 pin low (the usual breakout default), `0x69` with AD0 high. Pointing it at the wrong one is also a safe way to rehearse a missing IMU: the device logs `❌ IMU not found` and carries on. |
 | `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
-| `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
-| `IMU_ACCEL_TRANSIENT_THRESHOLD_G`, `IMU_GYRO_TRANSIENT_THRESHOLD_DPS` | Deviation (g for accel, °/s for gyro — the same units on every Gnimu build, since the IMU driver converts the MPU-6050's m/s² and rad/s at the read) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
-| `IMU_TRIM_*` | Runtime levelling and gyro de-biasing. After 30 s continuously stationary with a valid 3D fix, the firmware measures its own mounting tilt and gyro zero, applies them, and **locks the orientation for the rest of the power cycle**. Replaces the old per-board calibration step — the firmware image is now identical on every unit. `IMU_TRIM_REQUIRE_FIX 0` for bench testing, which never gets a fix indoors. See [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md). |
-| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Mounting-orientation remap into the vehicle frame. Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations. A determinant `static_assert` rejects a mirrored (impossible) map at compile time. Defaults are the identity map, leaving the raw sensor frame untouched. Derivation procedure and the order table are in `config.h`. |
-| `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
-| `LOG_ENABLED` | Master switch for all serial diagnostic output. `0` = **silent build**: every `LOG_*` call vanishes at compile time and `setup()` skips the wait for the serial port. |
-
-Several values are checked with `static_assert` at compile time, so an invalid configuration fails the build with a clear message instead of misbehaving on the device.
-
-### IMU smoothing
-
-Raw accelerometer and gyroscope samples are read at 100Hz and run through a per-axis filter (one instance each for accel X/Y/Z and gyro X/Y/Z) before being decimated to the 25Hz transmission rate:
-
-- Each axis tracks an EMA (exponential moving average) baseline (`IMU_ACCEL_ALPHA` / `IMU_GYRO_ALPHA`) for a smooth, low-noise signal.
-- Within each transmission window, the axis also tracks the largest raw deviation from that baseline.
-- If the deviation exceeds `IMU_ACCEL_TRANSIENT_THRESHOLD_G` / `IMU_GYRO_TRANSIENT_THRESHOLD_DPS`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
-
-This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `g_imu_tuning.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
-
-### A note on BLE power and GNSS lock
-
-GNSS reception is sensitive to nearby RF noise. On compact builds, the ESP32's BLE radio can desensitize the GNSS receiver. Dialing `BLE_TX_POWER` down to a low level (the default is `ESP_PWR_LVL_N12`, the minimum) keeps the radio quiet — the receiver is usually close by, so high power isn't needed — and can dramatically improve fix quality, including indoors.
-
-The **RF shield** shown in the [build gallery](#build-gallery) is the hardware counterpart to this: a grounded metal enclosure over the GNSS module that physically blocks radio noise from reaching the GNSS receiver. The two measures stack — lowering the BLE power quiets the source, while the shield blocks whatever remains. Either helps on its own; together they give the most reliable lock.
-
-When the BLE power level was left at the default value of +9dbm on my ESP32 board, the device had significantly worse lock quality, sometimes not getting a fix at all (especially indoors).
-
-With the BLE power level set to -12db, I have seen simultaneuous lock on as many as 20 satellites with horizontal accuracy (HAcc) as low as 220mm and [pDOP](https://en.wikipedia.org/wiki/Dilution_of_precision) values under 2 (really good for a cheap consumer-grade GNSS module).
-
-### A note on GNSS fix rate and enabled constellations
-
-The maximum PVT rate on the u-blox M10 platform depends on how many constellations you enable and, less obviously, on a CPU clock setting that ships at a lower rate. Both rows are published u-blox specifications [UBX-23006557][ubx-m10-specs]:
-
-| Concurrent constellations | 1 | 2 | 3 | 4 |
-|---|---|---|---|---|
-| Stock CPU clock (as shipped) | 18Hz | 10Hz | 10Hz | 5Hz |
-| High CPU clock (see below) | **25Hz** | **20Hz** | 16Hz | 10Hz |
-
-The high row is the one every M10 spec sheet quotes, and the datasheets footnote it as *"Configuration required."* That footnote means something specific: u-blox ships M10 silicon at a reduced CPU clock (128/128/128/64MHz) to save power, and the higher rates need a **one-time, permanent write of a faster clock (192/192/192/96MHz) into the receiver's OTP memory** per the MAX-M10S Integration manual UBX-20053088 §2.1.7. Simply choosing constellations and setting `GNSS_NAV_RATE_HZ` does *not* get you there without the CPU clock rate change.
-
-Gnimu ships `GNSS_NAV_RATE_HZ 20` with **GPS + Galileo** enabled, which require the higher clock rate. On a stock-clock module that is twice the rated 10Hz. u-blox permits running past the rating ("the navigation update rate can be increased beyond the maximum value stated in the datasheet. However, this may result in a reduced fix rate"), so the receiver does not reject the setting; it silently skips navigation epochs when it cannot keep up. Measured fix rates on a stock-clock module at 7–9 satellites show no loss at all, while asking for 25Hz on two constellations does produce visible rate fluctuation. But the manual attributes rate loss to *"a very large number of satellites"*, so a thin sky is the easy case and a clean result there does not generalise to an open one. For use as a motorsports telemetry device, a solidly consistent nav rate and higher position accuracy are key attributes, so two constellations at 20Hz is a good compromise to get high-resolution position and speed.
-
-**Check your own module rather than trusting either row.** [`tools/common/gnss_ver`](../tools/common/gnss_ver/gnss_ver.ino) reports which row your receiver is on, what it is currently configured for, and the fix rate it actually delivers over a 60-second window. [`tools/common/gnss_otp_clock`](../tools/common/gnss_otp_clock/gnss_otp_clock.ino) performs the OTP write, behind a typed confirmation. **That write cannot be undone**, and it consumes 18 of the receiver's 64 bytes of OTP space.
-
-A valid alternative is to run **GPS only at 25Hz**. This is also a high-clock figure, so it needs the OTP write as well. A stock-clock module tops out at 18Hz on a single constellation. This costs you the second constellation's geometry, and the accuracy difference can be visible. If you would rather have the higher rate at the expense of potentially lower accuracy, set `GNSS_NAV_RATE_HZ 25` and disable Galileo (or GPS, depending on where you are in the world) in `GNSS_CONSTELLATIONS`.
-
-**Why the real RaceBox Mini delivers 25Hz:** it uses a [u-blox NEO-M9N][ubx-m9n-specs] GNSS, which is a different platform that does not derate at higher constellation counts. The M9N datasheet lists 25Hz for *every* configuration, from a single constellation up to GPS+GLO+GAL+BDS concurrently. The drawback is higher power consumption and cost. The M10 is an economical choice for a small battery-powered device, but the 20 Hz ceiling for GPS+GAL is the downside. If you want to try and fully emulate a RaceBox Mini, a NEO-M9N module shouldn't be too hard to integrate with this code (it's perhaps even a drop-in), but it will likely run 3x the cost or more than an M10 unit and draw substantially more power.
+| `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see [GNSS module considerations](../../README.md#gnss-module-considerations). |
 
 ---
 
 ## Usage
 
-1. Power the assembled device and give the GNSS module time to acquire a fix. The onboard LED blinks while unconnected.
-2. In the **RaceBox app** (or another RaceBox-compatible client), scan for and connect to the device — it advertises using the `MODEL` + `DEVICE_ID` name.
-3. On connect, the LED goes solid and the device begins streaming data packets.
-4. Optional: keep a serial monitor open at 115200 baud to watch live diagnostics.
+Follow the [main README's Connecting steps](../../README.md#connecting). The onboard LED blinks while waiting for a connection and goes solid once a client connects.
 
 ---
 
 ## Troubleshooting
 
+See the [main README's Troubleshooting table](../../README.md#troubleshooting) for symptoms common to every build. Specific to this hardware:
+
 | Symptom | Things to check |
 |---------|-----------------|
-| `Failed to find IMU module` | I²C wiring (SDA/SCL), 3V3 power, board address. |
-| `u-blox GNSS not detected` | UART wiring (note TX↔RX crossover), module power. The sketch will attempt to auto-configure the baud rate. |
-| Few or no satellites | Move outdoors / near a window; lower `BLE_TX_POWER`; give it a cold-start minute. |
-| App won't connect | Confirm `DEVICE_ID` is valid (10 digits, first digit 0–3); make sure no other client is already connected. |
-| Build fails with a `static_assert` message | Read the message — it names the offending `config.h` value and the allowed range. |
-
----
-
-## Acknowledgment & Origins
-
-Gnimu began as a derivative of [**Anchit Chandra Sekhar's RaceBox mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided the foundational logic and initial inspiration, Gnimu has been completely overhauled from its original single-file Arduino sketch architecture.
-
-**Key evolutions include:**
-- Modular Architecture: Refactored into a highly modular codebase for improved maintainability.
-- Externalized Configuration: Moved away from in-line constants to standard `config.h` approach.
-- Transient-aware EMA smoothing: Applies exponential moving average (EMA) smoothing to IMU data, with transient thresholding to capture and integrate high-deviation signals that would otherwise be missed.
-- Performance & Structure: Extensive cleanup and optimization of the core logic.
-
-I am grateful to the original author for the initial implementation that made this project possible.
-
-Protocol details follow the *RaceBox BLE Protocol Description (rev 8)*, [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
-
----
-
-## License
-
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE).
-
-[ubx-m10-specs]: https://content.u-blox.com/sites/default/files/documents/u-bloxM10-with-25Hz-Navigation-UpdateRate_IN_UBX-23006557.pdf
-[ubx-m9n-specs]: https://content.u-blox.com/sites/default/files/NEO-M9N-00B_DataSheet_UBX-19014285.pdf
+| `❌ IMU not found` | I²C wiring (SDA/SCL), VIN (5V) power, `IMU_I2C_ADDRESS`. |

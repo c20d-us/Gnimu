@@ -86,10 +86,10 @@
 #define IMU_ENABLED 0
 #endif
 
-#define IMU_ACCEL_RANGE_G 4       // +/- g sensor range: one of 2, 4, 8, 16
-#define IMU_GYRO_RANGE_DPS 500    // deg/s sensor range: 125,245,500,1000,2000
-#define IMU_ACCEL_ODR_HZ 104      // output data rate; >= the 100Hz poll rate
-#define IMU_GYRO_ODR_HZ 104       // output data rate; >= the 100Hz poll rate
+#define IMU_ACCEL_RANGE_G 4    // +/- g sensor range: one of 2, 4, 8, 16
+#define IMU_GYRO_RANGE_DPS 500 // deg/s sensor range: 125,245,500,1000,2000
+#define IMU_ACCEL_ODR_HZ 104   // output data rate; >= the 100Hz poll rate
+#define IMU_GYRO_ODR_HZ 104    // output data rate; >= the 100Hz poll rate
 
 // Accelerometer digital low-pass filter (LPF1), as the ODR DIVIDER the part
 // implements - 2 or 4, ST's LPF1_BW_SEL in CTRL1_XL. At IMU_ACCEL_ODR_HZ 104
@@ -196,7 +196,7 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM 0    // while advertising
+#define BLE_TX_POWER_ADV_DBM -16  // while advertising
 #define BLE_TX_POWER_CONN_DBM -16 // while client is connected
 
 // ----------------------------------------------------------------------------
@@ -850,10 +850,11 @@ static_assert(IMU_ACCEL_LPF1_CUTOFF_HZ * 2 <= 1000 / IMU_SAMPLE_INTERVAL_MS,
 // and does nothing below 1.67 kHz (ST's driver says so in as many words), which
 // is why imuSensorBegin() leaves it at the part's default. Above that rate it
 // starts to matter and this config would have to choose it deliberately.
-static_assert(IMU_ACCEL_ODR_HZ < 1667,
-              "ERROR: at this ODR the accelerometer's ANALOG bandwidth (BW0_XL) "
-              "is no longer irrelevant. Decide it explicitly in "
-              "g_imu_lsm6ds3.cpp before raising IMU_ACCEL_ODR_HZ this far.");
+static_assert(
+    IMU_ACCEL_ODR_HZ < 1667,
+    "ERROR: at this ODR the accelerometer's ANALOG bandwidth (BW0_XL) "
+    "is no longer irrelevant. Decide it explicitly in "
+    "g_imu_lsm6ds3.cpp before raising IMU_ACCEL_ODR_HZ this far.");
 
 // Enforce output data rates at least as fast as the sample rate. Polled faster
 // than the part produces samples, imuPoll() reads the same sample twice: the
@@ -997,7 +998,8 @@ static_assert(SAADC_TACQ_US == 3 || SAADC_TACQ_US == 5 || SAADC_TACQ_US == 10 ||
 // ~255k source impedance. If the divider or the threshold moves, that argument
 // has to be re-made rather than assumed.
 static_assert(POWER_SWITCH_OFF_THRESHOLD_MV - POWER_SWITCH_ON_MV >= 500 &&
-                  POWER_SWITCH_OFF_MV_MIN - POWER_SWITCH_OFF_THRESHOLD_MV >= 500,
+                  POWER_SWITCH_OFF_MV_MIN - POWER_SWITCH_OFF_THRESHOLD_MV >=
+                      500,
               "ERROR: POWER_SWITCH_OFF_THRESHOLD_MV must keep >=500mV margin "
               "on BOTH sides. The single unaveraged analogRead() in "
               "switchReadOnce() depends on it - revisit powerSwitchOn()'s note "

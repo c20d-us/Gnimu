@@ -9,8 +9,8 @@ Board package: **Seeed nRF52 Boards** (the non-mbed, Adafruit-nRF52-based core �
 required for Bluefruit; do **not** use "Seeed nRF52 mbed-enabled Boards"). Board:
 "Seeed XIAO nRF52840 Sense". Boards Manager URL:
 `https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json`.
-Libraries: **Seeed Arduino LSM6DS3** (for `imu_probe`); Bluefruit ships with the
-core. Open the serial monitor at **115200**.
+Libraries: **Seeed Arduino LSM6DS3** (for `imu_probe`, `imu_tiltmap` and
+`imu_calibration`); Bluefruit ships with the core. Open the serial monitor at **115200**.
 
 | Sketch | Validates | Extra parts | Pass criteria |
 |---|---|---|---|
@@ -19,9 +19,9 @@ core. Open the serial monitor at **115200**.
 | [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (formerly fed `config.h`; now a bench diagnostic only). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six `IMU_*_OFFSET_*`-formatted lines. **Those no longer go anywhere** — see the note below. |
 | [`led_check/`](led_check/led_check.ino) | RGB LED pins + active-LOW polarity + status colors (`g_led.cpp`) | none | The LED color matches each name printed over serial; OFF goes fully dark. *(Confirmed.)* |
 | [`ble_mtu/`](ble_mtu/ble_mtu.ino) | Advertising name, TX power, MTU ≥ 91, `BLEUart` 88-byte notify (`g_ble.cpp`) | phone w/ nRF Connect | Advertises as `RaceBox Mini <id>`; "Negotiated MTU" line reports ≥ 91; the 88-byte test notify is received. *(Confirmed — MTU 23→247.)* |
-| [`gnss_en/`](gnss_en/gnss_en.ino) | GNSS rail EN-pad cutoff: does D9 LOW actually disconnect the TPS63020 output? (`g_battery.cpp` low-voltage cutoff + planned GNSS idle-cutoff) | TPS63020 + GNSS wired, multimeter | In the LOW state the TPS63020 output drops to ~0 V **and** GNSS UART goes silent (0 bytes). *(Confirmed — with a caveat, see below.)* |
-| [`battery_presence/`](battery_presence/battery_presence.ino) | Switch-sense divider tap (A1) — the authoritative battery-present signal in `g_power.cpp` — plus the non-blocking VBAT sampler and divider-recovery math that feeds `g_battery`'s state-of-charge fuel gauge | LiPo, multimeter, USB | Self-check mV matches the meter on the cell; switch-sense reads ~2 V OFF / ~0 V ON, powered, matching the meter. |
-| [`battery_log/`](battery_log/battery_log.ino) | The LiPo's true resting voltage at full charge, for `BATTERY_DISCHARGE_CURVE`'s 100% anchor — VBAT logged to internal flash through a full plug-in → charge → unplug → settle cycle (survives a Serial disconnect mid-run) | LiPo, USB | Log flags `CHARGE_PLATEAU` near full charge and `SETTLED` after unplug; the settled reading is the value to paste into `BATTERY_DISCHARGE_CURVE`. |
+| [`gnss_en/`](gnss_en/gnss_en.ino) | GNSS rail EN-pad cutoff: does D9 LOW actually disconnect the TPS63020 output? (`g_power.cpp`'s `powerHoldPeripheralsOff()`, used by every low-power state) | TPS63020 + GNSS wired, multimeter | In the LOW state the TPS63020 output drops to ~0 V **and** GNSS UART goes silent (0 bytes). *(Confirmed — with a caveat, see below.)* |
+| [`battery_presence/`](battery_presence/battery_presence.ino) | Switch-sense divider tap (A4) — the authoritative battery-present signal in `g_power.cpp` | slide switch + divider wired, multimeter | Reads ~0 mV with the switch ON and ~2 V OFF, powered, matching the meter. |
+| [`battery_log/`](battery_log/battery_log.ino) | The LiPo's true resting voltage at full charge, for `BATTERY_DISCHARGE_CURVE`'s 100% anchor — VBAT logged to internal flash through a full plug-in → charge → unplug → settle cycle (survives a Serial disconnect mid-run). Holds the GNSS rail off for the whole test so its ~30 mA load doesn't skew the readings; type `d` / `e` over Serial at any time to dump or erase the log | LiPo, USB | Log flags `CHARGE_PLATEAU` near full charge and `SETTLED` after unplug; the settled reading is the value to paste into `BATTERY_DISCHARGE_CURVE`. |
 | [`storage_check/`](storage_check/storage_check.ino) | QSPI flash + LittleFS stack in isolation (chip detection, mount, format, read/write/delete) on the XIAO Sense's Puya P25Q16H chip | none | Phase 1 (read-only) reports the chip correctly; Phase 2 formats only after typing `FORMAT`, then a read/write/delete round-trip succeeds. Not currently used by the main firmware — kept as a standalone diagnostic for the flash chip itself. |
 
 
@@ -68,50 +68,46 @@ core. Open the serial monitor at **115200**.
 
 - **imu_probe** — RESOLVED: the stock Seeed library reaches the IMU with no
   manual bus setup, `PIN_LSM6DS3TR_C_POWER` (pin 15) HIGH enables it, and it
-  returns g / deg/s directly (validating `g_imu.cpp`'s simplified unit
-  conversion). `g_imu.cpp` was updated to drop the unneeded `Wire1.begin()`.
+  returns g / deg/s directly (validating `g_imu_lsm6ds3.cpp`'s simplified unit
+  conversion). The driver was updated to drop the unneeded `Wire1.begin()`.
 - **led_check** — RESOLVED: OFF goes fully dark and every color matches, so
-  `LED_ACTIVE_LOW = 1` and the `LED_*_PIN` mapping used by `g_led.cpp`'s
-  `setLed()` are correct as-is.
-- **imu_calibration** — AVAILABLE: produces per-board `IMU_ACCEL_OFFSET_*` /
-  `IMU_GYRO_OFFSET_*` values for `config.h`. Defaults are all `0.0f`, so a
-  board that hasn't been run through this sketch behaves identically to
-  before — running it is an optional per-board tuning step, not a
-  correctness gate. Runs standalone off the slide switch with no USB
-  attached: results go to internal flash (`/imu_cal.csv`, ~10–11 h of
-  sessions before the ~22 KB budget fills), and each boot appends a new run
-  rather than overwriting. GNSS and BLE are deliberately left running so the
-  die reaches a temperature representative of production rather than of an
-  idle board. **Caveat on the accel offsets:** one degree of bench tilt leaks
-  ~17 mg into the horizontal axes — several times the bias being measured —
-  so accel X/Y is as much a levelness measurement as a sensor one, and
-  averaging cannot separate them (accel Z is hit too, by the smaller cosine
-  error). Only the **gyro** offsets are immune to pose. Tilt therefore does
-  not block calibration: the sketch records it per session and, if the run's
-  median tilt exceeds ~1°, comments the accel `#define`s out of the
-  aggregate block while still emitting the gyro ones. Separating accel X/Y
+  the active-LOW drive in `g_led.cpp`'s `setLed()` and the `LED_*_PIN`
+  mapping in `config.h` are correct as-is.
+- **imu_calibration** — BENCH DIAGNOSTIC: measures per-chip zero-point
+  offsets in the raw sensor frame. It no longer feeds `config.h` (see the note
+  above); the firmware's runtime trim learns the correction instead. Runs
+  standalone off the slide switch with no USB attached: results go to internal
+  flash (`/imu_cal.csv`, ~10–11 h of sessions before the ~22 KB budget fills),
+  and each boot appends a new run rather than overwriting. GNSS and BLE are
+  deliberately left running so the die reaches a temperature representative of
+  production rather than of an idle board. **Caveat on the accel offsets:** one
+  degree of bench tilt leaks ~17 mg into the horizontal axes — several times
+  the bias being measured — so accel X/Y is as much a levelness measurement as
+  a sensor one, and averaging cannot separate them (accel Z is hit too, by the
+  smaller cosine error). Only the **gyro** offsets are immune to pose. Tilt
+  therefore does not block calibration: the sketch records it per session and,
+  if the run's median tilt exceeds ~1°, comments the accel `#define`s out of
+  the aggregate block while still emitting the gyro ones. Separating accel X/Y
   properly needs a multi-position tumble calibration, which this hands-off
-  tool deliberately does not attempt. **On the nRF52840-OLED board set
-  `CAL_DISPLAY_ENABLED` to 1** — that variant runs its panel continuously, so
-  it belongs in the thermal load, and it turns the sketch into a standalone
-  readout (phase, die temp, latest offsets) needing no USB at all. Leave it 0
-  for the plain build, where A4 is `POWER_SWITCH_SENSE_PIN` rather than SDA.
+  tool deliberately does not attempt. The nRF52840-OLED board uses its own
+  copy of this sketch, which adds the panel to the thermal load and shows
+  progress on it with no USB attached.
 - **ble_mtu** — RESOLVED: `configPrphBandwidth(BANDWIDTH_MAX)` + central-driven
   negotiation reach MTU 247 (23→247 on the central's request), so an 88-byte
   RaceBox Data Message rides in one notify and `BLEUart` (Nordic UART = RaceBox
   UUIDs) transports it. Do **not** peripheral-initiate `requestMtuExchange`.
 - **gnss_en** — RESOLVED (2026-07): EN-low truly disconnects the TPS63020
   output — no load switch needed — but the GNSS stays phantom-powered through
-  its RX pin if XIAO TX (D6) idles HIGH. `g_power.cpp`'s
-  `powerHoldPeripheralsOff()` / `powerEnterDeepSleep()` therefore also
-  `Serial1.end()` and drive D6 LOW to fully cut it.
+  its RX pin if XIAO TX (D6) idles HIGH. every path into a
+  low-power state therefore calls `gnssEnd()` (releasing `Serial1`) before
+  `g_power.cpp`'s `powerHoldPeripheralsOff()` drives D6 LOW, fully cutting it.
 - **battery_presence** — RESOLVED (2026-07): bench-confirmed the switch-sense
-  divider (A1) reads ~0.00 V ON / ~2.05 V OFF, powered, matching theory — this
+  divider (A4) reads ~0.00 V ON / ~2.05 V OFF, powered, matching theory — this
   is now the sole battery-presence signal (`powerSwitchOn()`), replacing an
   earlier VBAT-based floor/variance approach that couldn't distinguish a
   charger-in-CV feeding a load from a battery-in-CV feeding a load. Confirmed
-  peak-for-SoC and the `analogSampleTime(40)` TACQ fix along the way (both
-  shipped in `g_battery.cpp`). Readings taken with the chip unpowered are not
+  peak-for-SoC (shipped in `g_battery.cpp`) and the 40 µs TACQ fix
+  (`SAADC_TACQ_US`, applied in `g_power.cpp`) along the way. Readings taken with the chip unpowered are not
   reliable (ESD-diode loading on a dead pin) — always test powered.
 - **battery_log** — a data-collection tool rather than a pass/fail validator:
   its output is the empirical 100% voltage anchor for
@@ -123,8 +119,8 @@ core. Open the serial monitor at **115200**.
   sketch remains as a standalone diagnostic for the flash chip itself,
   independent of current firmware state.
 
-The constants in `ble_mtu` mirror `config.h` (`BLE_TX_POWER_ADV`, `MODEL` +
-`DEVICE_ID`); `gnss_en` mirrors `GNSS_EN_PIN` (D9) and
+The constants in `ble_mtu` mirror `config.h`'s `BLE_TX_POWER_ADV_DBM` and the
+advertised name (`RACEBOX_MODEL` + `DEVICE_ID`); `gnss_en` mirrors `GNSS_EN_PIN` (D9) and
 `GNSS_BAUD`; `imu_calibration` mirrors the IMU range/ODR/bandwidth block
 (`IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_*_ODR_HZ`,
 and `IMU_SAMPLE_INTERVAL_MS` from `g_imu_tuning.h`) plus `GNSS_EN_PIN` /
@@ -133,10 +129,16 @@ still sets the Seeed library's `accelBandWidth`, which the firmware stopped
 using on 2026-09-11 (it encodes the original LSM6DS3's filter, not the TR-C's -
 see `IMU_ACCEL_LPF1_ODR_DIV`), so the sketch's accelerometer filtering differs
 slightly from the firmware's; it does not affect what it measures. Finally,
-`battery_presence` mirrors the VBAT ADC/divider constants
-(`BATTERY_ADC_PIN`, `VBAT_ENABLE`, `ADC_REFERENCE_MV`, the divider ratio) plus
-`SWITCH_SENSE_PIN` (A1) / `SWITCH_OFF_THRESHOLD_MV`. Keep them in sync if you
+`battery_presence` mirrors `POWER_SWITCH_SENSE_PIN` (A4),
+`POWER_SWITCH_OFF_THRESHOLD_MV` and `SAADC_TACQ_US`. Keep them in sync if you
 change `config.h` or `g_imu_tuning.h`.
 
 > Not covered here (need extra parts): the `Serial1` D6↔D7 UART loopback (needs a
-> jumper). See the `[bench-verify]` notes in `g_gnss.cpp` when you get to that.
+> jumper).
+
+> **Also usable here:** the GNSS sketches in [`tools/common/`](../common/) —
+> `gnss_ver` (identity and high-rate capability report), `gnss_otp_clock` (the
+> **permanent** M10 high-performance clock burn) and `gnss_reset` (factory
+> reset) — build for this board unchanged. They're listed in
+> [`src/README.md`](../../README.md#inside-tools), and each sketch's header
+> comment explains exactly what it reads and writes.

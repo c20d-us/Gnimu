@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,8 +19,8 @@
 // sketch orchestrates lifecycles per the state machine (see g_state.h).
 #include "config.h"
 #include "g_battery.h"
-#include "g_display.h"
 #include "g_ble.h"
+#include "g_display.h"
 #include "g_gnss.h"
 #include "g_imu.h"
 #include "g_led.h"

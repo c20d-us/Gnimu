@@ -1,7 +1,5 @@
 // Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-// Based on the Open-Source RaceBox Mini Emulator by Anchit Chandra Sekhar
-// (https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator)
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -33,12 +31,12 @@ void setup() {
   //
   // Give Serial a real TX ring FIRST. HardwareSerial constructs with
   // _txBufferSize(0), and with no ring uart_write_bytes() blocks the loop task
-  // until the 128-byte hardware FIFO drains - about 20ms for the once-per-second
-  // stats line at 115200. That is 20ms of not calling gnssPoll(), against a
-  // 256-byte driver RX ring that a 20Hz NAV-PVT stream fills in roughly 22ms.
-  // It fits today; the margin is the only thing between an attached console and
-  // a corrupted epoch. 512 makes the write queue instead, and costs RAM only in
-  // LOG_ENABLED builds.
+  // until the 128-byte hardware FIFO drains - about 20ms for the
+  // once-per-second stats line at 115200. That is 20ms of not calling
+  // gnssPoll(), against a 256-byte driver RX ring that a 20Hz NAV-PVT stream
+  // fills in roughly 22ms. It fits today; the margin is the only thing between
+  // an attached console and a corrupted epoch. 512 makes the write queue
+  // instead, and costs RAM only in LOG_ENABLED builds.
   //
   // MUST precede begin(): setTxBufferSize() refuses once the driver is running
   // ("TX Buffer can't be resized when Serial is already running") and returns 0

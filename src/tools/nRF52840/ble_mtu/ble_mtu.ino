@@ -17,7 +17,7 @@
 // ============================================================================
 // DIAGNOSTIC: XIAO nRF52840 Sense BLE + MTU bring-up
 //
-// A minimal Bluefruit peripheral that mirrors ble.cpp's setup, to validate:
+// A minimal Bluefruit peripheral that mirrors g_ble.cpp's setup, to validate:
 //   - Bluefruit advertises under the device name (MODEL + " " + DEVICE_ID).
 //   - Bluefruit.setTxPower() accepts the config.h BLE_TX_POWER level.
 //   - configPrphBandwidth(BANDWIDTH_MAX) raises the MTU *ceiling* (to 247) AND
@@ -46,8 +46,8 @@
 
 #include <bluefruit.h>
 
-#define TEST_DEVICE_NAME "RaceBox Mini 0123456789" // MODEL + " " + DEVICE_ID
-#define TEST_TX_POWER -12 // config.h BLE_TX_POWER (dBm)
+#define TEST_DEVICE_NAME "RaceBox Mini 0123456789" // RACEBOX_MODEL + " " + DEVICE_ID
+#define TEST_TX_POWER -16 // config.h BLE_TX_POWER_ADV_DBM (dBm)
 
 static BLEUart bleuart;
 static uint16_t g_connHandle = BLE_CONN_HANDLE_INVALID;
