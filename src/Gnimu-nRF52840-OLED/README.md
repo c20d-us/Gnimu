@@ -39,12 +39,12 @@ Everything from [Gnimu nRF52840's hardware list][0] applies unchanged, plus:
         <a href="https://www.amazon.com/dp/B0D91NB1CP"><strong>SSD1306 0.96" 128×64 OLED (I2C)</strong></a>
     </td>
     <td>
-        4-pin I2C-only module (VCC/GND/SCL/SDA), sold as a 2-pack with one white and one blue panel. I2C address <strong>0x3C</strong>. Powered from the XIAO's <strong>3V3</strong> pin, not the TPS63020 GNSS rail. No load switch / power-gating hardware — power-down uses the SSD1306's own <code>DISPLAYOFF</code> command instead.
+        4-pin I2C-only module (VCC/GND/SCL/SDA), sold as a 2-pack with one white and one blue panel. I2C address <strong>0x3C</strong>. Powered from the XIAO's <strong>3V3</strong> pin.
     </td>
   </tr>
 </table>
 
-**Two other parts differ from [Gnimu nRF52840][0]** — both chosen to ease the fit, since adding the display makes an already-snug case tighter:
+**Two other parts differ from [Gnimu nRF52840][0]**:
 
 - **GNSS: [HGLRC M100 Mini](https://www.amazon.com/dp/B0BX65QZJ8)** instead of the M100-5883. Same u-blox M10 receiver, so the firmware is unchanged, but a smaller board that drops the QMC5883L compass this project never used.
 - **Battery: [1000mAh flat LiPo](https://www.amazon.com/dp/B0DPZVBKMY)** instead of 900mAh (the 900mAh was unavailable). Slightly more runtime, and at the top of what the enclosure will take.
@@ -103,22 +103,22 @@ Settings shared by every Gnimu build are described in the [main README's Configu
 | `DISPLAY_REFRESH_INTERVAL_MS`, `DISPLAY_SLICE_INTERVAL_MS`, `DISPLAY_CHUNK_TILES_W` | Redraw cadence (1 Hz) and the metered chunk-at-a-time write that keeps a full frame's I2C cost off any single `loop()` pass. |
 | `DISPLAY_SHIFT_INTERVAL_MS`, `DISPLAY_SHIFT_MAX`, `DISPLAY_LAYOUT_W/H` | Burn-in mitigation: the layout is inset by `DISPLAY_SHIFT_MAX` px and walks within that margin every 5 minutes. |
 | `DISPLAY_CONTRAST` | 0–255; full scale by default for daylight readability. |
-| `LED_ENABLED` | **`0` in this variant** — the display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
-| `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`** — on this board `A4` *is* `PIN_WIRE_SDA`, which the display needs. |
+| `LED_ENABLED` | **`0` in this variant**. The display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
+| `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`**. On this board `A4` is `PIN_WIRE_SDA`, which the display needs. |
 
 ---
 
 ## Battery & power
 
-Unchanged from [Gnimu nRF52840][0] — same state machine, same low-voltage cutoff, similar estimated runtime. The one addition: both routes into DEEP_SLEEP (at runtime and at boot) blank the panel with the SSD1306's `DISPLAYOFF` command first, because System OFF doesn't cut its 3V3 rail and it would otherwise stay lit on a stale frame. BATTERY_WAIT and CHARGE_ONLY deliberately keep the panel lit.
+Unchanged from [Gnimu nRF52840][0]. Same state machine, same low-voltage cutoff, similar estimated runtime. The one addition: both routes into DEEP_SLEEP (at runtime and at boot) blank the panel with the SSD1306's `DISPLAYOFF` command first, because System OFF doesn't cut its 3V3 rail and it would otherwise stay lit on a stale frame. BATTERY_WAIT and CHARGE_ONLY deliberately keep the panel lit.
 
 ---
 
 ## Usage
 
-Follows [Gnimu nRF52840][0] — charge the cell, slide the switch on, let the GNSS acquire, then connect following the [main README's Connecting steps](../../README.md#connecting) — with one difference: **status comes from the display, not the RGB LED.**
+Follows [Gnimu nRF52840][0] with one difference: **status comes from the display, not the RGB LED.**
 
-The screen shows what state the device is in, whether BLE is advertising or connected, battery percentage with a charging bolt, and GNSS quality (satellites, fix type, pDOP, horizontal accuracy, PVT rate). `BATTERY_WAIT` — switch off while USB is plugged in — takes over the whole screen with a `Switch is OFF` alert.
+The screen shows what state the device is in, whether BLE is advertising or connected, battery percentage with a charging bolt, and GNSS quality (satellites, fix type, pDOP, horizontal accuracy, PVT rate). `BATTERY_WAIT` takes over the whole screen with a `Switch is OFF` alert.
 
 The **onboard RGB LED stays dark**, since the enclosure puts it where you can't see it and the display says more. It comes back automatically as a fallback if no panel is detected at boot, so a display or wiring failure still leaves you with the LED signalling rather than a device that looks dead. Set `LED_ENABLED` to `1` in [`config.h`][config] to keep the LED active alongside the display for bench work.
 
@@ -140,9 +140,7 @@ For everything not display-related, see the [main README's Troubleshooting table
 
 - [`tools/imu_calibration`](../tools/nRF52840-OLED/imu_calibration/imu_calibration.ino) — per-chip IMU zero-point offsets, this tree's own copy. Warms up until the die temperature plateaus, then runs repeating 10000-sample sessions a minute apart, each gated on a stability check and appended to internal flash; press any key and then `a` to aggregate the run into six `#define`-formatted lines. **Those no longer feed `config.h`** — the six `IMU_*_OFFSET_*` defines were removed when `g_imu_trim` landed, and the firmware now learns the same correction at runtime; the sketch is kept as a bench diagnostic (see [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md)). The measurement core is byte-identical to the [base tree's copy](../tools/nRF52840/imu_calibration/imu_calibration.ino), so results from the two are directly comparable. What differs is this variant's own settings baked in — the panel is brought up as part of the thermal load the die settles against (production keeps it lit), which also makes the run readable with **no USB attached**. Requires **u8g2**.
 
-The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
-
-`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `mG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
+The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here.
 
 [License-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
 [Platform-shield]: https://img.shields.io/badge/platform-nRF52840-00A9CE.svg

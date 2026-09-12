@@ -16,7 +16,7 @@ This repository holds the ESP32-based version of Gnimu. This was the first varia
 ```mermaid
 flowchart LR
     GNSS["u-blox GNSS module"] -- "UART · 115200 baud" --> ESP32["ESP32"]
-    IMU["accel + gyro"] -- "I²C" --> ESP32
+    IMU["IMU"] -- "I²C" --> ESP32
     ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
 ```
 
@@ -71,7 +71,9 @@ flowchart LR
 | VCC         | VIN (5V pin) |
 | GND         | GND |
 
-**Status LED:** the onboard LED (GPIO2) blinks while waiting for a BLE connection and stays solid when a client is connected.
+**Power LED:** the onboard power LED is red when power is present.
+
+**Status LED:** the onboard programmable LED (GPIO2) blinks while waiting for a BLE connection and stays solid when a client is connected.
 
 > Pin assignments for the GNSS UART and the LED are configurable in [`config.h`](config.h). The IMU uses the ESP32's default I²C pins.
 
@@ -154,7 +156,7 @@ Settings live in [`config.h`](config.h). Those shared by every Gnimu build are d
 | Setting | Purpose |
 |---------|---------|
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `LED_ONBOARD_PIN` | Hardware pin assignments. |
-| `IMU_ENABLED` | `1` if an MPU-6050 is fitted, `0` to build without one. With `0` the IMU fields read zero, trim never runs, and the Adafruit MPU6050 library isn't needed to build. GNSS, BLE and lap timing are unaffected. |
+| `IMU_ENABLED` | `1` if an MPU-6050 is fitted, `0` to build without one. With `0` the IMU fields read zero, trim never runs, and the Adafruit MPU6050 library isn't needed to build. GNSS and BLE are unaffected. |
 | `IMU_I2C_ADDRESS` | The MPU-6050's I2C address: `0x68` with its AD0 pin low (the usual breakout default), `0x69` with AD0 high. Pointing it at the wrong one is also a safe way to rehearse a missing IMU: the device logs `❌ IMU not found` and carries on. |
 | `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see [GNSS module considerations](../../README.md#gnss-module-considerations). |

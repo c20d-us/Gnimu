@@ -108,7 +108,7 @@ The advertised BLE identity and data streaming protocol stay exactly the same fo
 ### Logic Topology
 ```mermaid
 flowchart LR
-    IMU["onboard LSM6DS3TR-C"] -- "I²C to Wire1" --> XIAO["Seeed XIAO nRF52840 Sense"]
+    IMU["Onboard LSM6DS3TR-C IMU"] -- "I²C to Wire1" --> XIAO["Seeed XIAO nRF52840 Sense"]
     GNSS["u-blox M10 GNSS"] -- "D7 to Tx" --> XIAO
     XIAO -- "D6 to Rx" --> GNSS
     VDIV["510kΩ+510kΩ Voltage Divider"] -- "to A4" --> XIAO
@@ -223,12 +223,12 @@ Settings live in [`config.h`][config]. Those shared by every Gnimu build are des
 | `IMU_ENABLED` | Set automatically from the board selected in the IDE: `1` for the XIAO nRF52840 Sense (which has the onboard IMU), `0` for the plain XIAO nRF52840. With `0` the IMU fields read zero, trim never runs, and the Seeed LSM6DS3 library isn't needed to build. To override, replace the block with a plain `#define`. |
 | `BLE_TX_POWER_ADV_DBM`, `BLE_TX_POWER_CONN_DBM` | BLE transmit power in **dBm** while advertising vs connected (both default `-16`). **Lower = quieter radio = better GNSS lock** — see [GNSS module considerations](../../README.md#gnss-module-considerations). |
 | `BATTERY_CUTOFF_V`, `BATTERY_WARN_V`, `BATTERY_CRITICAL_V`, `BATTERY_FULL_V`, `BATTERY_DISCHARGE_CURVE`, `BATTERY_FAST_CHARGE` | Low-voltage cutoff, amber-warn and red-critical LED thresholds, "fully charged" LED threshold, the LiPo voltage→percent curve, and fast-charge select. |
-| `BATTERY_POLL_INTERVAL_MS`, `BATTERY_SAMPLE_COUNT`, `BATTERY_SAMPLE_SPACING_US`, `SAADC_TACQ_US`, `BATTERY_EMA_ALPHA` | Non-blocking VBAT sampler cadence, samples per run, pacing between reads, the SAADC acquisition-time setting (40 µs is required for the XIAO's ~338 kΩ VBAT divider and the ~255 kΩ switch-sense divider), and the display-voltage smoothing factor. |
+| `BATTERY_POLL_INTERVAL_MS`, `BATTERY_SAMPLE_COUNT`, `BATTERY_SAMPLE_SPACING_US`, `SAADC_TACQ_US`, `BATTERY_EMA_ALPHA` | Non-blocking VBAT sampler cadence, samples per run, pacing between reads, the SAADC acquisition-time setting (40µs is required for the XIAO's ~338kΩ VBAT divider and the ~255kΩ switch-sense divider), and the display-voltage smoothing factor. |
 | `POWER_SWITCH_SENSE_PIN`, `POWER_SWITCH_OFF_THRESHOLD_MV` | Slide-switch position sense (`A4` divider) — reads > threshold = switch OFF = BATTERY_WAIT. |
 | `STATE_CHARGE_ONLY_ON_USB` | `1` (default) auto-enters CHARGE_ONLY on USB plug-in so the charger can top the cell up at full current; `0` stays in RUNNING while plugged in (for bench development). |
-| `STATE_IDLE_TIMEOUT_MIN` | Minutes on battery with no BLE client **subscribed** (a bare connection does not count) before RUNNING → DEEP_SLEEP. Default 240 (4 h). The clock stands still on USB power. |
+| `STATE_IDLE_TIMEOUT_MIN` | Minutes on battery with no BLE client **subscribed** (a bare connection does not count) before RUNNING → DEEP_SLEEP. Default 240 (4h). The clock stands still on USB power. |
 | `LED_BATTERY_WAIT_BLINK_MS`, `LED_BLINK_INTERVAL_MS` | Rapid-red blink half-period for BATTERY_WAIT; standard blink half-period for the other states. |
-| `LOG_ENABLED` | The shared behavior is in the main README. Specific to this board: `0` also compiles out `Serial.begin()` and the 3 s USB-CDC enumeration wait in `setup()`, so a silent build boots straight through without waiting on a host that will never open the port. Turn logging off for production firmware where you don't need diagnostics, as it slightly decreases loop latency to ensure rock-solid 25Hz operation. |
+| `LOG_ENABLED` | The shared behavior is in the main README. Specific to this board: `0` also compiles out `Serial.begin()` and the 3s USB-CDC enumeration wait in `setup()`, so a silent build boots straight through without waiting on a host that will never open the port. Turn logging off for production firmware where you don't need diagnostics, as it slightly decreases loop latency to ensure rock-solid 25Hz operation. |
 
 ---
 
@@ -241,13 +241,13 @@ Settings live in [`config.h`][config]. Those shared by every Gnimu build are des
 - **Plugging in USB with the switch ON auto-enters CHARGE_ONLY** — the LED continues to signal charging (green blink → solid green when full) but GNSS/IMU are held off and BLE stops advertising, so all available current goes to charging. Unplug USB or flip the switch off to leave the state (both trigger a reset back through the boot classifier). If you want the device to keep streaming/serving BLE while plugged in, set `STATE_CHARGE_ONLY_ON_USB` to `0` in `config.h`.
 - **With the switch OFF and USB plugged in, the device is in BATTERY_WAIT** — the LED blinks **rapid red** as a "check the switch" signal and no peripherals are powered up. Flipping the switch back on resets the device into normal operation. Without the switch on, no charging occurs (the switch is inline with the battery+ path). Switch position is detected via a hardware switch-sense line. The slide switch's spare throw feeds a 510kΩ / 510kΩ divider to pin `A4`, giving a load- and SoC-independent signal that survives while the device is actively streaming.
 
-### Estimated runtime (900 mAh cell)
+### Estimated runtime (900mAh cell)
 
 | Scenario | Estimate |
 |---|---|
-| Continuous RUNNING (BLE connected, GNSS fixing, streaming) | **16+ hours** |
-| Switch ON, unplugged (no app subscribed) | **4h at RUNNING draw**, then self-suspends to DEEP_SLEEP: **months++** |
-| Switch OFF, unplugged | **Years** — standby loss is dominated by the battery's own self-discharge, not the firmware or circuit. |
+| Switch ON, app subscribed, streaming data | **16+ hours** |
+| Switch ON, no app subscribed | **4h advertising**, then suspends to DEEP_SLEEP: **months** |
+| Switch OFF | **Years.** Standby loss is dominated by the battery's own self-discharge, not the firmware or circuit. |
 
 ---
 
@@ -277,9 +277,9 @@ See the [main README's Troubleshooting table](../../README.md#troubleshooting) f
 
 | Symptom | Things to check |
 |---|---|
-| LED blinks **rapid red** and nothing else works | The slide switch is **OFF** while USB is connected — the device is in BATTERY_WAIT (see [Battery & power](#battery--power)). Flip the switch on with a battery connected to boot normally. |
-| Device is plugged in + switch ON but doesn't appear in BLE scans / won't accept a connection | With default settings (`STATE_CHARGE_ONLY_ON_USB = 1`) plugging in auto-enters CHARGE_ONLY — BLE is disconnected and advertising is stopped so the charger can top the cell up at full current. Unplug USB to return to RUNNING. If you need BLE while plugged in (bench development), set `STATE_CHARGE_ONLY_ON_USB = 0` in `config.h` and reflash. |
-| Device does nothing at all (no LED, no serial activity) when plugged into USB | Check that a charged battery is actually connected — the slide switch alone doesn't power the MCU from USB unless VBUS is also present. Confirm the USB cable/port carries data, not just power. |
+| LED blinks **rapid red** and nothing else works | The slide switch is **OFF** while USB is connected. The device is in BATTERY_WAIT (see [Battery & power](#battery--power)). Flip the switch on to charge. |
+| Device is plugged in + switch ON but doesn't appear in BLE scans / won't accept a connection | With default settings (`STATE_CHARGE_ONLY_ON_USB = 1`) plugging in auto-enters CHARGE_ONLY. BLE is disconnected and advertising is stopped so the charger can top the cell up at full current. Unplug USB to return to RUNNING. If you need BLE while plugged in (bench development), set `STATE_CHARGE_ONLY_ON_USB = 0` in `config.h` and reflash. |
+| Device does nothing at all (no LED, no serial activity) when plugged into USB | Check that a charged battery is actually connected. The slide switch alone doesn't power the MCU from USB unless VBUS is also present. Confirm the USB cable/port carries data, not just power. |
 | `❌ IMU not found` | Confirm that you have a **"Sense"** XIAO (the plain XIAO has no IMU); reflash. |
 | `❌ u-blox GNSS not detected` | Beyond the checks in the main README: measure the TPS63020's 3.3V output, and confirm its EN pin is being driven high. |
 | `exec: "python"` compile error (macOS) | Apply the `python`→`python3` `platform.txt` fix (see [Software & dependencies](#software--dependencies)). |
