@@ -59,11 +59,9 @@ void ledUpdate() {
     return;
   }
 
-  // RUNNING / LIGHT_SLEEP: existing priority stack, with LIGHT_SLEEP's slow
-  // blue blink taking the place of the connected/advertising tier. A
-  // battery/charge condition still always wins regardless of state.
-  // Priority: charge state (while on USB) > critical > warn > LIGHT_SLEEP blink
-  // > connected > advertising.
+  // RUNNING: a battery/charge condition always wins.
+  // Priority: charge state (while on USB) > critical > warn > connected >
+  // advertising.
   // Colors: blue = BLE, green = charge, amber = warn, red = critical.
   const BatteryStatus bat = batteryGetStatus();
   const bool blinkOn = (millis() / LED_BLINK_INTERVAL_MS) % 2 == 0;
@@ -75,13 +73,6 @@ void ledUpdate() {
     setLed(blinkOn, false, false); // red blink - critical battery
   } else if (bat.warn) {
     setLed(blinkOn, blinkOn, false); // amber blink - low-battery warning
-  } else if (st == STATE_LIGHT_SLEEP) {
-    // Short on, long off
-    static const unsigned long lightSleepCycleMs =
-        LED_LIGHT_SLEEP_BLINK_ON_MS + LED_LIGHT_SLEEP_BLINK_OFF_MS;
-    const bool lightSleepBlinkOn =
-        (millis() % lightSleepCycleMs) < LED_LIGHT_SLEEP_BLINK_ON_MS;
-    setLed(false, false, lightSleepBlinkOn);
   } else if (bleIsConnected()) {
     setLed(false, false, true); // blue steady - connected
   } else {

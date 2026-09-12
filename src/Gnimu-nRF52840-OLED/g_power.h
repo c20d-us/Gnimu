@@ -22,7 +22,8 @@
 //
 // Owns the primitives the state machine (g_state) actuates:
 //   - USB/VBUS presence
-//   - Slide-switch position via the A1 divider (load-independent presence)
+//   - Slide-switch position via the POWER_SWITCH_SENSE_PIN divider
+//     (load-independent presence; the pin differs per board - see config.h)
 //   - GNSS EN + TX drive (rail on/off + phantom back-feed prevention)
 //   - IMU power pin drive
 //   - LED pin drive when g_led isn't yet initialized (boot / halt)
@@ -44,10 +45,36 @@ void powerBegin();
 bool powerUsbPresent();
 
 // True when the slide switch is ON (battery is physically in the circuit).
-// Reads the A1 divider tap; below POWER_SWITCH_OFF_THRESHOLD_MV = ON.
-// Internally throttled + denoised (dummy read + averaged burst, refreshed at
-// most every ~50 ms) to guard against SAADC channel-switch "ghost" readings
-// from the shared VBAT pin - safe to call every loop().
+// Reads the POWER_SWITCH_SENSE_PIN divider tap; below
+// POWER_SWITCH_OFF_THRESHOLD_MV = ON.
+//
+// Throttled to POWER_SWITCH_POLL_INTERVAL_MS - reads in between return the
+// cache, so the per-loop cost is a compare. Safe to call every loop().
+//
+// The refresh is ONE unaveraged analogRead(), deliberately. An earlier version
+// of this comment promised a dummy read plus an averaged burst to guard against
+// SAADC channel-switch "ghost" readings from the shared VBAT pin; no such code
+// ever existed here, and none is needed. Three things carry it instead:
+//
+//   1. MARGIN, which does nearly all the work. The tap reads ~0mV with the
+//      switch ON and >=1675mV OFF (510k/510k at the 3.35V discharge floor),
+//      against an 800mV threshold - 800mV and 875mV of headroom. A ghost would
+//      have to move the reading by ~28% of the 3000mV reference to flip the
+//      decision. config.h static_asserts this margin so the argument cannot
+//      rot the way the old comment did.
+//   2. TACQ, which is the REAL high-Z mitigation and is genuinely implemented:
+//      powerBegin() calls analogSampleTime(SAADC_TACQ_US) at 40us for the
+//      divider's ~255k source impedance. Settling is handled by acquisition
+//      time, not by discarding reads.
+//   3. STATE_SWITCH_OFF_DEBOUNCE_MS, the second line, covering any single bad
+//      read before it can route the device to BATTERY_WAIT.
+//
+// Worth knowing about (2) and (3): BATTERY_POLL_INTERVAL_MS and
+// POWER_SWITCH_POLL_INTERVAL_MS are exactly commensurate (250 / 50), both off
+// millis(), so the two channel reads CAN phase-lock. A systematic offset would
+// not be averaged away by a debounce that only covers uncorrelated bad reads.
+// That is the strongest form of the ghost argument, and margin still answers
+// it - but it is why the margin, not the debounce, is the load-bearing part.
 bool powerSwitchOn();
 
 // Drive every peripheral control pin to its safe held-off state without
@@ -61,15 +88,6 @@ void powerHoldPeripheralsOff();
 // powerHoldPeripheralsOff(). Call before gnssBegin() when entering RUNNING.
 // imuBegin() and Serial1.begin() reclaim their own pins.
 void powerGnssRailOn();
-
-// Cut the GNSS rail (EN low) and idle TX low, WITHOUT touching IMU/LED -
-// unlike powerHoldPeripheralsOff(), which is a blanket held-off state for
-// BATTERY_WAIT/DEEP_SLEEP. Used for LIGHT_SLEEP's GNSS-only backup->EN-cut
-// escalation (STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN), where IMU wake-detect and
-// BLE must stay alive. Caller must gnssEnd() first (releases Serial1's
-// ownership of TX) - same UART-vs-GPIO ordering rule as
-// powerHoldPeripheralsOff().
-void powerGnssRailOff();
 
 // Enter System OFF (single-digit uA deep sleep): print, hold peripherals off,
 // then sd_power_system_off(). Does not return; recovery is a hard reset

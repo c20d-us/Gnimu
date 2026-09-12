@@ -201,8 +201,3 @@ bool batteryCutoffRequested() {
     return false;
   return (millis() - belowCutoffSinceMs) >= BATTERY_CUTOFF_DEBOUNCE_MS;
 }
-
-uint8_t batteryProtocolByte() {
-  const uint8_t percent = status.percent > 100 ? 100 : status.percent;
-  return (status.charging ? 0x80 : 0x00) | (percent & 0x7F);
-}

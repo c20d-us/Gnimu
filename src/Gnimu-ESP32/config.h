@@ -27,7 +27,14 @@
 // GNSS, BLE, LED, Logging, Battery, Protocol), in the same order in both
 // sections. Every define is prefixed with the subsystem it belongs to, and
 // every value that carries a unit is suffixed with it (_MS, _HZ, _G, _DPS,
-// _MPS2, _RADPS, _DEG, _BYTES, _PERCENT, _PIN).
+// _MPS, _DEG, _BYTES, _PERCENT, _PIN).
+
+// IMU TUNING IS NOT IN THIS FILE. The sample interval, filter smoothing,
+// transient thresholds and runtime-trim values are the same on every board, so
+// they live in g_imu_tuning.h, which check_common.sh keeps identical across all
+// three trees. What stays here is what really differs per board: whether an
+// IMU is fitted, its address, pins, ranges and rates, and how it is mounted.
+#include "g_imu_tuning.h"
 
 // ============================================================================
 // ============================================================================
@@ -61,7 +68,20 @@
 // --- IMU (MPU-6050) ---
 // ----------------------------------------------------------------------------
 
-#define IMU_SAMPLE_INTERVAL_MS 10 // 10 == 100Hz sample rate
+// Is an IMU fitted at all? It is optional: RaceChrono never uses IMU data, and
+// the RaceBox protocol works without it (it reports zero g), so an ESP32 +
+// GNSS build with no MPU-6050 is a legitimate, cheaper device. With 0, the
+// MPU-6050 driver compiles to a stub - so the Adafruit MPU6050 library is not
+// needed to build at all - the IMU fields read zero exactly as if the IMU had
+// failed, trim never runs, and the log says "not fitted" rather than "not
+// found". Set by hand: the MPU-6050 is an external part, so nothing about the
+// board says whether it is wired in.
+#define IMU_ENABLED 1
+
+// I2C address of the MPU-6050: 0x68 with its AD0 pin low (the common breakout
+// default), 0x69 with AD0 high. Also a clean way to rehearse a missing IMU on
+// a board where it is soldered in: point this at the address nothing answers.
+#define IMU_I2C_ADDRESS 0x68
 
 // Sensor full-scale ranges and the built-in low-pass bandwidth
 // (Uses Adafruit MPU6050 enum tokens)
@@ -77,155 +97,13 @@
 //
 // The default is NOT 400kHz and has to be set explicitly. Wire.begin() leaves
 // the ESP32 bus at 100kHz; Adafruit_BusIO exposes setSpeed() but the MPU-6050
-// library never calls it, so nothing raises it on its own. g_imu.cpp applies
-// this AFTER myIMU.begin(). begin() brings the bus up and would overwrite any
+// library never calls it, so nothing raises it on its own. The MPU-6050
+// driver (g_imu_mpu6050.cpp) applies this AFTER myIMU.begin(). begin() brings the bus up and would overwrite any
 // earlier setting.
 #define IMU_I2C_CLOCK_HZ 400000
 
-// ImuAxis smoothing rates and transient thresholds.
-// The deviation (in raw sensor units - m/s^2 for accel, rad/s for gyro) a
-// window's peak must exceed before it gets blended into the transmitted value
-// instead of the plain EMA baseline.
-//
-// The ACCEL values carry over the tuning done on the nRF52840 build against 13
-// autocross runs cross-checked with the GNSS solution; see that config.h for
-// the full reasoning. They have NOT been re-measured on this board, which
-// carries a different IMU (MPU6050, not LSM6DS3TR-C). The GYRO values are
-// untested placeholders on every build.
-//
-// The short version: the threshold must sit ABOVE the car's vibration floor.
-// At the original 2.0 m/s^2 it sat below it, so the blend fired on nearly every
-// transmit window and inflated logged peaks by up to +105%. The two settings
-// are NOT independent - a lower alpha makes the EMA baseline lag further, which
-// increases |raw - smoothedValue_| and makes the blend fire MORE, so the
-// threshold has to be raised first. The alpha is also the anti-alias filter for
-// the 100Hz -> transmit-rate decimation; 0.09 puts its corner at ~1.5Hz.
-//
-// 14.7 m/s^2 (~1.5g) is a HOLDING value matching the nRF52840 build, chosen for
-// a mount too springy to separate vibration from genuine events. It parks the
-// blend out of reach, leaving the plain EMA baseline. Re-tune after remounting.
-#define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~1.5Hz
-#define IMU_GYRO_ALPHA 0.09f  // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~3.6Hz
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 99.0f   // ~1.5g
-#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 9999.0f // ~28.6 deg/s
-
-// Runtime IMU trim (levelling + gyro de-bias)
-//
-// Learned while the vehicle is confirmed stationary, frozen while it moves.
-// Corrects a slightly off-level mount and the gyro zero point without any
-// per-board calibration step. Design record: docs/imu-trim-design.md.
-//
-// These are per-DESIGN values, not per-board: identical on every unit. Only
-// IMU_GRAVITY_NATIVE and IMU_TRIM_GYRO_VAR_MAX differ from the nRF52840
-// trees, and only because the MPU6050 driver reports m/s^2 and rad/s where
-// the LSM6DS3 reports g and deg/s.
-
-// 1 g expressed in this variant's native accel units. The trim module is
-// otherwise unit-agnostic; this is the single magnitude it needs.
-#define IMU_GRAVITY_NATIVE 9.80665f // m/s^2, the MPU6050 driver's native unit
-
-// How long every stillness criterion must hold CONTINUOUSLY before a window
-// opens.
-//
-// Sensor noise is NOT what sets this: at ~90ug/sqrt(Hz) and 50Hz bandwidth,
-// half a second of averaging lands under 0.1mg, two orders finer than anything
-// relevant.
-//
-// Nor is it what keeps a sloped staging lane out of the calibration - locking
-// after the first qualifying window does that, because the first stop of a
-// session is the paddock. Selection happens by ORDERING, not by duration.
-//
-// What the length actually buys is a backstop for when that ordering does not
-// hold: the device is switched on as the car leaves the paddock, so the first
-// qualifying stop is a staging lane or a red light on a cambered road. 30s
-// clears a rolling pause or a stop sign. It cannot fix the case properly -
-// only powering the device on where it is parked does that.
-#define IMU_TRIM_QUALIFY_MS 30000
-
-// Averaging block length once the window is open. A long stop yields a steady
-// run of blocks rather than re-serving the qualification delay between each.
-#define IMU_TRIM_BLOCK_MS 1000
-
-// Blocks averaged into the orientation before it LOCKS for the rest of the
-// power cycle. 5 blocks = 5s of data on top of the qualification wait.
-//
-// Not a noise requirement - the gate already rejects any block containing a
-// disturbance, and one block is far more than enough for precision. This is
-// margin against a sub-threshold disturbance (someone leaning on the car)
-// biasing a measurement that is never revisited.
-#define IMU_TRIM_LOCK_BLOCKS 5
-
-// GNSS ground speed below which we may be stationary.
-#define IMU_TRIM_SPEED_MAX_MPS 0.5f
-
-// |a| PLAUSIBILITY band, as a fraction of gravity - unit-free, hence no
-// per-variant value.
-//
-// Deliberately WIDE, and deliberately not a tight "is |a| exactly 1 g" test.
-// A tight band has the same circularity that made us gate the gyro on variance
-// rather than magnitude: |a| at rest is contaminated by the chip's own zero-g
-// bias, which is exactly what the trim exists to remove, so a tight band holds
-// the gate shut against the very measurement that would fix it.
-//
-// That is not hypothetical. The MPU-6050 on the ESP32 build has -69 mg on Z;
-// once its hand-measured offset was deleted it read 0.925 g at rest, failed a
-// 4% band on every single sample, and could never converge (2026-09-09).
-//
-// This band's only job is catching something gross - a misconfigured
-// IMU_GRAVITY_NATIVE (wrong by ~9.8x), a dead axis, a failed read. Motion is
-// caught by IMU_TRIM_ACCEL_VAR_MAX and the GNSS speed gate, not by this.
-#define IMU_TRIM_ACCEL_SANITY_TOL 0.25f
-
-// Per-axis accel STANDARD DEVIATION ceiling, in native units - the real
-// stillness test for the accelerometer, and bias-immune by construction in the
-// same way the gyro's is.
-//
-// Measured: stationary engine-idling in a 2018 M2 gives per-axis sd of 6-10 mg;
-// driving gives 70-118 mg. This sits ~4x above idle and ~2x below driving, and
-// it is the secondary check anyway - GNSS speed is the primary motion gate.
-#define IMU_TRIM_ACCEL_VAR_MAX 0.392f // m/s^2, == 0.04 g
-
-// Per-axis gyro STANDARD DEVIATION ceiling, in native units. Variance, not
-// magnitude: gating on |gyro| would be circular, since a chip whose resting
-// bias exceeds the threshold would hold the gate shut against the very
-// measurement that would correct it (one board here sits at -4 deg/s).
-//
-// MEASURED, not guessed. Raw stationary capture in a 2018 M2 (2026-09-08):
-// cold idle 0.62 deg/s, warm idle 0.37 deg/s, driving 3.6-4.2 deg/s. The
-// original 0.5 blocked a cold idle entirely - trim would never converge if the
-// logger was switched on after starting the car, which is the natural order.
-// 1.0 clears cold idle by 1.6x and still sits 4.2x under driving.
-//
-// Allowing an idling engine is safe, and that was checked rather than assumed:
-// simulating the real 5-block capture on that data gives 0.019 deg
-// repeatability at cold idle and 0.019 deg at warm idle - identical despite
-// 68% more vibration, because the block mean removes a zero-mean signal.
-// Against 3.2 deg of ground-slope difference measured between two ordinary
-// parking spots, vibration is ~150x down and simply not in the error budget.
-//
-// n=1 vehicle, and a reasonably smooth six. A four-cylinder or a diesel could
-// sit well above this; if trim will not converge in a rougher car, start here.
-#define IMU_TRIM_GYRO_VAR_MAX 0.017453f // rad/s, == 1.0 deg/s
-
-// Largest tilt this module will correct. Beyond it the rotation is REFUSED
-// rather than clamped and imuTrimConverged() stays false, but the measured
-// angle is still reported so a mounting guard can see it. Past ~15 degrees the
-// user has most likely made a mistake rather than a choice.
-#define IMU_TRIM_MAX_TILT_DEG 15.0f
-
-// Demand a valid 3D GNSS fix before trimming at all. Closes the hole in
-// the gate: constant-velocity cruise on smooth pavement reads ~1g magnitude
-// with near-zero gyro variance and is otherwise indistinguishable from parked.
-// The cold-start window this costs is not scarce - powering on parked gives
-// minutes of stillness after first fix. SET TO 0 FOR BENCH TESTING, which
-// never gets a fix indoors.
-#define IMU_TRIM_REQUIRE_FIX 1
-
-// How long the last PVT epoch may go without advancing before its speed stops
-// counting as valid. gnssLatestPvt() returns the last epoch however stale, so
-// a receiver that dies mid-drive would otherwise freeze at a stale 0 m/s and
-// let the gate pass while moving.
-#define IMU_TRIM_PVT_STALE_MS 1000
+// Sample interval, smoothing, transient thresholds and runtime trim: shared by
+// every board, in g_imu_tuning.h (included at the top of this file).
 
 // Axis orientation (installed mounting)
 //
@@ -251,7 +129,7 @@
 //   ZYX     2, 1, 0       odd      odd  (1 or 3)
 //
 // TO DERIVE A NEW MAP: hold the assembled unit in its installed orientation and
-// read the 1 Hz serial milliG line (LOG must be enabled):
+// read the 1 Hz serial mG line (LOG must be enabled):
 //   1. At rest, the axis reading ~+/-1000 is vehicle-vertical; sign gives
 //      up vs down.
 //   2. Raise the forward end - the axis going positive is vehicle X.
@@ -313,7 +191,6 @@
 //   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
 #define BLE_TX_POWER ESP_PWR_LVL_N12
 
-#define BLE_MTU_BYTES 128            // must be >= 91 to carry an 88-byte notify
 #define BLE_READVERTISE_DELAY_MS 500 // delay before re-advertising
 
 // How long after a client connects before bleIsConnected() reports true.
@@ -340,6 +217,23 @@
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
+// ----------------------------------------------------------------------------
+// --- Protocol ---
+// ----------------------------------------------------------------------------
+
+// Which telemetry protocol this build emits. Values are the PROTO_* ids in
+// g_protocol.h; g_protocol_active.h resolves the choice and is the only place
+// that has to know about a new protocol.
+//
+// Compile-time by design: the unselected protocols are not linked, so they
+// cost no flash, and there is no persistence or switching UI to build. The
+// trade is that changing protocol needs a reflash. See
+// docs/multiprotocol-design.md section 8.1.
+//
+// The protocol's own constants - identity strings, UUIDs, and the asserts that
+// validate them - live in g_proto_<name>.h, not here. See section 7.
+#define TELEMETRY_PROTOCOL PROTO_RACEBOX
+
 // ============================================================================
 // ============================================================================
 // SECTION 2: SUPPORTING CONSTANTS
@@ -352,10 +246,6 @@
 // ----------------------------------------------------------------------------
 // --- IMU (MPU-6050) ---
 // ----------------------------------------------------------------------------
-
-// Decimate the IMU stream down to the transmission rate. Derived from
-// GNSS_NAV_RATE_HZ so the two can't drift out of sync.
-#define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_NAV_RATE_HZ)
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -371,23 +261,34 @@
 #define BATTERY_HAS_GAUGE 0
 
 // ----------------------------------------------------------------------------
-// --- Protocol (RaceBox BLE protocol) ---
-// These match the RaceBox BLE protocol and should not be changed.
+// --- Protocol ---
 // ----------------------------------------------------------------------------
-
-#define RACEBOX_MODEL "RaceBox Mini"   // Compatibility requirement
-#define RACEBOX_MANUFACTURER "RaceBox" // Compatibility requirement
-#define RACEBOX_HARDWARE_VERSION "1"   // Compatibility requirement
-#define RACEBOX_FIRMWARE_VERSION "3.3" // Compatibility requirement
-#define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+//
+// The protocol's own constants - identity strings, service and characteristic
+// UUIDs, and the asserts validating them - live with the protocol, in
+// g_proto_<name>.h, NOT here. Two reasons:
+//
+//   1. They were byte-identical across all three variants but UNCHECKED,
+//      because config.h cannot join check_common.sh's common set (DEVICE_ID,
+//      pins and IMU ranges legitimately differ). Nothing prevented them
+//      drifting and silently breaking app compatibility.
+//   2. Validation that fires unconditionally here would force a build using a
+//      different protocol to keep dead RaceBox constants alive just to satisfy
+//      it.
+//
+// See docs/multiprotocol-design.md section 7.
 
 // ============================================================================
 // --- COMPILE-TIME VALIDATION ---
 // ============================================================================
 
 // Enforce device ID format: a 10-digit string with first digit 0-3.
+//
+// These rules are RaceBox APP constraints, so by rights they belong with the
+// protocol. They stay here because DEVICE_ID itself is per-variant config, and
+// g_proto_racebox.h must not include config.h - that dependency-freedom is what
+// makes the encoder host-testable. Validating the value where the value lives
+// is the lesser compromise.
 // DEVICE_ID is a string so leading zeros survive; these constexpr helpers let
 // us validate that string at compile time (C++ has no compile-time regex).
 namespace device_id {
@@ -409,33 +310,6 @@ static_assert(device_id::allDigits(DEVICE_ID),
 static_assert(DEVICE_ID[0] >= '0' && DEVICE_ID[0] <= '3',
               "ERROR: DEVICE_ID's first digit must be 0-3 (value below "
               "4000000000).");
-
-// Validate the three RaceBox protocol UUIDs are well-formed 8-4-4-4-12 hex
-// strings, the same way DEVICE_ID's format is checked above.
-namespace uuid_format {
-constexpr bool isHexDigit(char c) {
-  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-         (c >= 'A' && c <= 'F');
-}
-// Hyphens are required at positions 8, 13, 18, and 23; every other position
-// (of the required 36 total) must be a hex digit.
-constexpr bool isValid(const char *s, int i = 0) {
-  return i == 36 ? s[i] == '\0'
-         : (i == 8 || i == 13 || i == 18 || i == 23)
-             ? (s[i] == '-' && isValid(s, i + 1))
-             : (isHexDigit(s[i]) && isValid(s, i + 1));
-}
-} // namespace uuid_format
-
-static_assert(uuid_format::isValid(RACEBOX_SERVICE_UUID),
-              "ERROR: RACEBOX_SERVICE_UUID must be a standard 8-4-4-4-12 hex "
-              "UUID string.");
-static_assert(uuid_format::isValid(RACEBOX_CHARACTERISTIC_TX_UUID),
-              "ERROR: RACEBOX_CHARACTERISTIC_TX_UUID must be a standard "
-              "8-4-4-4-12 hex UUID string.");
-static_assert(uuid_format::isValid(RACEBOX_CHARACTERISTIC_RX_UUID),
-              "ERROR: RACEBOX_CHARACTERISTIC_RX_UUID must be a standard "
-              "8-4-4-4-12 hex UUID string.");
 
 // Enforce valid, distinct ESP32 GPIO numbers for the three assigned pins.
 static_assert(GNSS_RX_PIN >= 0 && GNSS_RX_PIN <= 39 && GNSS_TX_PIN >= 0 &&
@@ -467,40 +341,22 @@ static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
               "ERROR: GNSS_SV_MINELEV_DEG must be between 0 and 90 degrees.");
 
-// Enforce sane EMA alpha range
-static_assert(IMU_ACCEL_ALPHA > 0.0f && IMU_ACCEL_ALPHA <= 1.0f,
-              "ERROR: IMU_ACCEL_ALPHA must be in the range (0.0, 1.0]");
-static_assert(IMU_GYRO_ALPHA > 0.0f && IMU_GYRO_ALPHA <= 1.0f,
-              "ERROR: IMU_GYRO_ALPHA must be in the range (0.0, 1.0]");
-
-// Enforce positive transient thresholds (a zero/negative threshold would
-// disable transient blending entirely; see ImuAxis::read()).
-static_assert(
-    IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 > 0.0f,
-    "ERROR: IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 must be greater than 0.");
-static_assert(
-    IMU_GYRO_TRANSIENT_THRESHOLD_RADPS > 0.0f,
-    "ERROR: IMU_GYRO_TRANSIENT_THRESHOLD_RADPS must be greater than 0.");
-
-// Enforce a positive sample interval, and a transmit interval that's at
-// least as long as it. Otherwise a transmit window could contain zero fresh
-// samples, silently degrading ImuAxis's transient peak tracking to a plain
-// EMA with no warning.
-static_assert(IMU_SAMPLE_INTERVAL_MS > 0,
-              "ERROR: IMU_SAMPLE_INTERVAL_MS must be greater than 0.");
-static_assert(IMU_TRANSMIT_INTERVAL_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRANSMIT_INTERVAL_MS must be >= "
-              "IMU_SAMPLE_INTERVAL_MS so each transmit window contains at "
-              "least one fast sample for ImuAxis's transient peak tracking "
-              "to work.");
-
-// Enforce MTU large enough for an 88-byte notify plus the 3-byte ATT header,
-// and no larger than the maximum ATT MTU defined by the BLE spec.
-static_assert(BLE_MTU_BYTES >= 91,
-              "ERROR: BLE_MTU_BYTES must be >= 91 to carry an 88-byte notify.");
-static_assert(BLE_MTU_BYTES <= 517,
-              "ERROR: BLE_MTU_BYTES must be <= 517, the maximum ATT MTU "
-              "defined by the Bluetooth Low Energy spec.");
+// Enforce a GNSS epoch interval at least as long as the IMU sample interval.
+// Otherwise a transmit window could contain zero fresh samples, silently
+// degrading ImuAxis's transient peak tracking to a plain EMA with no warning.
+// Checked here rather than in g_imu_tuning.h because GNSS_NAV_RATE_HZ is a
+// per-board setting, and that file must not depend on one.
+//
+// The relationship used to be expressed against IMU_TRANSMIT_INTERVAL_MS, back
+// when decimation ran on its own timer. It is now driven directly by the GNSS
+// epoch (see imuLatchForEpoch()), so the real constraint is between the nav
+// rate and the sample rate - which is what this checks. At 20Hz nav and a 10ms
+// sample interval that is 5 samples per window.
+static_assert((1000 / GNSS_NAV_RATE_HZ) >= IMU_SAMPLE_INTERVAL_MS,
+              "ERROR: the GNSS epoch interval (1000 / GNSS_NAV_RATE_HZ) must "
+              "be >= IMU_SAMPLE_INTERVAL_MS, so each transmitted sample's "
+              "window contains at least one fresh IMU reading for ImuAxis's "
+              "transient peak tracking to work.");
 
 // Enforce positive timing intervals (a zero or negative value here would
 // either fire every loop() or, once implicitly converted to the unsigned
@@ -519,32 +375,13 @@ static_assert(LOG_STATS_INTERVAL_MS > 0,
 static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,
               "ERROR: LOG_ENABLED must be 0 or 1.");
 
-// Enforce each axis sign is a true sign, not a scale factor
-// --- Runtime IMU trim ---
-static_assert(IMU_GRAVITY_NATIVE > 0.0f,
-              "ERROR: IMU_GRAVITY_NATIVE must be greater than 0.");
-static_assert(IMU_TRIM_QUALIFY_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRIM_QUALIFY_MS must span at least one IMU sample.");
-static_assert(IMU_TRIM_BLOCK_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRIM_BLOCK_MS must span at least one IMU sample.");
-static_assert(IMU_TRIM_LOCK_BLOCKS >= 1,
-              "ERROR: IMU_TRIM_LOCK_BLOCKS must be at least 1.");
-static_assert(IMU_TRIM_SPEED_MAX_MPS > 0.0f,
-              "ERROR: IMU_TRIM_SPEED_MAX_MPS must be greater than 0.");
-static_assert(IMU_TRIM_ACCEL_SANITY_TOL > 0.0f &&
-                  IMU_TRIM_ACCEL_SANITY_TOL < 1.0f,
-              "ERROR: IMU_TRIM_ACCEL_SANITY_TOL must be in (0.0, 1.0).");
-static_assert(IMU_TRIM_ACCEL_VAR_MAX > 0.0f,
-              "ERROR: IMU_TRIM_ACCEL_VAR_MAX must be greater than 0.");
-static_assert(IMU_TRIM_GYRO_VAR_MAX > 0.0f,
-              "ERROR: IMU_TRIM_GYRO_VAR_MAX must be greater than 0.");
-// Kept well under 90 degrees: the rotation build is singular at 180, and the
-// small-angle regime is the whole design scope.
-static_assert(IMU_TRIM_MAX_TILT_DEG > 0.0f && IMU_TRIM_MAX_TILT_DEG < 60.0f,
-              "ERROR: IMU_TRIM_MAX_TILT_DEG must be in the range (0, 60).");
-static_assert(IMU_TRIM_PVT_STALE_MS > 0,
-              "ERROR: IMU_TRIM_PVT_STALE_MS must be greater than 0.");
+static_assert(IMU_ENABLED == 0 || IMU_ENABLED == 1,
+              "ERROR: IMU_ENABLED must be 0 or 1.");
+static_assert(IMU_I2C_ADDRESS == 0x68 || IMU_I2C_ADDRESS == 0x69,
+              "ERROR: IMU_I2C_ADDRESS must be 0x68 (AD0 low) or 0x69 (AD0 "
+              "high) - the only two addresses an MPU-6050 can have.");
 
+// Enforce each axis sign is a true sign, not a scale factor
 static_assert(IMU_AXIS_X_SIGN == 1.0f || IMU_AXIS_X_SIGN == -1.0f,
               "ERROR: IMU_AXIS_X_SIGN must be exactly +1.0f or -1.0f.");
 static_assert(IMU_AXIS_Y_SIGN == 1.0f || IMU_AXIS_Y_SIGN == -1.0f,

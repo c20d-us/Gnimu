@@ -66,7 +66,12 @@ void setup() {
     // Serial1.begin inside gnssBegin claims/reclaims D6/D7 as UART pins.
     // imuBegin drives its own power pin high.
     powerGnssRailOn();
-    gnssBegin();
+    // Return value deliberately not acted on: a receiver that did not answer
+    // leaves gnssIsUp() false, gnssPoll() a no-op and the stats line saying so.
+    // Bringing up IMU/BLE/telemetry anyway is the point - the loop must keep
+    // running so battery protection stays alive, and a device that still
+    // advertises and explains itself beats one that silently vanishes.
+    (void)gnssBegin();
     imuBegin();
     bleBegin();
     telemetryBegin();

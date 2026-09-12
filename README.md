@@ -31,6 +31,8 @@ This repo hosts three builds of the same concept, targeting different microcontr
 | Best for | A simple, always-plugged-in build | A portable, battery-powered build | Seeing fix quality, rate, and battery state without a receiver |
 |Build notes|Best bang-for-the-buck option. Easy build, cheap, rock-solid performance at 20Hz (GPS+Gal) or 25Hz (GPS only). Requires USB power source.|Simplest battery-powered option. Long battery life, solid performance. Slightly trickier build, but not hard. Could fit a slightly bigger LiPo.|"Advanced Beginner" mode. Trickiest build, but still not terribly hard. M100 Mini has slightly lower lock performance. If I were to do it again I'd skip the M100 Mini and use another M100-5883.|
 
+**The IMU is optional.** Position, speed, lap timing and everything else GNSS-based work without one; only g-force data needs it. So an ESP32 and GNSS module with no MPU-6050, or the plain (non-Sense) XIAO nRF52840, makes a cheaper device that is still fully useful. RaceBox-protocol apps simply see zero g. The nRF52840 builds switch the IMU off by themselves when you select the plain XIAO board in the IDE; on the ESP32, set `IMU_ENABLED 0` in `config.h`. Either way no IMU library is needed to build. What you give up: g-force data, the automatic self-levelling, and (on the nRF52840) waking from light sleep by motion — a connection from the app still wakes it.
+
 Start with the README for whichever hardware you're building (links at the top of the columns). Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
 
 ---
@@ -65,6 +67,21 @@ For what it's worth, the real RaceBox Mini handles this differently. The user ma
 
 ---
 
+## A note about privacy: this is an open location beacon
+
+Gnimu has to look exactly like a RaceBox Mini to the apps that talk to it, and a RaceBox Mini accepts connections from anyone. So there's no pairing, no password and no encryption: **any phone within Bluetooth range can connect and read your live position, 20 times a second.** It also advertises under a fixed name, so anyone scanning nearby can see it's there without connecting at all. That can't be locked down without breaking compatibility with the apps.
+
+When it's reachable:
+
+- **ESP32:** whenever it has power.
+- **nRF52840 builds:** while it's running, and for up to 4 hours after an app last received its data (4 hours with no app subscribed, running on the battery). After that it drops into deep sleep and stops advertising entirely.
+
+Two side effects of the same openness. On every build, only one phone can be connected at a time, so a stranger who connects first locks your app out until they leave. And on the nRF52840 builds, an app that is actually receiving the data keeps the device awake, so one left open (yours or anyone's) holds it at full power until the battery's low-voltage cutoff. A bare connection that never subscribes, such as a Bluetooth-scanner app, does not.
+
+**The slide switch is the only sure way to make it unreachable.** If you leave it mounted in a car, switch it off — or unplug the ESP32 build — when you park.
+
+---
+
 ## A note about obscure settings and latency tweaks
 
 I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M100 modules, in service of squeezing every last bit of performance and latency out of the Gnimu firmware builds. There are several places in the code where bus rates get tweaked, various features get turned on or off, and techniques are used to eliminate as much latency and blocking in the code as possible. I'm sure I've missed some opportunities somewhere, but if you see something odd in the code that makes you scratch your head and wonder, there is a high probably that it was done to ensure that the telemetry data flows as fast and (most importantly) as consistently as possible. This kind of device is not very useful if the data flow is inconsistent, so I've focused on consistent performance as a primary design goal.
@@ -75,7 +92,33 @@ I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M10
 
 ```
 docs/
+  architecture-modules.md
+                         Diagram: module dependencies and sharing scope
+  architecture-runtime.md
+                         Diagram: the path taken on each GNSS epoch
+  architecture-verification.md
+                         Diagram: how the encoder is proven correct
   imu-trim-design.md     Design record for the runtime mounting/gyro calibration
+  multiprotocol-design.md
+                         Design record for the protocol plug-in architecture
+  racechrono-ble-mapping.md
+                         RaceChrono DIY BLE reference + field mapping (research
+                         only - not implemented)
+test/
+  capture.py             Turns a Gnimu Monitor capture into golden test vectors
+  synthetic.py           Vectors for states the hardware cannot reach
+  synthetic.gc1          Those vectors, generated
+  harness.cpp            Runs the firmware encoder against the vectors
+  run_harness.sh         Builds and runs the harness
+  telemetry/             Runs the real g_telemetry.cpp on the host: the same
+                         vectors through buildSample(), rates, stats line
+  run_telemetry_harness.sh
+                         Builds and runs it for all three variants
+  imu/                   Runs the real IMU pipeline against fake sensors
+  run_imu_harness.sh     Builds and runs it for all three variants
+  gnss/                  Runs the real GNSS driver against a fake receiver:
+                         baud sweep, config sequence, epoch plumbing
+  run_gnss_harness.sh    Builds and runs it for all three variants
 images/
   ESP32/                 Build photos for the Gnimu ESP32 variant
   nRF52840/              Build photos for the Gnimu nRF52840 variant
@@ -96,7 +139,9 @@ Each sketch folder is named for its variant and contains the `.ino` of the same
 name, as the Arduino IDE requires. That also means the IDE's window title and
 tab name identify which variant you have open.
 
-Several modules are deliberately duplicated across the variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the others and run `src/tools/check_common.sh` to confirm they still match. The script covers all three variants; add any new sketch folder to its `VARIANTS` list or that copy goes unchecked.
+Several modules are deliberately duplicated across the variants and kept byte-identical rather than factored into a shared Arduino library, because those modules read each sketch's own `config.h`, which a library's sources cannot see — a library was built and rejected on exactly that point ([details](src/README.md#inside-a-variant-folder)). If you change one of the shared files, apply the same change to the others and run `src/tools/check_common.sh` to confirm they still match. The script also catches what you forget to tell it about: a file shared by two or more trees but on none of its lists, and a sketch folder missing from its `VARIANTS` list.
+
+The wire format is isolated in `g_proto_<name>.*`, so the packet layout can be changed — or a second protocol added — without touching the GNSS, IMU or BLE code. `test/run_harness.sh` compiles that encoder on the host and checks it against recorded golden vectors, which is how a change to it can be proven byte-identical before flashing anything. See [`docs/multiprotocol-design.md`](docs/multiprotocol-design.md).
 
 ---
 

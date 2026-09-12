@@ -70,3 +70,22 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Python (host-side test tooling under test/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Gnimu Monitor capture files and the vectors derived from them.
+#
+# These hold REAL GNSS fixes - committing them publishes the precise
+# coordinates of wherever the capture was taken. They are also large (a few
+# minutes at 20Hz is ~1MB) and personal to whoever recorded them.
+#
+# Keep captures and their vectors local. If a golden vector set is ever needed
+# as a committed test fixture, sanitize it first (offset the coordinates and
+# re-encode, so the packets stay self-consistent) rather than adding an
+# exception here.
+test/*.jsonl
+test/vectors*.gc1

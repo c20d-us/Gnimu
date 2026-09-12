@@ -17,6 +17,7 @@
 #pragma once
 #include "config.h"
 #include <Arduino.h>
+#include <stdio.h> // snprintf - LOG_PRINTF formats into its own buffer
 
 // ============================================================================
 // Logging shim. One-for-one macro replacements for Serial.print/println/
@@ -52,7 +53,33 @@
 // guard always takes the "connected" branch there and is a no-op, identical
 // to today's behavior. Safe to share verbatim across all three variants: real
 // benefit on the nRF52 boards, neutral elsewhere.
+//
+// LOG_PRINTF DOES NOT CALL Serial.printf(), deliberately (SEC-1). On the nRF52
+// core, Print::printf() formats into a 256-byte STACK buffer and then calls
+// write(buf, len) with vsnprintf's return - the length it WOULD have written.
+// Past 255 bytes that reads beyond the buffer and transmits adjacent stack
+// memory to the console; a negative return (an encoding error) becomes an
+// enormous size_t. LAT-3 found this on the stats line and bounded that one
+// line; this closes it for every line. LOG_PRINTF formats into its own
+// LOG_LINE_MAX buffer with snprintf and writes only what fits, so an over-long
+// line comes out CLIPPED, never as stack contents.
+//
+// Stack cost is unchanged on nRF, where Print::printf's own 256-byte buffer is
+// what this replaces. On ESP32 the buffer is bigger than Print::vprintf's
+// 64-byte local, but the ESP32's BLE callbacks log only with LOG_PRINTLN, so it
+// is only ever taken on the loop task's stack.
+//
+// A side effect worth knowing: snprintf carries a printf format attribute and
+// the nRF core's Print::printf does not, so nRF builds now check every
+// LOG_PRINTF's arguments against its format string - they never did before.
+// Remember that uint32_t is `long unsigned int` on BOTH toolchains (arm-none-
+// eabi and xtensa alike): pass it to %u only through an (unsigned int) cast.
 // ============================================================================
+
+// The longest line LOG_PRINTF will emit, including the terminating NUL.
+// Matches the nRF core's own printf buffer, which the 1Hz stats line - the
+// longest in the firmware - was already budgeted against (see g_telemetry.cpp).
+#define LOG_LINE_MAX 256
 
 #if LOG_ENABLED
 
@@ -67,10 +94,18 @@
       Serial.println(__VA_ARGS__);                                             \
   } while (0)
 // ##__VA_ARGS__ swallows the preceding comma when fmt is the only argument.
+// Bounded: see "LOG_PRINTF DOES NOT CALL Serial.printf()" above.
 #define LOG_PRINTF(fmt, ...)                                                   \
   do {                                                                         \
-    if (Serial)                                                                \
-      Serial.printf(fmt, ##__VA_ARGS__);                                       \
+    if (Serial) {                                                              \
+      char logLine_[LOG_LINE_MAX];                                             \
+      const int logLen_ = snprintf(logLine_, sizeof(logLine_), fmt,            \
+                                   ##__VA_ARGS__);                             \
+      if (logLen_ > 0)                                                         \
+        Serial.write((const uint8_t *)logLine_,                                \
+                     logLen_ < (int)sizeof(logLine_) ? (size_t)logLen_         \
+                                                     : sizeof(logLine_) - 1);  \
+    }                                                                          \
   } while (0)
 #define LOG_FLUSH()                                                            \
   do {                                                                         \

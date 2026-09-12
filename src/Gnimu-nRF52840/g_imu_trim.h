@@ -77,7 +77,8 @@
 // ============================================================================
 
 // Everything the trim needs to know about the variant it is running on. Built
-// by each variant's g_imu.cpp from its own config.h IMU_TRIM_* block.
+// by the shared IMU pipeline (g_imu.cpp, identical in every tree) from the
+// variant's own config.h IMU_TRIM_* block.
 //
 // UNITS: the module is unit-agnostic. accel values, gravityNative, and
 // gyroVarMax are all in whatever native units that variant's driver produces;
@@ -102,9 +103,8 @@ struct ImuTrimConfig {
 // is a no-op until the first stationary window closes.
 //
 // This is the ONLY thing that unlocks the orientation, and it runs from
-// imuBegin() alone - deliberately not from the LIGHT_SLEEP wake path, since
-// the mount has not changed across a sleep. In practice that means the
-// calibration is held until the device is powered off.
+// imuBegin() alone, so the calibration is held until the device is powered
+// off.
 //
 // Nothing is persisted across boots. A stored correction would only help when
 // powering on already in motion, but the case that makes a stored value

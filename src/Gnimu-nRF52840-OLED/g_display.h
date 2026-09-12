@@ -34,7 +34,6 @@
 //   CHARGE_ONLY   "Charging"/"Full" + battery         | cell voltage only - the
 //                 GNSS is held off in this state, so there is no fix data and
 //                 showing stale numbers would be actively misleading
-//   LIGHT_SLEEP   "Advertising" + battery             | sparse idle notice
 //   BATTERY_WAIT  (no status bar - the cell is switched out of circuit, so its
 //                 charge state is meaningless)        | full-screen alert
 //   DEEP_SLEEP    display off
@@ -69,10 +68,16 @@ void displayUpdate();
 // decide whether to act as a fallback indicator. See LED_ENABLED in config.h.
 bool displayIsPresent();
 
-// Blank the panel (SSD1306 DISPLAYOFF, ~10 uA) without cutting power. Call
-// before entering a state where the MCU stops servicing the display -
-// specifically before powerEnterDeepSleep(), which never returns.
+// Blank the panel (SSD1306 DISPLAYOFF, ~10 uA) without cutting power.
+//
+// TERMINAL, and that asymmetry is deliberate - there is no displayWake().
+// Both callers (enterDeepSleepFrom() and the boot classifier's low-voltage
+// path) run powerEnterDeepSleep() immediately afterwards, and System OFF does
+// not return. The panel is blanked rather than left alone because its 3V3 rail
+// SURVIVES System OFF: without this it would sit lit on a stale frame until the
+// battery ran down.
+//
+// Nothing wakes the panel because nothing needs to: every state that blanks it
+// ends in System OFF. A displayWake() existed here, was never reachable, and
+// was removed rather than left as unverified code in this header (ROB-3).
 void displaySleep();
-
-// Undo displaySleep() and force a full repaint on the next poll.
-void displayWake();

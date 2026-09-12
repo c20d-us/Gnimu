@@ -21,4 +21,3 @@ BatteryStatus batteryGetStatus() {
   return {0.0f, (uint8_t)BATTERY_REPORT_PERCENT, false, false, false, false};
 }
 
-uint8_t batteryProtocolByte() { return (uint8_t)BATTERY_REPORT_PERCENT & 0x7F; }

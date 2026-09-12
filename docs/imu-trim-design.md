@@ -331,7 +331,8 @@ accelerometer.
 
 Replaced with the same two-part shape the gyro uses: a **wide plausibility band**
 on the mean (`IMU_TRIM_ACCEL_SANITY_TOL`, 25 % — only catching a misconfigured
-`IMU_GRAVITY_NATIVE`, a dead axis, a failed read) plus a tight test on the
+`IMU_GRAVITY_NATIVE` — since step B, a driver reporting the wrong units — a
+dead axis, a failed read) plus a tight test on the
 **spread** (`IMU_TRIM_ACCEL_VAR_MAX`, 0.04 g — idle measures 6–10 mg per axis,
 driving 70–118 mg). The mean is what we are measuring; the spread is what says
 whether we are moving.
@@ -472,7 +473,9 @@ float imuTrimTiltDegrees();
 bool  imuTrimConverged();
 ```
 
-Call order inside each variant's `readImuRaw()`:
+Call order inside each variant's `readImuRaw()` — since the IMU unification
+(2026-09-11) a single function, `readProcessed()` in the shared `g_imu.cpp`,
+with the sensor read itself behind the driver seam (`g_imu_sensor.h`):
 
 ```
 read raw → remapAxes() → imuTrimUpdate(...) → imuTrimApply(...) → return
@@ -516,6 +519,15 @@ intrinsically different (g / °/s vs m/s² / rad/s) and always have been:
 
 `IMU_TRIM_ACCEL_VAR_MAX` is a third (0.04 g vs 0.392 m/s², the same value in each
 family's units). Everything else is identical everywhere.
+
+> **Superseded 2026-09-11 (IMU unification, step B).** The unit systems turned
+> out not to be intrinsic after all — they were the ESP32 library's, leaking
+> through. Every IMU driver now reports g and °/s, `IMU_GRAVITY_NATIVE` is gone
+> (the pipeline passes `1.0f`; `ImuTrimConfig` keeps the field so the module
+> stays unit-agnostic), and the ESP32 values above became `0.04f` and `1.0f` —
+> the numbers their own comments said they were derived from. Every trim
+> constant is now identical on every board. Verified by `test/run_imu_harness.sh`:
+> no transmitted value changed, trim tilt moved by at most 0.00006°.
 `IMU_TRIM_ACCEL_SANITY_TOL` is expressed as a fraction of gravity specifically so
 it does not need a per-variant value.
 

@@ -23,7 +23,7 @@
 // any XIAO nRF52840 Sense - no wiring or soldering, board stays as-is.
 //
 // USUALLY YOU DO NOT NEED THIS SKETCH. The production firmware already prints
-// the 1 Hz serial milliG line, and the three static poses documented in
+// the 1 Hz serial mG line, and the three static poses documented in
 // config.h's Axis orientation section derive the whole map from it - which is
 // how the shipped maps were actually settled. Reach for this sketch when a
 // board's sensor orientation is unknown from scratch. Either way, derive

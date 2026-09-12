@@ -14,21 +14,47 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// ============================================================================
+// IMU PIPELINE - identical in every tree (src/tools/check_common.sh).
+//
+// Everything that does not depend on which sensor is fitted: axis remap,
+// runtime trim, the per-axis filters, epoch-locked decimation, protocol-unit
+// conversion, and the policy for a failed or missing sensor. The part-specific
+// half is the driver behind g_imu_sensor.h.
+//
+// This file used to exist once per tree with the sensor code mixed in, and
+// five of its functions had become character-for-character copies in files no
+// script could compare - the blind spot the review blamed for IMU-3. Its
+// behaviour across the split is held to byte-identical output by
+// test/run_imu_harness.sh.
+// ============================================================================
+
 #include "g_imu.h"
 #include "ImuAxis.h"
 #include "config.h"
 #include "g_gnss.h"
+#include "g_imu_sensor.h"
 #include "g_imu_trim.h"
 #include "g_log.h"
-#include <LSM6DS3.h>
-#include <Wire.h> // Wire1, for the setClock() below
 
-// IMU driver. I2C at IMU_I2C_ADDRESS (0x6A).
-static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
+// The axis map must be a permutation. config.h checks each IMU_AXIS_*_SRC is
+// 0..2 and each _SIGN is +/-1, but nothing stopped two output axes naming the
+// same sensor axis: X_SRC 0 / Y_SRC 0 compiles, runs, and silently duplicates
+// one axis while dropping another - the mapping mistake the OLED README warns
+// Monitor has hidden before. Three distinct values in 0..2 must be all three,
+// so pairwise-distinct is the whole check. Here, beside remapAxes(), so one
+// copy guards every board.
+static_assert(IMU_AXIS_X_SRC != IMU_AXIS_Y_SRC &&
+                  IMU_AXIS_Y_SRC != IMU_AXIS_Z_SRC &&
+                  IMU_AXIS_X_SRC != IMU_AXIS_Z_SRC,
+              "ERROR: IMU_AXIS_X_SRC / _Y_SRC / _Z_SRC must be three different "
+              "sensor axes - the map is a permutation, never a duplication.");
 
 // Three axes each for accelerometer and gyroscope, indexed [0]=X, [1]=Y,
 // [2]=Z. Arrays let imuBegin()/imuPoll() drive all three axes of a sensor
 // with one loop instead of one line per axis.
+//
+// Thresholds in g and deg/s, like every sample (see g_imu_sensor.h).
 static ImuAxis accelAxes[3] = {
     ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_G),
     ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_G),
@@ -46,12 +72,25 @@ static ImuAxis gyroAxes[3] = {
 // debug reporting both read it).
 static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 
-// A single raw IMU sample, split into per-axis arrays indexed [0]=X, [1]=Y,
-// [2]=Z, matching accelAxes/gyroAxes.
-struct ImuRawSample {
-  float accel[3]; // g (LSM6DS3 native units)
-  float gyro[3];  // deg/s (LSM6DS3 native units)
-};
+// Whether the sensor is delivering. See imuIsUp() in g_imu.h.
+static bool imuUp = false;
+
+// How long a run of failed reads is ridden out before the IMU is declared
+// down: long enough to absorb an I2C glitch (a single failure is invisible -
+// the last good sample is simply repeated), short enough that a sensor that
+// has actually gone away is reported within a few GNSS epochs rather than
+// transmitting its last reading, frozen, for the rest of the session.
+static constexpr unsigned long kImuDownAfterMs = 100;
+static constexpr unsigned int kImuFailedReadsToDown =
+    (kImuDownAfterMs + IMU_SAMPLE_INTERVAL_MS - 1) / IMU_SAMPLE_INTERVAL_MS;
+static unsigned int consecutiveFailedReads = 0;
+
+// Every failed read since boot, not just the current run. The run is what
+// decides the IMU is gone; this is what makes an INTERMITTENT bus visible - a
+// loose wire can fail thousands of reads without ever failing ten in a row,
+// and until g_telemetry reported this, nothing said so. Stops moving once the
+// IMU is down, because imuPoll() stops reading.
+static uint32_t totalFailedReads = 0;
 
 // ============================================================================
 // Axis remap - installed orientation. Maps the sensor frame into the vehicle
@@ -79,27 +118,39 @@ static void remapAxes(float triple[3]) {
 // but goes through here too so all six fields follow one consistent, safe
 // pattern.
 static int16_t toProtocolInt16(float value) {
+  // NaN first, because every comparison against it is false - it would slip
+  // past both clamps below and reach the cast, where converting a NaN to an
+  // integer type is undefined behaviour.
+  //
+  // Nothing in the pipeline produces one today: the sensor path is
+  // integer-derived, and g_imu_trim guards each of its divisions (mag < 1e-6f,
+  // mn < 1e-6f) and clamps acosf's argument. This is here because the function
+  // is the last thing between the filters and the wire, and is written as
+  // though it were total.
+  //
+  // `value != value` rather than isnan() so this needs no <math.h>, and
+  // DELIBERATELY NOT isfinite(): infinities are already handled correctly by
+  // the clamps below (+inf > 32767.0f is true), and mapping them to 0 instead
+  // of the largest representable value would be a regression.
+  //
+  // 0 is the least-bad substitute - the protocol has no "invalid" encoding for
+  // an IMU field, so any value is a lie, and a consistent 0 at least reads as
+  // a stuck-sensor fault rather than noise. Silent by design: this is on the
+  // per-sample path, and logging here would be its own latency problem.
+  if (value != value)
+    return 0;
   if (value > 32767.0f)
     return 32767;
   if (value < -32768.0f)
     return -32768;
-  return (int16_t)value;
-}
-
-// Read the IMU and return the accel (g) / gyro (deg/s) values for this
-// instant, remapped into the vehicle frame and runtime-trimmed.
-//
-// There is no build-time zero correction here any more. Hand-measured per-chip
-// offsets (IMU_*_OFFSET_*) were removed once g_imu_trim learned the same
-// correction at runtime: the trim measures the total resting error and cannot
-// separate chip bias from mounting tilt - and does not need to, since one
-// correction removes both. That deleted the only per-chip data in the whole
-// configuration, so the firmware image is now identical across boards.
-//
-// Reassemble a little-endian register pair, matching the byte order the
-// library's own readRegisterInt16() uses (low byte first).
-static inline int16_t rawPair(const uint8_t *p) {
-  return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+  // ROUND, half away from zero - not the plain cast, which truncates toward
+  // zero. Truncation opened a dead zone two units wide around zero (anything
+  // in (-1, 1) became 0) and pulled every value half a unit toward zero: a
+  // systematic error, if a small one (0.5 mG, 0.005 deg/s), at the one place
+  // the pipeline's floats become the protocol's integers. By hand rather than
+  // lroundf(), keeping this function free of <math.h>. Safe at the clamps: the
+  // largest value reaching here is 32767.0, and 32767.5 truncates to 32767.
+  return (int16_t)(value >= 0.0f ? value + 0.5f : value - 0.5f);
 }
 
 // Fetch GNSS ground speed for the trim gate, in m/s.
@@ -150,43 +201,48 @@ static bool trimSpeedMps(float *speedMps) {
   return true;
 }
 
-static ImuRawSample readImuRaw() {
+// Mark the IMU down: for the rest of the power cycle, every IMU field reads
+// zero and nothing reaches the filters or the trim. There is no restart path -
+// a switch cycle or reboot brings it back. Logged once, never per sample.
+static void markDown(const char *why) {
+  if (imuUp) {
+    LOG_PRINTF("❌ IMU %s - IMU fields will read zero.\n", why);
+  }
+  imuUp = false;
+  latestUnits = {0, 0, 0, 0, 0, 0};
+}
+
+// One sample in the VEHICLE frame, runtime-trimmed, ready for the filters.
+//
+// There is no build-time zero correction here any more. Hand-measured per-chip
+// offsets (IMU_*_OFFSET_*) were removed once g_imu_trim learned the same
+// correction at runtime: the trim measures the total resting error and cannot
+// separate chip bias from mounting tilt - and does not need to, since one
+// correction removes both. That deleted the only per-chip data in the whole
+// configuration, so the firmware image is now identical across boards.
+static ImuRawSample readProcessed() {
   // Last good sample, reused if a read fails - see the error branch below.
   // Zero-initialised, so a failure before the very first successful read
   // yields zeros rather than stack garbage.
   static ImuRawSample lastGood = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
 
   ImuRawSample s;
-
-  // ONE burst for all six axes rather than six separate two-transaction
-  // reads. OUTX_L_G (0x22) through OUTZ_H_XL (0x2D) is 12 contiguous bytes -
-  // gyro X/Y/Z then accel X/Y/Z - so this is 2 I2C transactions instead of 12.
-  //
-  // Speed is the lesser reason. The real one is SAMPLE COHERENCY: BDU (set in
-  // configureNormalMode) freezes each register PAIR so a 16-bit read cannot
-  // straddle a sample, but six separate transactions still leave gaps in which
-  // a new sample can land - so X could come from one sample and Z from the
-  // next. A single burst returns one coherent six-axis set, which matters when
-  // the values feed per-chip offset correction, an axis remap, and a
-  // transient-peak detector that is specifically looking for short events.
-  uint8_t raw[12];
-  if (myIMU.readRegisterRegion(raw, LSM6DS3_ACC_GYRO_OUTX_L_G, sizeof(raw)) !=
-      IMU_SUCCESS) {
+  if (!imuSensorRead(&s)) {
     // Reuse the previous sample rather than feeding a failed read into the
-    // filters. The old per-axis path had no such guard: a bad transfer went
-    // straight into the EMA and, worse, into the transient-peak window, where
-    // one bogus value is latched as a "peak" and reported as a real event.
-    // Deliberately silent - this runs at IMU_SAMPLE_INTERVAL_MS, and logging
-    // per failure would be its own latency problem on a flaky bus.
+    // filters: a bad transfer would otherwise go straight into the EMA and,
+    // worse, into the transient-peak window, where one bogus value is latched
+    // as a "peak" and reported as a real event. Deliberately silent per
+    // failure - this runs at IMU_SAMPLE_INTERVAL_MS, and logging each one
+    // would be its own latency problem on a flaky bus. A RUN of failures is
+    // different: that is a sensor that has gone, and repeating its last
+    // reading forever would transmit stale data as if it were live.
+    totalFailedReads++;
+    if (++consecutiveFailedReads >= kImuFailedReadsToDown) {
+      markDown("stopped responding");
+    }
     return lastGood;
   }
-
-  s.gyro[0] = myIMU.calcGyro(rawPair(&raw[0]));
-  s.gyro[1] = myIMU.calcGyro(rawPair(&raw[2]));
-  s.gyro[2] = myIMU.calcGyro(rawPair(&raw[4]));
-  s.accel[0] = myIMU.calcAccel(rawPair(&raw[6]));
-  s.accel[1] = myIMU.calcAccel(rawPair(&raw[8]));
-  s.accel[2] = myIMU.calcAccel(rawPair(&raw[10]));
+  consecutiveFailedReads = 0;
 
   remapAxes(s.accel);
   remapAxes(s.gyro);
@@ -209,63 +265,13 @@ static ImuRawSample readImuRaw() {
   return s;
 }
 
-// Shared by imuBegin() and imuDisarmWake(): (re)apply normal-operation
-// ranges/ODR/bandwidth, BDU, and re-seed the axis filters. Does not touch
-// the power pin as callers that need the chip powered on do that themselves.
-static void configureNormalMode() {
-  // Configure ranges / output data rates / bandwidth from config.h. The Seeed
-  // library takes plain integers here and applies them in begin(); it also
-  // brings up its own I2C bus internally - no manual Wire/Wire1 setup needed.
-  myIMU.settings.accelEnabled = 1;
-  myIMU.settings.accelRange = IMU_ACCEL_RANGE_G;
-  myIMU.settings.accelSampleRate = IMU_ACCEL_ODR_HZ;
-  myIMU.settings.accelBandWidth = IMU_ACCEL_BANDWIDTH_HZ; // anti-aliasing
-  myIMU.settings.gyroEnabled = 1;
-  myIMU.settings.gyroRange = IMU_GYRO_RANGE_DPS;
-  myIMU.settings.gyroSampleRate = IMU_GYRO_ODR_HZ;
-  myIMU.settings.tempEnabled = 0; // unused by this firmware
-
-  // The Seeed library returns 0 (IMU_SUCCESS) on success.
-  if (myIMU.begin() != 0) {
-    LOG_PRINTLN("❌ Failed to find IMU module - halting");
-    while (1)
-      delay(100);
-  }
-
-  // Raise the IMU bus above the core's 100kHz default. MUST come after
-  // begin(): the library calls Wire1.begin() internally, which hardcodes the
-  // TWIM FREQUENCY register, so anything set earlier is silently overwritten.
-  // Re-applied on every call because imuDisarmWake() runs begin() again on
-  // each LIGHT_SLEEP exit. See IMU_I2C_CLOCK_HZ in config.h for why this
-  // matters to loop() latency.
-  Wire1.setClock(IMU_I2C_CLOCK_HZ);
-
-  // Enable Block Data Update on CTRL3_C: freezes each 16-bit output register
-  // between its low- and high-byte reads, so a two-byte fetch can never
-  // straddle a sample rollover (torn read). At our 104 Hz ODR samples refresh
-  // every ~9.6 ms, well inside the window of any BLE/serial hiccup.
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL3_C,
-                      LSM6DS3_ACC_GYRO_BDU_BLOCK_UPDATE |
-                          LSM6DS3_ACC_GYRO_IF_INC_ENABLED);
-
-  // Fully disable the wake-up detector, not just un-route it (harmless no-op
-  // on the very first call, before it's ever been armed). Un-routing MD1_CFG
-  // alone leaves TAP_CFG1's INTERRUPTS_ENABLE bit live, so the slope detector
-  // keeps running continuously in the background for the entire RUNNING
-  // period, and since LIR latches it, any real motion during that window
-  // (device handled, table bumped) sets WAKE_UP_SRC well before the next
-  // imuArmWake() ever runs.
-  // Clearing TAP_CFG1 here gives every imuArmWake() the same clean 0x00 ->
-  // 0x8F transition that worked on the first cycle.
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x00);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x00);
-
-  // Seed each axis with a real first reading rather than leaving it at its
-  // zero-baseline default. Otherwise the first update() would see a huge
-  // artificial jump (e.g. gravity on the Z axis) that gets latched into the
-  // window's peak deviation and misreported as a genuine transient in the
-  // very first transmitted frame.
-  ImuRawSample seed = readImuRaw();
+// Seed each axis with a real first reading rather than leaving it at its
+// zero-baseline default. Otherwise the first update() would see a huge
+// artificial jump (e.g. gravity on the Z axis) that gets latched into the
+// window's peak deviation and misreported as a genuine transient in the very
+// first transmitted frame.
+static void seedFilters() {
+  ImuRawSample seed = readProcessed();
   for (int i = 0; i < 3; i++) {
     accelAxes[i].reset(seed.accel[i]);
     gyroAxes[i].reset(seed.gyro[i]);
@@ -273,21 +279,14 @@ static void configureNormalMode() {
 }
 
 void imuBegin() {
-  // Power the onboard LSM6DS3TR-C, then give it time to boot before I2C. Pin
-  // 15 driven HIGH enables it.
-  pinMode(IMU_POWER_PIN, OUTPUT);
-  digitalWrite(IMU_POWER_PIN, HIGH);
-  delay(300); // wait for IMU to boot and settle
-
-  // Ahead of configureNormalMode(), which seeds the axis filters with a live
-  // readImuRaw() and would otherwise reach the trim before it has a config.
+  // Ahead of any read, which would otherwise reach the trim before it has a
+  // config.
   //
-  // Deliberately NOT in configureNormalMode() itself: that also runs on every
-  // LIGHT_SLEEP exit, and the mount has not changed across a sleep. Resetting
-  // there would throw away a good estimate and re-serve the whole convergence
-  // delay for nothing.
+  // The trim module is unit-agnostic by design and takes 1 g in whatever units
+  // it is fed. Every driver reports g, so that is exactly 1.0 - kept as a
+  // parameter rather than removed, so g_imu_trim stays a general module.
   const ImuTrimConfig trimCfg = {
-      IMU_GRAVITY_NATIVE,      (float)IMU_SAMPLE_INTERVAL_MS,
+      1.0f,                    (float)IMU_SAMPLE_INTERVAL_MS,
       IMU_TRIM_QUALIFY_MS,     IMU_TRIM_BLOCK_MS,
       IMU_TRIM_LOCK_BLOCKS,    IMU_TRIM_SPEED_MAX_MPS,
       IMU_TRIM_ACCEL_SANITY_TOL, IMU_TRIM_ACCEL_VAR_MAX,
@@ -296,81 +295,43 @@ void imuBegin() {
   };
   imuTrimBegin(trimCfg);
 
-  configureNormalMode();
+  if (!imuSensorBegin()) {
+    // Not markDown(): that logs only on an up->down transition, and at boot
+    // the IMU was never up.
+    imuUp = false;
+    latestUnits = {0, 0, 0, 0, 0, 0};
+#if IMU_ENABLED
+    LOG_PRINTLN("❌ IMU not found - continuing without it: IMU fields will "
+                "read zero.");
+#else
+    // Deliberate (IMU_ENABLED 0 in config.h), so not an error - but the same
+    // state as a missing or dead IMU, on purpose: one code path, two causes.
+    LOG_PRINTLN("⏸️ IMU not fitted (IMU_ENABLED 0) - IMU fields will read "
+                "zero.");
+#endif
+    return;
+  }
+  imuUp = true;
+  seedFilters();
   LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");
 }
 
-// LIGHT_SLEEP wake-up detector (AN4650)
-// Registers touched, beyond the ones configureNormalMode() already owns:
-//   TAP_CFG (0x58)     - bit7 INTERRUPTS_ENABLE, bit0 LIR (latch), bits3:1
-//                        enable X/Y/Z in the wake-up slope detector.
-//   WAKE_UP_THS (0x5B) - 6-bit threshold (IMU_WAKE_THS).
-//   WAKE_UP_DUR (0x5C) - debounce, in ODR cycles (IMU_WAKE_DUR).
-//   MD1_CFG (0x5E)     - bit5 INT1_WU routes the wake-up interrupt to INT1.
-//   WAKE_UP_SRC (0x1B) - reading this clears the latched interrupt.
-static bool wakeArmed = false;
+bool imuIsUp() { return imuUp; }
 
-void imuArmWake() {
-  pinMode(IMU_INT1_PIN, INPUT); // push-pull active-high chip output
-
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, IMU_WAKE_CTRL1_XL);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1,
-                      0x8F); // INTERRUPTS_ENABLE|LIR|X_EN|Y_EN|Z_EN
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_THS, IMU_WAKE_THS & 0x3F);
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_WAKE_UP_DUR, IMU_WAKE_DUR);
-  // MD1_CFG intentionally NOT written yet - stay un-routed from INT1 until
-  // WAKE_UP_SRC has been flushed below, so nothing stale (or freshly
-  // generated by the CTRL1_XL switch itself) can reach the pin before we've
-  // had a chance to clear it.
-
-  // The CTRL1_XL write above is a live mode switch (104Hz/+-4g while RUNNING
-  // -> 12.5Hz/+-2g here), not a cold power-on into this config - unlike
-  // src/tools/nRF52840/imu_wake, which only ever powered on directly into the wake
-  // config. Changing ODR/full-scale on an already-running chip produces a
-  // settling transient in the accelerometer's internal filter chain that's
-  // large enough to trip WAKE_UP_THS on its own. Give it a couple of ODR
-  // periods (12.5Hz -> 80ms/sample) to settle, then discard whatever that
-  // transient (or anything stale left over from the last cycle) latched
-  // into WAKE_UP_SRC before routing to INT1 - a single read fully clears the
-  // latch (it's not a FIFO), but only if nothing's already been routed out
-  // to the pin first.
-  delay(250);
-  uint8_t discard = 0;
-  myIMU.readRegister(&discard, LSM6DS3_ACC_GYRO_WAKE_UP_SRC);
-
-  myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x20); // INT1_WU - now safe
-
-  wakeArmed = true;
-  LOG_PRINTLN("🌙 IMU wake-up detector armed (low-power ODR).");
-}
-
-bool imuWakeTriggered() {
-  if (!wakeArmed)
-    return false;
-  if (digitalRead(IMU_INT1_PIN) != HIGH)
-    return false;
-
-  uint8_t src = 0;
-  myIMU.readRegister(&src, LSM6DS3_ACC_GYRO_WAKE_UP_SRC); // clears the latch
-  return true;
-}
-
-void imuDisarmWake() {
-  wakeArmed = false;
-  configureNormalMode(); // restores ODR/range and un-routes MD1_CFG
-  LOG_PRINTLN("☀️ IMU wake-up detector disarmed, normal ODR restored.");
-}
+uint32_t imuFailedReads() { return totalFailedReads; }
 
 // Poll the IMU and update the axis filters at our configured sample rate.
-// Both cadences below are deadline-anchored (the anchor advances by the
-// interval, not to "now"), so per-loop latency doesn't stretch every period
-// and quietly drop the real rates below their configured values. If the loop
-// ever falls more than one full interval behind, the anchor resyncs to now
-// rather than firing a rapid catch-up burst.
+// The sample cadence is deadline-anchored (the anchor advances by the interval,
+// not to "now"), so per-loop latency doesn't stretch every period and quietly
+// drop the real rate below its configured value. If the loop ever falls more
+// than one full interval behind, the anchor resyncs to now rather than firing
+// a rapid catch-up burst.
 void imuPoll() {
   static unsigned long lastImuReadMs = 0;
-  static unsigned long lastTransmitReadMs = 0;
   const unsigned long nowMs = millis();
+
+  if (!imuUp)
+    return;
 
   // Update all six axis filters if it's time to sample.
   if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
@@ -378,39 +339,44 @@ void imuPoll() {
     if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {
       lastImuReadMs = nowMs; // fell > 1 interval behind - resync
     }
-    ImuRawSample raw = readImuRaw();
+    ImuRawSample raw = readProcessed();
+    if (!imuUp)
+      return; // that read was the one that tipped it over
     for (int i = 0; i < 3; i++) {
       accelAxes[i].update(raw.accel[i]);
       gyroAxes[i].update(raw.gyro[i]);
     }
   }
+}
 
-  // Decimate to the transmission rate on a fixed cadence, regardless of BLE
-  // connection state. This is what drains each axis's transient window; if it
-  // only ran while connected, the window would silently accumulate deviations
-  // for as long as the device stayed disconnected and dump a stale "peak"
-  // into the first packet after reconnecting.
-  if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
-    lastTransmitReadMs += IMU_TRANSMIT_INTERVAL_MS;
-    if (nowMs - lastTransmitReadMs >= IMU_TRANSMIT_INTERVAL_MS) {
-      lastTransmitReadMs = nowMs; // fell > 1 interval behind - resync
-    }
+// Driven by the GNSS epoch, not a timer - see g_imu.h for why that distinction
+// is the entire point of this function existing separately from imuPoll().
+//
+// ImuAxis::read() is what drains each axis's transient window, so calling this
+// once per epoch is also what keeps the window aligned with the packet it ends
+// up in. It must therefore stay outside any BLE-connected test: the drain
+// cannot depend on a client being attached, or the window would accumulate
+// across a disconnect and dump a stale peak into the first packet after
+// reconnecting.
+ImuProtocolUnits imuLatchForEpoch() {
+  if (!imuUp)
+    return latestUnits; // zeros - see markDown()
 
-    float accelFiltered[3], gyroFiltered[3];
-    for (int i = 0; i < 3; i++) {
-      accelFiltered[i] = accelAxes[i].read();
-      gyroFiltered[i] = gyroAxes[i].read();
-    }
-
-    // LSM6DS3 returns g and deg/s directly, so the protocol conversion is
-    // just a scale into milli-g and centi-deg/sec respectively.
-    latestUnits.gX = toProtocolInt16(accelFiltered[0] * 1000.0f);
-    latestUnits.gY = toProtocolInt16(accelFiltered[1] * 1000.0f);
-    latestUnits.gZ = toProtocolInt16(accelFiltered[2] * 1000.0f);
-    latestUnits.rX = toProtocolInt16(gyroFiltered[0] * 100.0f);
-    latestUnits.rY = toProtocolInt16(gyroFiltered[1] * 100.0f);
-    latestUnits.rZ = toProtocolInt16(gyroFiltered[2] * 100.0f);
+  float accelFiltered[3], gyroFiltered[3];
+  for (int i = 0; i < 3; i++) {
+    accelFiltered[i] = accelAxes[i].read();
+    gyroFiltered[i] = gyroAxes[i].read();
   }
+
+  // g and deg/s (every driver's units) to the protocol's milli-g and
+  // centi-deg/sec.
+  latestUnits.gX = toProtocolInt16(accelFiltered[0] * 1000.0f);
+  latestUnits.gY = toProtocolInt16(accelFiltered[1] * 1000.0f);
+  latestUnits.gZ = toProtocolInt16(accelFiltered[2] * 1000.0f);
+  latestUnits.rX = toProtocolInt16(gyroFiltered[0] * 100.0f);
+  latestUnits.rY = toProtocolInt16(gyroFiltered[1] * 100.0f);
+  latestUnits.rZ = toProtocolInt16(gyroFiltered[2] * 100.0f);
+  return latestUnits;
 }
 
 ImuProtocolUnits imuReadProtocolUnits() { return latestUnits; }

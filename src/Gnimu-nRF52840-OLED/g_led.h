@@ -24,13 +24,12 @@
 //
 // Priority, highest first:
 //   1. BATTERY_WAIT    -> rapid red blink ("check the switch")
-//   2. RUNNING/LIGHT_SLEEP:
+//   2. RUNNING:
 //      a. charging     -> green blink (or steady green if full)
 //      b. critical bat -> red blink
 //      c. warn bat     -> amber blink
-//      d. LIGHT_SLEEP  -> breathing blue (non-linear, exponential ramp)
-//      e. connected    -> steady blue
-//      f. advertising  -> blue blink
+//      d. connected    -> steady blue
+//      e. advertising  -> blue blink
 // ============================================================================
 
 // Configure the RGB LED pins and turn the LED off. Call once in setup().

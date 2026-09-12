@@ -17,11 +17,11 @@ The advertised BLE identity and RaceBox Data Message protocol are unaffected. Th
 
 This variant does everything [Gnimu nRF52840][0] does, plus:
 
-- Shows device state (RUNNING / CHARGE_ONLY / LIGHT_SLEEP / BATTERY_WAIT / DEEP_SLEEP), BLE connection status, and battery charge/charging status on-screen, replacing the RGB LED's color/blink code with readable text.
+- Shows device state (RUNNING / CHARGE_ONLY / BATTERY_WAIT / DEEP_SLEEP), BLE connection status, and battery charge/charging status on-screen, replacing the RGB LED's color/blink code with readable text.
 - Shows GNSS fix quality that was previously only visible over serial: **satellites locked, pDOP, horizontal accuracy (hAcc), current PVT rate, and fix status**.
 - Draws its status independent of the GNSS's power schedule. The display stays live and readable through states (like CHARGE_ONLY) where the GNSS is deliberately powered down, so it can always show at least charge/battery status.
 
-See [Gnimu nRF52840's README][0] for everything this variant inherits unchanged: GNSS/IMU pipeline, BLE protocol, battery subsystem, and the RUNNING/CHARGE_ONLY/LIGHT_SLEEP/BATTERY_WAIT/DEEP_SLEEP state machine.
+See [Gnimu nRF52840's README][0] for everything this variant inherits unchanged: GNSS/IMU pipeline, BLE protocol, battery subsystem, and the RUNNING/CHARGE_ONLY/BATTERY_WAIT/DEEP_SLEEP state machine.
 
 ---
 
@@ -127,6 +127,7 @@ Most of `config.h` matches [Gnimu nRF52840][0] — see that README's [Configurat
 | `DISPLAY_SHIFT_INTERVAL_MS`, `DISPLAY_SHIFT_MAX`, `DISPLAY_LAYOUT_W/H` | Burn-in mitigation: the layout is inset by `DISPLAY_SHIFT_MAX` px and walks within that margin every 5 minutes. |
 | `DISPLAY_CONTRAST` | 0–255; full scale by default for daylight readability. |
 | `LED_ENABLED` | **`0` in this variant** — the display replaces the RGB status LED. `g_led.cpp` still checks `displayIsPresent()` at *runtime*, so the LED comes back automatically if the panel is missing at boot. |
+| `IMU_ENABLED` | Set automatically from the board selected in the IDE: `1` for the XIAO nRF52840 Sense (which has the onboard IMU), `0` for the plain XIAO nRF52840. With `0` the IMU fields read zero, trim never runs, the Seeed LSM6DS3 library isn't needed to build, and light sleep can only be ended by an app connection or the switch (no motion wake). To override, replace the block with a plain `#define`. |
 | `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations rather than the older model's 8 flat ones. A determinant `static_assert` rejects a mirrored (physically impossible) map at compile time. |
 | `POWER_SWITCH_SENSE_PIN` | **`A1` here, not `A4`** — on this board `A4` *is* `PIN_WIRE_SDA`, which the display needs. |
 
@@ -172,17 +173,15 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 - [`tools/oled_probe`](../tools/nRF52840-OLED/oled_probe/oled_probe.ino) — OLED bring-up and power characterization. Scans the I2C bus with raw `Wire` before any display library loads (so a wiring/power fault is distinguishable from a library problem), then holds test patterns on serial command: geometry (frame + corner ticks + crosshair, which catches a wrong panel size or controller variant immediately), font sizes, the Open Iconic Bluetooth glyph alongside drawn battery bars, a high-contrast screen for outdoor readability, and three discrete states for metering — all pixels on, controller active with nothing lit, and `DISPLAYOFF` sleep. Modes hold until the next keypress so a meter can be read without fighting a timer. Requires the **u8g2** library.
 
-- [`tools/oled_layout`](../tools/nRF52840-OLED/oled_layout/oled_layout.ino) — screen-layout mockup. Renders all five per-state screens with fake data so the layout can be judged on real glass: `1`/`2` RUNNING connected/advertising, `3` CHARGE_ONLY, `4` LIGHT_SLEEP, `5` BATTERY_WAIT, `6` display off. `w` swaps in worst-case field widths (layouts look fine on typical data and break on the extremes); `j` steps the burn-in pixel-shift offset to confirm nothing clips. Requires **u8g2**.
-
 - [`tools/oled_bench`](../tools/nRF52840-OLED/oled_bench/oled_bench.ino) — update-cost benchmark and partial-update validation. `b` times full-frame and partial writes at the current bus clock, labelling each against the GNSS UART's ~5.5ms tolerance; `p` animates a counter inside one region against a static backdrop to prove `updateDisplayArea()` doesn't corrupt anything outside it; `f` gives the full-frame cost for comparison. `1`/`4`/`8` switch the I2C clock. This is the sketch that decided the display library.
 
 - [`tools/imu_calibration`](../tools/nRF52840-OLED/imu_calibration/imu_calibration.ino) — per-chip IMU zero-point offsets, this tree's own copy. Warms up until the die temperature plateaus, then runs repeating 10000-sample sessions a minute apart, each gated on a stability check and appended to internal flash; press any key and then `a` to aggregate the run into six `#define`-formatted lines. **Those no longer feed `config.h`** — the six `IMU_*_OFFSET_*` defines were removed when `g_imu_trim` landed, and the firmware now learns the same correction at runtime; the sketch is kept as a bench diagnostic (see [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md)). The measurement core is byte-identical to the [base tree's copy](../tools/nRF52840/imu_calibration/imu_calibration.ino), so results from the two are directly comparable. What differs is this variant's own settings baked in — the panel is brought up as part of the thermal load the die settles against (production keeps it lit), which also makes the run readable with **no USB attached**. Requires **u8g2**.
 
 The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
 
-`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `milliG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
+`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `mG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
 
-> ⚠️ Derive the axis map against the **raw serial `milliG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
+> ⚠️ Derive the axis map against the **raw serial `mG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
 
 ---
 

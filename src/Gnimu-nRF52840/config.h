@@ -35,6 +35,13 @@
 // raw pin numbers, so it must see Arduino.h first.
 #include <Arduino.h>
 
+// IMU TUNING IS NOT IN THIS FILE. The sample interval, filter smoothing,
+// transient thresholds and runtime-trim values are the same on every board, so
+// they live in g_imu_tuning.h, which check_common.sh keeps identical across all
+// three trees. What stays here is what really differs per board: whether an
+// IMU is fitted, its address, pins, ranges and rates, and how it is mounted.
+#include "g_imu_tuning.h"
+
 // ============================================================================
 // ============================================================================
 // SECTION 1: TUNABLES
@@ -62,170 +69,50 @@
 // --- IMU (onboard LSM6DS3TR-C) ---
 // ----------------------------------------------------------------------------
 
-#define IMU_SAMPLE_INTERVAL_MS 10 // default 100Hz filter/sample rate
-
-// ImuAxis smoothing rates and transient thresholds. The deviation that a
-// sample window's peak must exceed before it gets blended into the transmitted
-// value instead of the plain EMA baseline.
+// Is an IMU fitted? Follows the board selected in the IDE, so it is right
+// without editing anything: the XIAO nRF52840 Sense (and Sense Plus) carries
+// an onboard LSM6DS3TR-C; the plain XIAO nRF52840 (and Plus) does not. The
+// build defines ARDUINO_<board> from boards.txt, which is what this tests.
 //
-// The ACCEL values are tuned from 13 autocross runs (2018 M2, RE-71RS) checked
-// against the GNSS solution: longitudinal against d(speed)/dt, lateral against
-// v * yaw-rate. The GYRO values are still placeholders - the logging app
-// records no gyro channel, so nothing here has been tested against real data.
-//
-// The threshold must sit ABOVE the car's vibration floor. At the original 0.2g
-// it sat below it: the blend fired on 50-100% of transmit windows, and since
-// maxDeviation_ is a max over the window it can only push the output away from
-// the baseline, never toward it. Logged lateral peaks ran up to +105% over the
-// true value (2.57g against a real 1.16g) and correlation with the GNSS
-// reference fell to 0.92.
-//
-// 1.5g is a HOLDING value for a mount known to be too springy, where the
-// vibration floor alone drives |raw - smoothedValue_| to ~1.55g. No threshold
-// below that separates vibration from genuine events, so the blend is
-// deliberately parked out of reach and the output is the plain EMA baseline.
-// Re-tune after the mount is stiffened: log the real floor, then set this to
-// roughly 1.2x the observed peak deviation (~0.6-0.8g on a rigid mount) to
-// bring the blend back for the impacts and kerb strikes it exists to catch.
-//
-// The two settings are NOT independent. A lower alpha makes the EMA baseline
-// lag further, which INCREASES |raw - smoothedValue_| and so makes the blend
-// fire MORE. Lowering the alpha without raising the threshold first makes the
-// output worse, not smoother.
-//
-// The alpha also serves as the anti-alias filter for the 100Hz -> transmit-rate
-// decimation, so it cannot be raised freely: mount resonance above the
-// transmit Nyquist folds into the signal band, where no later filter can
-// remove it. 0.09 puts the corner at ~1.5Hz, which measured best against the
-// GNSS reference (0.99 correlation) while leaving real cornering amplitude
-// intact - below ~0.06 it starts eating genuine signal.
-#define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0=raw, 0.1=heavy. ~1.5Hz
-#define IMU_GYRO_ALPHA 0.09f  // EMA smoothing: 1.0=raw, 0.1=heavy. ~3.6Hz
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_G 99.0f    // 1.5g = ~14.7m/s^2
-#define IMU_GYRO_TRANSIENT_THRESHOLD_DPS 9999.0f // 28.6deg/s = ~0.5rad/s
-// #define IMU_GYRO_TRANSIENT_THRESHOLD_DPS 28.6f // 28.6deg/s = ~0.5rad/s
+// With 0, the LSM6DS3 driver compiles to a stub - the Seeed LSM6DS3 library is
+// then not needed to build - the IMU fields read zero exactly as if the IMU had
+// failed, and trim never runs. RaceChrono never uses IMU data; RaceBox works
+// and reports zero g. To override, replace this block with a plain
+// `#define IMU_ENABLED 0` or `1`.
+#if defined(ARDUINO_Seeed_XIAO_nRF52840_Sense) ||                              \
+    defined(ARDUINO_Seeed_XIAO_nRF52840_Sense_Plus)
+#define IMU_ENABLED 1
+#else
+#define IMU_ENABLED 0
+#endif
 
 #define IMU_ACCEL_RANGE_G 4       // +/- g sensor range: one of 2, 4, 8, 16
 #define IMU_GYRO_RANGE_DPS 500    // deg/s sensor range: 125,245,500,1000,2000
 #define IMU_ACCEL_ODR_HZ 104      // output data rate; >= the 100Hz poll rate
 #define IMU_GYRO_ODR_HZ 104       // output data rate; >= the 100Hz poll rate
-#define IMU_ACCEL_BANDWIDTH_HZ 50 // anti-alias filter: one of 50, 100, 200, 400
 
-// --- Runtime IMU trim (levelling + gyro de-bias) ---
-// Learned while the vehicle is confirmed stationary, frozen while it moves.
-// Corrects a slightly off-level mount and the gyro zero point without any
-// per-board calibration step. Design record: docs/imu-trim-design.md.
+// Accelerometer digital low-pass filter (LPF1), as the ODR DIVIDER the part
+// implements - 2 or 4, ST's LPF1_BW_SEL in CTRL1_XL. At IMU_ACCEL_ODR_HZ 104
+// that is 52 Hz or 26 Hz.
 //
-// These are per-DESIGN values, not per-board: identical on every unit. Only
-// IMU_GRAVITY_NATIVE and IMU_TRIM_GYRO_VAR_MAX differ between the nRF52840
-// and ESP32 families, and only because their native units differ.
+// A divider rather than a bandwidth in Hz because that is what the register
+// holds, and because Hz cannot express every case: ODR 13 would need 6.5 Hz.
+//
+// THIS REPLACED `IMU_ACCEL_BANDWIDTH_HZ 50` (2026-09-11), which was wrong in
+// name and value. The Seeed library targets the original LSM6DS3, where
+// CTRL1_XL bits 1:0 are an analog anti-alias filter (400/200/100/50 Hz). On the
+// LSM6DS3TR-C actually fitted, ST splits those two bits: bit 0 BW0_XL (analog
+// chain, and per ST's driver "only for accelerometer ODR >= 1.67 kHz" - inert
+// here) and bit 1 LPF1_BW_SEL (ODR/2 or ODR/4). So the old "50" selected
+// neither 50 Hz nor an anti-alias filter; it happened to land on ODR/4, which
+// is what this keeps. Confirmed against ST's lsm6ds3tr-c-pid register driver.
+#define IMU_ACCEL_LPF1_ODR_DIV 4
 
-// 1 g expressed in this variant's native accel units. The trim module is
-// otherwise unit-agnostic; this is the single magnitude it needs.
-#define IMU_GRAVITY_NATIVE 1.0f // g on the LSM6DS3; 9.80665f (m/s^2) on ESP32
+// Derived, for reading and for the checks at the bottom of this file.
+#define IMU_ACCEL_LPF1_CUTOFF_HZ (IMU_ACCEL_ODR_HZ / IMU_ACCEL_LPF1_ODR_DIV)
 
-// How long every stillness criterion must hold CONTINUOUSLY before a window
-// opens.
-//
-// Sensor noise is NOT what sets this: at ~90ug/sqrt(Hz) and 50Hz bandwidth,
-// half a second of averaging lands under 0.1mg, two orders finer than anything
-// relevant.
-//
-// Nor is it what keeps a sloped staging lane out of the calibration - locking
-// after the first qualifying window does that, because the first stop of a
-// session is the paddock. Selection happens by ORDERING, not by duration.
-//
-// What the length actually buys is a backstop for when that ordering does not
-// hold: the device is switched on as the car leaves the paddock, so the first
-// qualifying stop is a staging lane or a red light on a cambered road. 30s
-// clears a rolling pause or a stop sign. It cannot fix the case properly -
-// only powering the device on where it is parked does that.
-#define IMU_TRIM_QUALIFY_MS 30000
-
-// Averaging block length once the window is open. A long stop yields a steady
-// run of blocks rather than re-serving the qualification delay between each.
-#define IMU_TRIM_BLOCK_MS 1000
-
-// Blocks averaged into the orientation before it LOCKS for the rest of the
-// power cycle. 5 blocks = 5s of data on top of the qualification wait.
-//
-// Not a noise requirement - the gate already rejects any block containing a
-// disturbance, and one block is far more than enough for precision. This is
-// margin against a sub-threshold disturbance (someone leaning on the car)
-// biasing a measurement that is never revisited.
-#define IMU_TRIM_LOCK_BLOCKS 5
-
-// GNSS ground speed below which we may be stationary.
-#define IMU_TRIM_SPEED_MAX_MPS 0.5f
-
-// |a| PLAUSIBILITY band, as a fraction of gravity - unit-free, hence no
-// per-variant value.
-//
-// Deliberately WIDE, and deliberately not a tight "is |a| exactly 1 g" test.
-// A tight band has the same circularity that made us gate the gyro on variance
-// rather than magnitude: |a| at rest is contaminated by the chip's own zero-g
-// bias, which is exactly what the trim exists to remove, so a tight band holds
-// the gate shut against the very measurement that would fix it.
-//
-// That is not hypothetical. The MPU-6050 on the ESP32 build has -69 mg on Z;
-// once its hand-measured offset was deleted it read 0.925 g at rest, failed a
-// 4% band on every single sample, and could never converge (2026-09-09).
-//
-// This band's only job is catching something gross - a misconfigured
-// IMU_GRAVITY_NATIVE (wrong by ~9.8x), a dead axis, a failed read. Motion is
-// caught by IMU_TRIM_ACCEL_VAR_MAX and the GNSS speed gate, not by this.
-#define IMU_TRIM_ACCEL_SANITY_TOL 0.25f
-
-// Per-axis accel STANDARD DEVIATION ceiling, in native units - the real
-// stillness test for the accelerometer, and bias-immune by construction in the
-// same way the gyro's is.
-//
-// Measured: stationary engine-idling in a 2018 M2 gives per-axis sd of 6-10 mg;
-// driving gives 70-118 mg. This sits ~4x above idle and ~2x below driving, and
-// it is the secondary check anyway - GNSS speed is the primary motion gate.
-#define IMU_TRIM_ACCEL_VAR_MAX 0.04f // g
-
-// Per-axis gyro STANDARD DEVIATION ceiling, in native units. Variance, not
-// magnitude: gating on |gyro| would be circular, since a chip whose resting
-// bias exceeds the threshold would hold the gate shut against the very
-// measurement that would correct it (one board here sits at -4 deg/s).
-//
-// MEASURED, not guessed. Raw stationary capture in a 2018 M2 (2026-09-08):
-// cold idle 0.62 deg/s, warm idle 0.37 deg/s, driving 3.6-4.2 deg/s. The
-// original 0.5 blocked a cold idle entirely - trim would never converge if the
-// logger was switched on after starting the car, which is the natural order.
-// 1.0 clears cold idle by 1.6x and still sits 4.2x under driving.
-//
-// Allowing an idling engine is safe, and that was checked rather than assumed:
-// simulating the real 5-block capture on that data gives 0.019 deg
-// repeatability at cold idle and 0.019 deg at warm idle - identical despite
-// 68% more vibration, because the block mean removes a zero-mean signal.
-// Against 3.2 deg of ground-slope difference measured between two ordinary
-// parking spots, vibration is ~150x down and simply not in the error budget.
-//
-// n=1 vehicle, and a reasonably smooth six. A four-cylinder or a diesel could
-// sit well above this; if trim will not converge in a rougher car, start here.
-#define IMU_TRIM_GYRO_VAR_MAX 1.0f // deg/s; ~0.01745f rad/s on ESP32
-
-// Largest tilt this module will correct. Beyond it the rotation is REFUSED
-// rather than clamped and imuTrimConverged() stays false, but the measured
-// angle is still reported so a mounting guard can see it. Past ~15 degrees the
-// user has most likely made a mistake rather than a choice.
-#define IMU_TRIM_MAX_TILT_DEG 15.0f
-
-// Demand a valid 3D GNSS fix before trimming at all. Closes the hole in
-// the gate: constant-velocity cruise on smooth pavement reads ~1g magnitude
-// with near-zero gyro variance and is otherwise indistinguishable from parked.
-// The cold-start window this costs is not scarce - powering on parked gives
-// minutes of stillness after first fix. SET TO 0 FOR BENCH TESTING, which
-// never gets a fix indoors.
-#define IMU_TRIM_REQUIRE_FIX 1
-
-// How long the last PVT epoch may go without advancing before its speed stops
-// counting as valid. gnssLatestPvt() returns the last epoch however stale, so
-// a receiver that dies mid-drive would otherwise freeze at a stale 0 m/s and
-// let the gate pass while moving.
-#define IMU_TRIM_PVT_STALE_MS 1000
+// Sample interval, smoothing, transient thresholds and runtime trim: shared by
+// every board, in g_imu_tuning.h (included at the top of this file).
 
 // --- Axis orientation (installed mounting) ---
 // Corrects the sensor's raw axes into the vehicle frame.
@@ -254,7 +141,7 @@
 //   ZYX     2, 1, 0       odd      odd  (1 or 3)
 //
 // TO DERIVE A NEW MAP, no drive test is needed - hold the assembled unit in
-// its installed orientation and read the 1 Hz serial milliG line:
+// its installed orientation and read the 1 Hz serial mG line:
 //   1. At rest, the axis reading ~+/-1000 is vehicle-vertical; sign gives
 //      up vs down.
 //   2. Raise the forward end - the axis going positive is vehicle X.
@@ -265,26 +152,6 @@
 #define IMU_AXIS_Y_SIGN -1.0f
 #define IMU_AXIS_Z_SRC 2 // vehicle up      <- sensor Z
 #define IMU_AXIS_Z_SIGN +1.0f
-
-// --- LIGHT_SLEEP wake-up detector (omni-directional shake-to-wake) ---
-// Configured via direct register writes (the Seeed library has no high-level
-// API for this) per ST AN4650. A low ODR is what puts the accelerometer into
-// the chip's automatic low-power mode; full accuracy isn't needed just to
-// detect "something moved." FS is deliberately kept matched to
-// IMU_ACCEL_RANGE_G (the RUNNING-mode range) rather than dropped to +/-2g:
-// since this is a live mode switch on an already-running chip (not a cold
-// power-on), changing FS_XL creates a scale discontinuity in the wake-up
-// detector's raw-code threshold comparison that persists (not a settling
-// transient - a delay before arming does not fix it) and reliably
-// false-triggers immediately. Only ODR changes across the RUNNING<->LIGHT_SLEEP
-// transition now.
-#define IMU_WAKE_CTRL1_XL 0x18
-// 6-bit wake-up threshold (0-63), LSB weight = FS_XL/64 - so this scales with
-// the FS_XL chosen above; re-tune with src/tools/nRF52840/imu_wake if FS_XL
-// changes. THE key tunable for shake-to-wake: too low false-triggers on small
-// vibrations, too high misses a real pickup.
-#define IMU_WAKE_THS 4
-#define IMU_WAKE_DUR 0 // debounce, in ODR cycles - 0 = fire on first sample
 
 // ----------------------------------------------------------------------------
 // --- GNSS (HGLRC M100-5883, u-blox M10 chipset) ---
@@ -302,11 +169,6 @@
 #define GNSS_NAV_RATE_HZ 20   // 20 is max for 2 enabled constellations
 #define GNSS_SV_MINELEV_DEG 5 // ignore SVs below this angle (anti-multipath)
 #define GNSS_DYNAMIC_MODEL DYN_MODEL_AUTOMOTIVE
-
-// --- LIGHT_SLEEP wake pulse ---
-// gnssWake() rouses the receiver from RXM-PMREQ backup mode by releasing
-// Serial1 and driving GNSS_TX_PIN through a manual LOW->HIGH->LOW pulse.
-#define GNSS_WAKE_PULSE_MS 10
 
 // --- GNSS Constellation Toggles ---
 // Enable only the constellations your module supports and your region benefits
@@ -412,6 +274,18 @@
 #define POWER_SWITCH_SENSE_PIN A4         // Set to your selected GPIO pin
 #define POWER_SWITCH_OFF_THRESHOLD_MV 800 // pin mv above this == switch OFF
 
+// The two levels the threshold sits between. Not used at runtime - they exist
+// so the margin that justifies switchReadOnce()'s SINGLE unaveraged read is a
+// compile-time fact rather than a sentence in g_power.h that can drift away
+// from the code (which is exactly what it did - see ROB-2).
+//
+// OFF_MV_MIN is deliberately the WORST case, not the nice one: 510k/510k halves
+// the cell, and the cell is at its lowest usable point at the 3.35V end of
+// BATTERY_DISCHARGE_CURVE, giving ~1675mV. At a full 4.2V the tap reads ~2100mV
+// and the margin is wider still.
+#define POWER_SWITCH_ON_MV 0         // switch ON shorts the tap to ground
+#define POWER_SWITCH_OFF_MV_MIN 1675 // 510k/510k at the 3.35V discharge floor
+
 // How often powerSwitchOn() refreshes its cached switch-sense reading. Reads
 // between refreshes return the cache, keeping the per-loop cost to a compare.
 #define POWER_SWITCH_POLL_INTERVAL_MS 50
@@ -429,25 +303,24 @@
 // streaming/serving BLE.
 #define STATE_CHARGE_ONLY_ON_USB 0
 
-// --- LIGHT_SLEEP timing (Phase 2) ---
-// Defensive power-shedding for a device left running with no BLE client
-// connected. Three tiers, all measured from last BLE disconnect in RUNNING:
-//   1. STATE_IDLE_TIMEOUT_MIN (RUNNING -> LIGHT_SLEEP). GNSS drops to
-//      backup mode (ephemeris retained, wakes in ~1-3s), IMU arms its
-//      wake-up detector, LED blinks blue slowly. Reversible without a reset.
-//      BLE client connect or IMU shake-to-wake returns to RUNNING instantly.
-//   2. STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN (from LIGHT_SLEEP entry). GNSS
-//      power save escalates to a full EN-cut. By this point ephemeris would
-//      likely be stale anyway, so there's no reacquisition-speed cost to
-//      cutting harder. BLE/IMU wake capability is unaffected.
-//   3. STATE_LIGHT_SLEEP_TIMEOUT_MIN (from LIGHT_SLEEP entry).Gives up
-//      entirely and drops to DEEP_SLEEP (System OFF). This is the ultimate
-//      backstop for a truly-forgotten device. Past this point BLE/shake-to-wake
-//      no longer work. Recovery requires a switch cycle or USB plug-in,
-//      same as any other DEEP_SLEEP entry.
-#define STATE_IDLE_TIMEOUT_MIN 30
-#define STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN 180
-#define STATE_LIGHT_SLEEP_TIMEOUT_MIN 360
+// --- Idle cutoff ---
+// A device left running that nobody is using drops to DEEP_SLEEP (System OFF)
+// after this long. Recovery is a switch off->on cycle or a USB plug-in, and the
+// GNSS cold-starts, as after any other DEEP_SLEEP. This is the backstop for a
+// forgotten device: between it and the low-voltage cutoff, the cell is never
+// run flat by a unit nobody is watching.
+//
+// "Nobody is using it" means no BLE client SUBSCRIBED to notifications, not
+// merely none connected. A central that connects and never subscribes - a
+// stranger, or a forgotten nRF Connect session - receives nothing, and must not
+// hold the device at full power until the battery cutoff. The clock also stands
+// still on USB power, where there is no cell to protect.
+//
+// This replaced a LIGHT_SLEEP state (GNSS backup mode, IMU shake-to-wake, BLE
+// wake), removed 2026-09-11: the most intricate machinery in the firmware, for
+// a saving only a forgotten device ever collected. See "LIGHT_SLEEP removed" in
+// docs/code-review-remediation.md.
+#define STATE_IDLE_TIMEOUT_MIN 240 // 4 h
 
 // --- Switch-off debounce ---
 // A floating/unwired switch-sense pin, and even a wired divider under EMI,
@@ -463,11 +336,6 @@
 #define LED_BLINK_INTERVAL_MS 1000    // standard interval for blinking states
 #define LED_BATTERY_WAIT_BLINK_MS 150 // rapid blink for BATTERY_WAIT
 
-// LIGHT_SLEEP blink - short on, long off (a "sleeping" pulse), deliberately
-// distinct from the advertising blink's even on/off.
-#define LED_LIGHT_SLEEP_BLINK_ON_MS 250
-#define LED_LIGHT_SLEEP_BLINK_OFF_MS 5000
-
 // ----------------------------------------------------------------------------
 // --- Logging ---
 // ----------------------------------------------------------------------------
@@ -480,12 +348,22 @@
 
 #define LOG_STATS_INTERVAL_MS 1000 // serial stats reporting interval
 
-// Separate, much slower cadence for LIGHT_SLEEP's own heartbeat (g_state) -
-// LOG_STATS_INTERVAL_MS's 1 Hz is right for live telemetry monitoring, but
-// LIGHT_SLEEP can last hours (up to STATE_LIGHT_SLEEP_TIMEOUT_MIN), and
-// nothing else logs while asleep - without this there's no way to tell it's
-// still alive/how long it's been asleep until it wakes back up.
-#define LOG_LIGHT_SLEEP_INTERVAL_MS 10000
+// ----------------------------------------------------------------------------
+// --- Protocol ---
+// ----------------------------------------------------------------------------
+
+// Which telemetry protocol this build emits. Values are the PROTO_* ids in
+// g_protocol.h; g_protocol_active.h resolves the choice and is the only place
+// that has to know about a new protocol.
+//
+// Compile-time by design: the unselected protocols are not linked, so they
+// cost no flash, and there is no persistence or switching UI to build. The
+// trade is that changing protocol needs a reflash. See
+// docs/multiprotocol-design.md section 8.1.
+//
+// The protocol's own constants - identity strings, UUIDs, and the asserts that
+// validate them - live in g_proto_<name>.h, not here. See section 7.
+#define TELEMETRY_PROTOCOL PROTO_RACEBOX
 
 // ============================================================================
 // ============================================================================
@@ -519,6 +397,8 @@
 // ----------------------------------------------------------------------------
 
 // Powered by a dedicated enable pin; sits on the internal I2C bus (Wire1).
+// Also a clean way to rehearse a missing IMU: 0x6B is the part's only other
+// address, and the Sense wires SA0 high, so nothing answers there.
 #define IMU_I2C_ADDRESS 0x6A // SA0 tied high on the XIAO Sense
 
 // I2C bus speed for the onboard IMU.
@@ -532,22 +412,16 @@
 // The default is NOT 400kHz and has to be set explicitly. TwoWire::begin()
 // hardcodes FREQUENCY to K100, and the LSM6DS3 library calls begin() but never
 // setClock() - so without this the IMU bus runs at 100kHz while the display's
-// runs at 400kHz. g_imu.cpp applies it AFTER myIMU.begin(), which is required:
+// runs at 400kHz. The LSM6DS3 driver (g_imu_lsm6ds3.cpp) applies it AFTER
+// myIMU.begin(), which is required:
 // begin() resets the frequency register, so setting it earlier is silently
-// undone. It is re-applied on every configureNormalMode() for the same reason
-// (imuDisarmWake() calls begin() again on each LIGHT_SLEEP exit).
+// undone.
 //
 // The LSM6DS3TR-C supports I2C fast mode (400kHz) per ST's datasheet, and
 // Wire1 is entirely internal to the XIAO - short traces, onboard pull-ups - so
 // there is no signal-integrity reason to stay at 100kHz.
 #define IMU_I2C_CLOCK_HZ 400000
 #define IMU_POWER_PIN PIN_LSM6DS3TR_C_POWER
-// Wake-up detector's interrupt output (onboard, no wiring needed).
-#define IMU_INT1_PIN PIN_LSM6DS3TR_C_INT1
-
-// Decimate the IMU stream down to the transmission rate. Derived from
-// GNSS_NAV_RATE_HZ so the two can't drift out of sync.
-#define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_NAV_RATE_HZ)
 
 // ----------------------------------------------------------------------------
 // --- GNSS (HGLRC M100-5883, u-blox M10 chipset) ---
@@ -619,24 +493,34 @@
 #define LED_BLUE_PIN LED_BLUE
 
 // ----------------------------------------------------------------------------
-// --- Protocol (RaceBox BLE protocol) ---
-// These match the RaceBox BLE protocol and should not be changed. The UUIDs
-// are the Nordic UART UUIDs, which Bluefruit's BLEUart uses natively.
+// --- Protocol ---
 // ----------------------------------------------------------------------------
-
-#define RACEBOX_MODEL "RaceBox Mini"   // Compatibility requirement
-#define RACEBOX_MANUFACTURER "RaceBox" // Compatibility requirement
-#define RACEBOX_HARDWARE_VERSION "1"   // Compatibility requirement
-#define RACEBOX_FIRMWARE_VERSION "3.3" // Compatibility requirement
-#define RACEBOX_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define RACEBOX_CHARACTERISTIC_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define RACEBOX_CHARACTERISTIC_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+//
+// The protocol's own constants - identity strings, service and characteristic
+// UUIDs, and the asserts validating them - live with the protocol, in
+// g_proto_<name>.h, NOT here. Two reasons:
+//
+//   1. They were byte-identical across all three variants but UNCHECKED,
+//      because config.h cannot join check_common.sh's common set (DEVICE_ID,
+//      pins and IMU ranges legitimately differ). Nothing prevented them
+//      drifting and silently breaking app compatibility.
+//   2. Validation that fires unconditionally here would force a build using a
+//      different protocol to keep dead RaceBox constants alive just to satisfy
+//      it.
+//
+// See docs/multiprotocol-design.md section 7.
 
 // ============================================================================
 // --- COMPILE-TIME VALIDATION ---
 // ============================================================================
 
 // Enforce device ID format: a 10-digit string with first digit 0-3.
+//
+// These rules are RaceBox APP constraints, so by rights they belong with the
+// protocol. They stay here because DEVICE_ID itself is per-variant config, and
+// g_proto_racebox.h must not include config.h - that dependency-freedom is what
+// makes the encoder host-testable. Validating the value where the value lives
+// is the lesser compromise.
 // DEVICE_ID is a string so leading zeros survive; these constexpr helpers let
 // us validate that string at compile time (C++ has no compile-time regex).
 namespace device_id {
@@ -658,33 +542,6 @@ static_assert(device_id::allDigits(DEVICE_ID),
 static_assert(DEVICE_ID[0] >= '0' && DEVICE_ID[0] <= '3',
               "ERROR: DEVICE_ID's first digit must be 0-3 (value below "
               "4000000000).");
-
-// Validate the three RaceBox protocol UUIDs are well-formed 8-4-4-4-12 hex
-// strings, the same way DEVICE_ID's format is checked above.
-namespace uuid_format {
-constexpr bool isHexDigit(char c) {
-  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-         (c >= 'A' && c <= 'F');
-}
-// Hyphens are required at positions 8, 13, 18, and 23; every other position
-// (of the required 36 total) must be a hex digit.
-constexpr bool isValid(const char *s, int i = 0) {
-  return i == 36 ? s[i] == '\0'
-         : (i == 8 || i == 13 || i == 18 || i == 23)
-             ? (s[i] == '-' && isValid(s, i + 1))
-             : (isHexDigit(s[i]) && isValid(s, i + 1));
-}
-} // namespace uuid_format
-
-static_assert(uuid_format::isValid(RACEBOX_SERVICE_UUID),
-              "ERROR: RACEBOX_SERVICE_UUID must be a standard 8-4-4-4-12 hex "
-              "UUID string.");
-static_assert(uuid_format::isValid(RACEBOX_CHARACTERISTIC_TX_UUID),
-              "ERROR: RACEBOX_CHARACTERISTIC_TX_UUID must be a standard "
-              "8-4-4-4-12 hex UUID string.");
-static_assert(uuid_format::isValid(RACEBOX_CHARACTERISTIC_RX_UUID),
-              "ERROR: RACEBOX_CHARACTERISTIC_RX_UUID must be a standard "
-              "8-4-4-4-12 hex UUID string.");
 
 // Enforce GNSS_RX_PIN and GNSS_TX_PIN are distinct pins.
 static_assert(GNSS_RX_PIN != GNSS_TX_PIN,
@@ -709,31 +566,22 @@ static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
 static_assert(GNSS_SV_MINELEV_DEG >= 0 && GNSS_SV_MINELEV_DEG <= 90,
               "ERROR: GNSS_SV_MINELEV_DEG must be between 0 and 90.");
 
-// Enforce sane EMA alpha range
-static_assert(IMU_ACCEL_ALPHA > 0.0f && IMU_ACCEL_ALPHA <= 1.0f,
-              "ERROR: IMU_ACCEL_ALPHA must be in the range (0.0, 1.0]");
-static_assert(IMU_GYRO_ALPHA > 0.0f && IMU_GYRO_ALPHA <= 1.0f,
-              "ERROR: IMU_GYRO_ALPHA must be in the range (0.0, 1.0]");
-
-// Enforce positive transient thresholds (a zero/negative threshold would
-// disable transient blending entirely; see ImuAxis::read()).
-static_assert(IMU_ACCEL_TRANSIENT_THRESHOLD_G > 0.0f,
-              "ERROR: IMU_ACCEL_TRANSIENT_THRESHOLD_G must be greater than 0.");
-static_assert(
-    IMU_GYRO_TRANSIENT_THRESHOLD_DPS > 0.0f,
-    "ERROR: IMU_GYRO_TRANSIENT_THRESHOLD_DPS must be greater than 0.");
-
-// Enforce a positive sample interval, and a transmit interval that's at
-// least as long as it. Otherwise a transmit window could contain zero fresh
-// samples, silently degrading ImuAxis's transient peak tracking to a plain
-// EMA with no warning.
-static_assert(IMU_SAMPLE_INTERVAL_MS > 0,
-              "ERROR: IMU_SAMPLE_INTERVAL_MS must be greater than 0.");
-static_assert(IMU_TRANSMIT_INTERVAL_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRANSMIT_INTERVAL_MS must be >= "
-              "IMU_SAMPLE_INTERVAL_MS so each transmit window contains at "
-              "least one fast sample for ImuAxis's transient peak tracking "
-              "to work.");
+// Enforce a GNSS epoch interval at least as long as the IMU sample interval.
+// Otherwise a transmit window could contain zero fresh samples, silently
+// degrading ImuAxis's transient peak tracking to a plain EMA with no warning.
+// Checked here rather than in g_imu_tuning.h because GNSS_NAV_RATE_HZ is a
+// per-board setting, and that file must not depend on one.
+//
+// The relationship used to be expressed against IMU_TRANSMIT_INTERVAL_MS, back
+// when decimation ran on its own timer. It is now driven directly by the GNSS
+// epoch (see imuLatchForEpoch()), so the real constraint is between the nav
+// rate and the sample rate - which is what this checks. At 20Hz nav and a 10ms
+// sample interval that is 5 samples per window.
+static_assert((1000 / GNSS_NAV_RATE_HZ) >= IMU_SAMPLE_INTERVAL_MS,
+              "ERROR: the GNSS epoch interval (1000 / GNSS_NAV_RATE_HZ) must "
+              "be >= IMU_SAMPLE_INTERVAL_MS, so each transmitted sample's "
+              "window contains at least one fresh IMU reading for ImuAxis's "
+              "transient peak tracking to work.");
 
 // Enforce IMU full-scale ranges are values the LSM6DS3 supports
 static_assert(IMU_ACCEL_RANGE_G == 2 || IMU_ACCEL_RANGE_G == 4 ||
@@ -745,50 +593,76 @@ static_assert(
         IMU_GYRO_RANGE_DPS == 2000,
     "ERROR: IMU_GYRO_RANGE_DPS must be one of 125, 245, 500, 1000, 2000.");
 
-// Enforce IMU output data rates are values the LSM6DS3 supports
+// Enforce IMU output data rates the Seeed LSM6DS3 library actually MAPS, which
+// is not the same list as the datasheet's. Its begin() switches on these plain
+// integers and sends anything it does not recognise to `default:` - 104 Hz,
+// silently. The datasheet's 1.66/3.33/6.66 kHz steps are quoted as 1666/3332/
+// 6664 in places; the library's cases are 1660/3330/6660, so the rounder
+// spellings used to compile here and run at 104 Hz. The gyro list is shorter:
+// the library maps no gyro rate above 1660. Found 2026-09-11; the driver's own
+// odrCode() static_assert keeps the two lists in step.
 static_assert(IMU_ACCEL_ODR_HZ == 13 || IMU_ACCEL_ODR_HZ == 26 ||
                   IMU_ACCEL_ODR_HZ == 52 || IMU_ACCEL_ODR_HZ == 104 ||
                   IMU_ACCEL_ODR_HZ == 208 || IMU_ACCEL_ODR_HZ == 416 ||
-                  IMU_ACCEL_ODR_HZ == 833 || IMU_ACCEL_ODR_HZ == 1666 ||
-                  IMU_ACCEL_ODR_HZ == 3332 || IMU_ACCEL_ODR_HZ == 6664,
-              "ERROR: IMU_ACCEL_ODR_HZ must be a supported LSM6DS3 rate.");
+                  IMU_ACCEL_ODR_HZ == 833 || IMU_ACCEL_ODR_HZ == 1660 ||
+                  IMU_ACCEL_ODR_HZ == 3330 || IMU_ACCEL_ODR_HZ == 6660,
+              "ERROR: IMU_ACCEL_ODR_HZ must be one of 13, 26, 52, 104, 208, "
+              "416, 833, 1660, 3330, 6660 - the rates the Seeed LSM6DS3 "
+              "library maps. Anything else silently becomes 104 Hz.");
 static_assert(IMU_GYRO_ODR_HZ == 13 || IMU_GYRO_ODR_HZ == 26 ||
                   IMU_GYRO_ODR_HZ == 52 || IMU_GYRO_ODR_HZ == 104 ||
                   IMU_GYRO_ODR_HZ == 208 || IMU_GYRO_ODR_HZ == 416 ||
-                  IMU_GYRO_ODR_HZ == 833 || IMU_GYRO_ODR_HZ == 1666 ||
-                  IMU_GYRO_ODR_HZ == 3332 || IMU_GYRO_ODR_HZ == 6664,
-              "ERROR: IMU_GYRO_ODR_HZ must be a supported LSM6DS3 rate.");
-static_assert(
-    IMU_ACCEL_BANDWIDTH_HZ == 50 || IMU_ACCEL_BANDWIDTH_HZ == 100 ||
-        IMU_ACCEL_BANDWIDTH_HZ == 200 || IMU_ACCEL_BANDWIDTH_HZ == 400,
-    "ERROR: IMU_ACCEL_BANDWIDTH_HZ must be one of 50, 100, 200, 400.");
+                  IMU_GYRO_ODR_HZ == 833 || IMU_GYRO_ODR_HZ == 1660,
+              "ERROR: IMU_GYRO_ODR_HZ must be one of 13, 26, 52, 104, 208, "
+              "416, 833, 1660 - the rates the Seeed LSM6DS3 library maps for "
+              "the gyro. Anything else silently becomes 104 Hz.");
+// The part offers exactly these two.
+static_assert(IMU_ACCEL_LPF1_ODR_DIV == 2 || IMU_ACCEL_LPF1_ODR_DIV == 4,
+              "ERROR: IMU_ACCEL_LPF1_ODR_DIV must be 2 or 4 (LPF1_BW_SEL).");
+
+// The sensor's filter is the ONLY thing protecting the resample this firmware
+// does: the chip updates its output registers at IMU_ACCEL_ODR_HZ and imuPoll()
+// reads them at 1000 / IMU_SAMPLE_INTERVAL_MS. Content above half the READ rate
+// folds into the band we keep, and nothing downstream can undo it - the EMA in
+// ImuAxis attenuates the folded energy but cannot tell it from signal, and the
+// transient-peak detector sees the raw sample before any of that.
+//
+// At 104 Hz ODR read at 100 Hz this passes with the divider at 4 (26 Hz) and
+// FAILS at 2 (52 Hz), which is the honest answer: 52 Hz content would alias.
+// Raising IMU_ACCEL_ODR_HZ without also polling faster fails for the same
+// reason - at 208 Hz every divider aliases against a 100 Hz read.
+static_assert(IMU_ACCEL_LPF1_CUTOFF_HZ * 2 <= 1000 / IMU_SAMPLE_INTERVAL_MS,
+              "ERROR: the accelerometer's LPF1 cutoff (IMU_ACCEL_ODR_HZ / "
+              "IMU_ACCEL_LPF1_ODR_DIV) is above half the rate imuPoll() reads "
+              "at, so sensor content would alias into the transmitted band. "
+              "Raise IMU_ACCEL_LPF1_ODR_DIV, lower IMU_ACCEL_ODR_HZ, or lower "
+              "IMU_SAMPLE_INTERVAL_MS to read faster.");
+
+// BW0_XL, the other half of those two bits, selects the ANALOG chain bandwidth
+// and does nothing below 1.67 kHz (ST's driver says so in as many words), which
+// is why imuSensorBegin() leaves it at the part's default. Above that rate it
+// starts to matter and this config would have to choose it deliberately.
+static_assert(IMU_ACCEL_ODR_HZ < 1667,
+              "ERROR: at this ODR the accelerometer's ANALOG bandwidth (BW0_XL) "
+              "is no longer irrelevant. Decide it explicitly in "
+              "g_imu_lsm6ds3.cpp before raising IMU_ACCEL_ODR_HZ this far.");
+
+// Enforce output data rates at least as fast as the sample rate. Polled faster
+// than the part produces samples, imuPoll() reads the same sample twice: the
+// filters see duplicates, and the rate they effectively run at - the one the
+// alphas in g_imu_tuning.h are tuned for - becomes the ODR, not
+// IMU_SAMPLE_INTERVAL_MS. Checked here, not there, because the ODR is per part.
+static_assert(IMU_ACCEL_ODR_HZ * IMU_SAMPLE_INTERVAL_MS >= 1000,
+              "ERROR: IMU_ACCEL_ODR_HZ must be at least the sample rate "
+              "(1000 / IMU_SAMPLE_INTERVAL_MS, in g_imu_tuning.h).");
+static_assert(IMU_GYRO_ODR_HZ * IMU_SAMPLE_INTERVAL_MS >= 1000,
+              "ERROR: IMU_GYRO_ODR_HZ must be at least the sample rate "
+              "(1000 / IMU_SAMPLE_INTERVAL_MS, in g_imu_tuning.h).");
+
+static_assert(IMU_ENABLED == 0 || IMU_ENABLED == 1,
+              "ERROR: IMU_ENABLED must be 0 or 1.");
 
 // Enforce each axis sign is a true sign, not a scale factor
-// --- Runtime IMU trim ---
-static_assert(IMU_GRAVITY_NATIVE > 0.0f,
-              "ERROR: IMU_GRAVITY_NATIVE must be greater than 0.");
-static_assert(IMU_TRIM_QUALIFY_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRIM_QUALIFY_MS must span at least one IMU sample.");
-static_assert(IMU_TRIM_BLOCK_MS >= IMU_SAMPLE_INTERVAL_MS,
-              "ERROR: IMU_TRIM_BLOCK_MS must span at least one IMU sample.");
-static_assert(IMU_TRIM_LOCK_BLOCKS >= 1,
-              "ERROR: IMU_TRIM_LOCK_BLOCKS must be at least 1.");
-static_assert(IMU_TRIM_SPEED_MAX_MPS > 0.0f,
-              "ERROR: IMU_TRIM_SPEED_MAX_MPS must be greater than 0.");
-static_assert(IMU_TRIM_ACCEL_SANITY_TOL > 0.0f &&
-                  IMU_TRIM_ACCEL_SANITY_TOL < 1.0f,
-              "ERROR: IMU_TRIM_ACCEL_SANITY_TOL must be in (0.0, 1.0).");
-static_assert(IMU_TRIM_ACCEL_VAR_MAX > 0.0f,
-              "ERROR: IMU_TRIM_ACCEL_VAR_MAX must be greater than 0.");
-static_assert(IMU_TRIM_GYRO_VAR_MAX > 0.0f,
-              "ERROR: IMU_TRIM_GYRO_VAR_MAX must be greater than 0.");
-// Kept well under 90 degrees: the rotation build is singular at 180, and the
-// small-angle regime is the whole design scope.
-static_assert(IMU_TRIM_MAX_TILT_DEG > 0.0f && IMU_TRIM_MAX_TILT_DEG < 60.0f,
-              "ERROR: IMU_TRIM_MAX_TILT_DEG must be in the range (0, 60).");
-static_assert(IMU_TRIM_PVT_STALE_MS > 0,
-              "ERROR: IMU_TRIM_PVT_STALE_MS must be greater than 0.");
-
 static_assert(IMU_AXIS_X_SIGN == 1.0f || IMU_AXIS_X_SIGN == -1.0f,
               "ERROR: IMU_AXIS_X_SIGN must be exactly +1.0f or -1.0f.");
 static_assert(IMU_AXIS_Y_SIGN == 1.0f || IMU_AXIS_Y_SIGN == -1.0f,
@@ -866,8 +740,6 @@ static_assert(
 // Enforce a positive stats-reporting interval.
 static_assert(LOG_STATS_INTERVAL_MS > 0,
               "ERROR: LOG_STATS_INTERVAL_MS must be greater than 0.");
-static_assert(LOG_LIGHT_SLEEP_INTERVAL_MS > 0,
-              "ERROR: LOG_LIGHT_SLEEP_INTERVAL_MS must be greater than 0.");
 
 // Enforce a sane EMA alpha for the displayed voltage smoother.
 static_assert(BATTERY_EMA_ALPHA > 0.0f && BATTERY_EMA_ALPHA <= 1.0f,
@@ -906,6 +778,19 @@ static_assert(SAADC_TACQ_US == 3 || SAADC_TACQ_US == 5 || SAADC_TACQ_US == 10 ||
               "ERROR: SAADC_TACQ_US must be one of 3, 5, 10, 15, 20, "
               "40 (values the SAADC supports via analogSampleTime()).");
 
+// Switch-sense margin. switchReadOnce() takes ONE unaveraged analogRead(), and
+// that is only defensible because the threshold sits hundreds of millivolts
+// from both levels - far beyond any SAADC channel-switch settling error, which
+// is tens of millivolts at most on a channel with TACQ set for the divider's
+// ~255k source impedance. If the divider or the threshold moves, that argument
+// has to be re-made rather than assumed.
+static_assert(POWER_SWITCH_OFF_THRESHOLD_MV - POWER_SWITCH_ON_MV >= 500 &&
+                  POWER_SWITCH_OFF_MV_MIN - POWER_SWITCH_OFF_THRESHOLD_MV >= 500,
+              "ERROR: POWER_SWITCH_OFF_THRESHOLD_MV must keep >=500mV margin "
+              "on BOTH sides. The single unaveraged analogRead() in "
+              "switchReadOnce() depends on it - revisit powerSwitchOn()'s note "
+              "in g_power.h before widening this.");
+
 // Switch-sense threshold sits inside the ADC's readable range.
 static_assert(POWER_SWITCH_OFF_THRESHOLD_MV > 0 &&
                   POWER_SWITCH_OFF_THRESHOLD_MV < 3000,
@@ -926,38 +811,15 @@ static_assert(LED_BLINK_INTERVAL_MS > 0,
 static_assert(LED_BATTERY_WAIT_BLINK_MS >= 50 &&
                   LED_BATTERY_WAIT_BLINK_MS <= 1000,
               "ERROR: LED_BATTERY_WAIT_BLINK_MS must be 50..1000.");
-static_assert(LED_LIGHT_SLEEP_BLINK_ON_MS > 0 &&
-                  LED_LIGHT_SLEEP_BLINK_OFF_MS > 0,
-              "ERROR: LED_LIGHT_SLEEP_BLINK_*_MS must be greater than 0.");
 
 // State-machine feature flag: strictly 0 or 1.
 static_assert(STATE_CHARGE_ONLY_ON_USB == 0 || STATE_CHARGE_ONLY_ON_USB == 1,
               "ERROR: STATE_CHARGE_ONLY_ON_USB must be 0 or 1.");
 
-// LIGHT_SLEEP timing must be strictly increasing - each tier is measured
-// from LIGHT_SLEEP entry (or, for the first tier, from losing the last BLE
-// client), so a misordered value would mean a "later" escalation fires
-// before an "earlier" one.
-static_assert(STATE_IDLE_TIMEOUT_MIN > 0, "ERROR: STATE_IDLE_TIMEOUT_MIN must "
-                                          "be greater than 0.");
-static_assert(STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN > 0 &&
-                  STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN <
-                      STATE_LIGHT_SLEEP_TIMEOUT_MIN,
-              "ERROR: STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN must be > 0 and < "
-              "STATE_LIGHT_SLEEP_TIMEOUT_MIN.");
-static_assert(STATE_LIGHT_SLEEP_TIMEOUT_MIN > 0,
-              "ERROR: STATE_LIGHT_SLEEP_TIMEOUT_MIN must be greater than 0.");
-
-// GNSS wake pulse must be a positive, sane hold time per level.
-static_assert(GNSS_WAKE_PULSE_MS > 0 && GNSS_WAKE_PULSE_MS <= 1000,
-              "ERROR: GNSS_WAKE_PULSE_MS must be 1..1000 ms.");
-
-// IMU wake-up threshold is a 6-bit field (0-63); duration is a small packed
-// field - bounded generously rather than to its exact bit width, since the
-// real constraint is "fits in the register", which the write already masks.
-static_assert(IMU_WAKE_THS <= 63, "ERROR: IMU_WAKE_THS must be 0..63 (6-bit "
-                                  "field).");
-static_assert(IMU_WAKE_DUR <= 15, "ERROR: IMU_WAKE_DUR must be 0..15.");
+// A positive idle cutoff: zero would drop to DEEP_SLEEP on the first pass with
+// nobody subscribed - i.e. at boot, before any app has had a chance to connect.
+static_assert(STATE_IDLE_TIMEOUT_MIN > 0,
+              "ERROR: STATE_IDLE_TIMEOUT_MIN must be greater than 0.");
 
 // Logging feature flag: strictly 0 or 1.
 static_assert(LOG_ENABLED == 0 || LOG_ENABLED == 1,

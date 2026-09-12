@@ -1,0 +1,58 @@
+W  1  gnss=20.0  ble=20.0  old=21
+W  2  gnss=20.0  ble=20.0  old=19
+W  3  gnss=20.0  ble=20.0  old=21
+W  4  gnss=20.0  ble=20.0  old=20
+W  5  gnss=20.0  ble=20.0  old=20
+W  6  gnss=20.0  ble=20.0  old=20
+W  7  gnss=20.0  ble=20.0  old=20
+W  8  gnss=20.0  ble=20.0  old=20
+W  9  gnss=20.0  ble=20.0  old=20
+W 10  gnss=20.0  ble=20.0  old=19
+W 11  gnss=20.1  ble=20.1  old=21
+W 12  gnss=20.0  ble=20.0  old=20
+W 13  gnss=20.0  ble=20.0  old=20
+W 14  gnss=20.0  ble=20.0  old=20
+W 15  gnss=20.0  ble=20.0  old=20
+W 16  gnss=20.0  ble=20.0  old=20
+W 17  gnss=20.0  ble=20.0  old=20
+W 18  gnss=20.0  ble=20.0  old=20
+W 19  gnss=20.0  ble=20.0  old=20
+W 20  gnss=20.0  ble=20.0  old=20
+W 21  gnss=20.0  ble=20.0  old=20
+W 22  gnss=20.0  ble=20.0  old=20
+W 23  gnss=20.0  ble=20.0  old=20
+W 24  gnss=20.0  ble=20.0  old=20
+W 25  gnss=20.0  ble=20.0  old=20
+W 26  gnss=20.0  ble=20.0  old=20
+W 27  gnss=20.0  ble=20.0  old=20
+W 28  gnss=20.0  ble=20.0  old=20
+W 29  gnss=20.0  ble=20.0  old=20
+W 30  gnss=20.0  ble=20.0  old=20
+W 31  gnss=19.0  ble=19.0  old=19
+W 32  gnss=20.0  ble=20.0  old=20
+W 33  gnss=20.0  ble=20.0  old=20
+W 34  gnss=20.0  ble=20.0  old=20
+W 35  gnss=20.0  ble=20.0  old=20
+W 36  gnss=20.0  ble=20.0  old=20
+W 37  gnss=20.0  ble=20.0  old=20
+W 38  gnss=20.0  ble=20.0  old=20
+W 39  gnss=20.0  ble=20.0  old=20
+W 40  gnss=20.0  ble=20.0  old=20
+W 41  gnss=20.0  ble=19.0  old=20
+W 42  gnss=20.0  ble=20.0  old=20
+W 43  gnss=0.0  ble=0.0  old=0
+W 44  gnss=0.0  ble=0.0  old=0
+W 45  gnss=0.0  ble=0.0  old=0
+W 46  gnss=20.0  ble=20.0  old=20
+W 47  gnss=20.0  ble=20.0  old=20
+W 48  gnss=20.0  ble=20.0  old=20
+W 49  gnss=20.0  ble=20.0  old=20
+W 50  gnss=20.0  ble=20.0  old=20
+
+✅ scenario is adversarial: the clock-window method would have misread a steady stream
+✅ steady windows read 20.0 +/- 0.1, including the one after the stall (no stretched span)
+   1 of 46 steady windows read 19.9 or 20.1
+✅ lost epoch: that window alone reads 19.0
+✅ dropped BLE frame: BLE 19.0 while GNSS stays 20.0
+✅ every other window: BLE rate equals GNSS rate
+✅ receiver stall: windows with no epoch read 0.0

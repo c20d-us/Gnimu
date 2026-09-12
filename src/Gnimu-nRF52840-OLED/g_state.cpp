@@ -20,7 +20,6 @@
 #include "g_display.h"
 #include "g_ble.h"
 #include "g_gnss.h"
-#include "g_imu.h"
 #include "g_log.h"
 #include "g_power.h"
 
@@ -43,20 +42,11 @@ static bool switchOnDebounced(unsigned long nowMs) {
   return (nowMs - switchOffSinceMs) < STATE_SWITCH_OFF_DEBOUNCE_MS;
 }
 
-// LIGHT_SLEEP tracking
-// 0 is the sentinel for "clock not running" (mirrors switchOffSinceMs above).
-static unsigned long bleDisconnectedSinceMs = 0;
-static unsigned long lightSleepEnteredMs = 0;
-// True from LIGHT_SLEEP entry until the GNSS-cutoff escalation fires; tells
-// exitLightSleep() whether to wake GNSS from backup (gnssWake()) or from a
-// full EN-cut (powerGnssRailOn() + gnssBegin() cold-start).
-static bool gnssInBackup = false;
-// Heartbeat so LIGHT_SLEEP isn't completely silent - nothing else logs while
-// asleep, so without this there's no way to tell how long it's been asleep
-// until it wakes back up.
-static unsigned long lightSleepLastReportMs = 0;
+// Idle-cutoff anchor - see STATE_IDLE_TIMEOUT_MIN in config.h. 0 is the
+// sentinel for "clock not running" (mirrors switchOffSinceMs above).
+static unsigned long idleSinceMs = 0;
 
-// Shared by every RUNNING/LIGHT_SLEEP -> DEEP_SLEEP path: kick BLE clients,
+// Shared by every RUNNING -> DEEP_SLEEP path: kick BLE clients,
 // release Serial1 (same UART-vs-GPIO ordering rule as enterBatteryWait()),
 // flush, then hand off to powerEnterDeepSleep() (which itself calls
 // powerHoldPeripheralsOff() before sd_power_system_off()). Does not return.
@@ -95,6 +85,24 @@ static void enterBatteryWait() {
 // already skipped peripheral bring-up in setup(), no teardown needed there).
 // Same UART-ownership rule as BATTERY_WAIT: bleStop() + gnssEnd() first,
 // then hold-off.
+//
+// Guarded by the same flag as its only call site below, because a static
+// function that is defined and never referenced is a -Wunused-function warning
+// - and with STATE_CHARGE_ONLY_ON_USB at 0 it was the one warning standing
+// between these builds and a clean one. The point is not the warning itself,
+// it is that the NEXT one should be visible.
+//
+// Deliberately #if rather than [[maybe_unused]]: this ties the code's existence
+// to the flag that controls it, keeps all three CHARGE_ONLY guards greppable
+// together, and does not permanently suppress the signal on the day this goes
+// unused for some other reason.
+//
+// NOTE the asymmetry with `case STATE_CHARGE_ONLY:` in stateUpdate(), which is
+// equally unreachable at 0 and is deliberately NOT guarded. That switch has no
+// default:, so it is exhaustive over SystemState - dropping a case would just
+// trade -Wunused-function for -Wswitch. Case labels raise no unused warning,
+// so there is nothing to fix there.
+#if STATE_CHARGE_ONLY_ON_USB
 static void enterChargeOnly() {
   LOG_PRINTLN("🔌 -> CHARGE_ONLY (USB in, peripherals held off).");
   bleStop();
@@ -103,40 +111,7 @@ static void enterChargeOnly() {
   LOG_FLUSH();
   current = STATE_CHARGE_ONLY;
 }
-
-// Entry action for LIGHT_SLEEP from RUNNING. Reversible without a reset -
-// BLE stays advertising/connectable throughout (no bleStop()), only GNSS and
-// IMU change. gnssInBackup starts true; the GNSS-cutoff escalation flips it.
-static void enterLightSleep(unsigned long nowMs) {
-  LOG_PRINTLN("🌙 RUNNING -> LIGHT_SLEEP (idle timeout).");
-  gnssSleep();
-  imuArmWake();
-  gnssInBackup = true;
-  lightSleepEnteredMs = nowMs;
-  lightSleepLastReportMs = nowMs;
-  current = STATE_LIGHT_SLEEP;
-}
-
-// Exit action back to RUNNING, from either wake trigger (BLE connect or IMU
-// wake). Resets the idle clock so the device gets a full fresh
-// STATE_IDLE_TIMEOUT_MIN window in RUNNING before it can re-enter
-// LIGHT_SLEEP - without this, waking via IMU motion (not a BLE connect)
-// would leave bleDisconnectedSinceMs pointing at a stale pre-sleep timestamp
-// and immediately re-trigger entry on the very next stateUpdate().
-static void exitLightSleep(const char *reasonLog) {
-  LOG_PRINTLN(reasonLog);
-  if (gnssInBackup) {
-    gnssWake();
-  } else {
-    // Escalated to a full EN-cut already - cold-start it back up, same as a
-    // normal RUNNING boot.
-    powerGnssRailOn();
-    gnssBegin();
-  }
-  imuDisarmWake();
-  bleDisconnectedSinceMs = 0;
-  current = STATE_RUNNING;
-}
+#endif // STATE_CHARGE_ONLY_ON_USB
 
 SystemState stateBegin() {
   const bool switchOn =
@@ -146,7 +121,14 @@ SystemState stateBegin() {
 
   if (!switchOn) {
     current = STATE_BATTERY_WAIT;
-    LOG_PRINTLN("Boot -> BATTERY_WAIT (switch off, USB in).");
+    // Reports `usb` rather than asserting it. The claim is sound - the slide
+    // switch is 3-pole and takes the cell physically out of circuit, so an MCU
+    // executing at all with the switch off must be running on USB - but nothing
+    // in this branch established it. Printing the observation costs nothing, and
+    // an "absent" here would mean something genuinely surprising about the
+    // hardware rather than passing unnoticed.
+    LOG_PRINTF("Boot -> BATTERY_WAIT (switch off, USB %s).\n",
+               usb ? "in" : "absent");
     return current;
   }
 
@@ -189,8 +171,8 @@ void stateUpdate() {
           "RUNNING -> DEEP_SLEEP (voltage cutoff)."); // no return
     }
     // Priority 2: switch flipped off. Debounced against noise spikes.
-    // Break after the transition (as the LIGHT_SLEEP case does) so no
-    // lower-priority check can overwrite the new state on the same pass.
+    // Break after the transition so no lower-priority check can overwrite the
+    // new state on the same pass.
     if (!switchOnDebounced(nowMs)) {
       enterBatteryWait();
       break;
@@ -206,17 +188,20 @@ void stateUpdate() {
       break;
     }
 #endif
-    // Priority 4: idleElapsed -> LIGHT_SLEEP. bleDisconnectedSinceMs tracks
-    // the earliest continuous disconnect, same debounce-anchor idiom as
-    // switchOffSinceMs; any connect resets it.
-    if (bleIsConnected()) {
-      bleDisconnectedSinceMs = 0;
+    // Priority 4: nobody using it for STATE_IDLE_TIMEOUT_MIN -> DEEP_SLEEP.
+    // "Using" is a SUBSCRIBED client, not merely a connected one - see the
+    // config.h note - and the clock stands still on USB power, where there is
+    // no cell to protect. Same debounce-anchor idiom as switchOffSinceMs.
+    if (bleIsSubscribed() || powerUsbPresent()) {
+      idleSinceMs = 0;
     } else {
-      if (bleDisconnectedSinceMs == 0)
-        bleDisconnectedSinceMs = nowMs;
-      if (nowMs - bleDisconnectedSinceMs >=
+      if (idleSinceMs == 0)
+        idleSinceMs = nowMs;
+      if (nowMs - idleSinceMs >=
           (unsigned long)STATE_IDLE_TIMEOUT_MIN * 60000UL) {
-        enterLightSleep(nowMs);
+        current = STATE_DEEP_SLEEP;
+        enterDeepSleepFrom("RUNNING -> DEEP_SLEEP (idle: no subscribed client, "
+                           "no USB)."); // no return
       }
     }
     break;
@@ -260,66 +245,6 @@ void stateUpdate() {
     // Unreachable in loop() - powerEnterDeepSleep() never returned. Present
     // only for enum exhaustiveness.
     break;
-
-  case STATE_LIGHT_SLEEP: {
-    // Heartbeat - nothing else logs while asleep, so without this there's no
-    // way to tell it's still alive/how long it's been asleep until it wakes.
-    if (nowMs - lightSleepLastReportMs >= LOG_LIGHT_SLEEP_INTERVAL_MS) {
-      lightSleepLastReportMs = nowMs;
-      LOG_PRINTF("🌙 LIGHT_SLEEP: %lus elapsed (GNSS %s)\n",
-                 (nowMs - lightSleepEnteredMs) / 1000,
-                 gnssInBackup ? "backup" : "EN-cut");
-    }
-
-    // Priority 1: same voltage-cutoff safety edge as RUNNING.
-    if (batteryCutoffRequested() && !powerUsbPresent()) {
-      current = STATE_DEEP_SLEEP;
-      enterDeepSleepFrom(
-          "LIGHT_SLEEP -> DEEP_SLEEP (voltage cutoff)."); // no return
-    }
-    // Priority 2: switch flipped off - same reusable entry as from RUNNING.
-    // enterBatteryWait() handles bleStop()/gnssEnd()/hold-off unconditionally,
-    // which is correct regardless of whether GNSS is currently in backup
-    // mode or already EN-cut.
-    if (!switchOnDebounced(nowMs)) {
-      enterBatteryWait();
-      break;
-    }
-    // Priority 3: wake triggers - BLE connect or IMU motion. Either exits
-    // instantly back to RUNNING; GNSS reacquisition happens asynchronously
-    // in the background (validated sub-2s typical, see gnss-idle-cutoff-
-    // enhancement memory).
-    if (bleIsConnected()) {
-      exitLightSleep("☀️ LIGHT_SLEEP -> RUNNING (BLE connect).");
-      break;
-    }
-    if (imuWakeTriggered()) {
-      exitLightSleep("☀️ LIGHT_SLEEP -> RUNNING (IMU wake).");
-      break;
-    }
-    // Priority 4: GNSS backup -> EN-cut escalation. Ephemeris would be stale
-    // by this point anyway, so there's no reacquisition-speed cost to
-    // cutting harder. Only fires once (gnssInBackup guards it) and only
-    // affects GNSS - IMU wake-detect and BLE stay exactly as they are.
-    if (gnssInBackup &&
-        (nowMs - lightSleepEnteredMs) >=
-            (unsigned long)STATE_LIGHT_SLEEP_GNSS_CUTOFF_MIN * 60000UL) {
-      LOG_PRINTLN("🔌 LIGHT_SLEEP: GNSS backup -> EN-cut (ephemeris stale).");
-      gnssEnd();
-      powerGnssRailOff();
-      gnssInBackup = false;
-    }
-    // Priority 5: give up entirely -> DEEP_SLEEP. Ultimate backstop for a
-    // truly-forgotten device; past this point BLE/shake wake no longer
-    // work, same as any other DEEP_SLEEP entry.
-    if ((nowMs - lightSleepEnteredMs) >=
-        (unsigned long)STATE_LIGHT_SLEEP_TIMEOUT_MIN * 60000UL) {
-      current = STATE_DEEP_SLEEP;
-      enterDeepSleepFrom(
-          "LIGHT_SLEEP -> DEEP_SLEEP (idle timeout)."); // no return
-    }
-    break;
-  }
   }
 }
 

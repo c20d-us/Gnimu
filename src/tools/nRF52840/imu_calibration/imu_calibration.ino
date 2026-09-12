@@ -376,7 +376,7 @@ static void imuBringUp() {
   }
 
   // BDU on: prevents torn 16-bit reads from skewing an offset that has to be
-  // trusted to the last mV. Same setting as g_imu.cpp uses in production.
+  // trusted to the last mV. Same setting as g_imu_lsm6ds3.cpp uses in production.
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL3_C,
                       LSM6DS3_ACC_GYRO_BDU_BLOCK_UPDATE |
                           LSM6DS3_ACC_GYRO_IF_INC_ENABLED);

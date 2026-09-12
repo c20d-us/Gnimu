@@ -171,19 +171,22 @@ Photos of the reference build, from loose components to the finished, enclosed u
 
 ## Configuration
 
-All user-tunable settings live in [`config.h`](config.h), grouped into sections. Highlights:
+Settings live in [`config.h`](config.h), grouped into sections, with one exception: the IMU tuning (smoothing, transient thresholds, `IMU_TRIM_*`) is the same on every Gnimu board, so it lives in [`g_imu_tuning.h`](g_imu_tuning.h), which `check_common.sh` keeps identical across all three trees. Highlights:
 
 | Setting | Purpose |
 |---------|---------|
 | `DEVICE_ID` | 10-digit device serial as a **quoted string** (e.g. `"3608675309"`). Validated at compile time: exactly 10 digits, first digit `0`–`3`. |
+| `TELEMETRY_PROTOCOL` | Which wire protocol this build emits. `PROTO_RACEBOX` is currently the only implemented value. Chosen at compile time, so unselected protocols are never linked and cost no flash — the trade is that switching needs a reflash. A protocol's own constants (identity strings, service and characteristic UUIDs) live in `g_proto_<name>.h` rather than here, so they stay under `check_common.sh`. |
 | `GNSS_RX_PIN`, `GNSS_TX_PIN`, `LED_ONBOARD_PIN` | Hardware pin assignments. |
 | `GNSS_BAUD` | GNSS serial baud rate. On boot the firmware can detect a module at any valid baud rate, switch it to `GNSS_BAUD`, and save the config to flash. |
 | `GNSS_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25). Set once at startup and held for the life of the session, connected or not. |
 | `GNSS_SV_MINELEV_DEG` | Ignore satellites below this elevation angle (anti-multipath). |
 | `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
+| `IMU_ENABLED` | `1` if an MPU-6050 is fitted, `0` to build without one. With `0` the IMU fields read zero, trim never runs, and the Adafruit MPU6050 library isn't needed to build. GNSS, BLE and lap timing are unaffected. |
+| `IMU_I2C_ADDRESS` | The MPU-6050's I2C address: `0x68` with its AD0 pin low (the usual breakout default), `0x69` with AD0 high. Pointing it at the wrong one is also a safe way to rehearse a missing IMU: the device logs `❌ IMU not found` and carries on. |
 | `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
 | `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
-| `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2`, `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
+| `IMU_ACCEL_TRANSIENT_THRESHOLD_G`, `IMU_GYRO_TRANSIENT_THRESHOLD_DPS` | Deviation (g for accel, °/s for gyro — the same units on every Gnimu build, since the IMU driver converts the MPU-6050's m/s² and rad/s at the read) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
 | `IMU_TRIM_*` | Runtime levelling and gyro de-biasing. After 30 s continuously stationary with a valid 3D fix, the firmware measures its own mounting tilt and gyro zero, applies them, and **locks the orientation for the rest of the power cycle**. Replaces the old per-board calibration step — the firmware image is now identical on every unit. `IMU_TRIM_REQUIRE_FIX 0` for bench testing, which never gets a fix indoors. See [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md). |
 | `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Mounting-orientation remap into the vehicle frame. Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations. A determinant `static_assert` rejects a mirrored (impossible) map at compile time. Defaults are the identity map, leaving the raw sensor frame untouched. Derivation procedure and the order table are in `config.h`. |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
@@ -197,9 +200,9 @@ Raw accelerometer and gyroscope samples are read at 100Hz and run through a per-
 
 - Each axis tracks an EMA (exponential moving average) baseline (`IMU_ACCEL_ALPHA` / `IMU_GYRO_ALPHA`) for a smooth, low-noise signal.
 - Within each transmission window, the axis also tracks the largest raw deviation from that baseline.
-- If the deviation exceeds `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2` / `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
+- If the deviation exceeds `IMU_ACCEL_TRANSIENT_THRESHOLD_G` / `IMU_GYRO_TRANSIENT_THRESHOLD_DPS`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
 
-This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `config.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
+This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `g_imu_tuning.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
 
 ### A note on BLE power and GNSS lock
 

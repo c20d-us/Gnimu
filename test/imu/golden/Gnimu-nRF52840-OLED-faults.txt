@@ -1,0 +1,42 @@
+S boot-missing
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 301 up=0 reads=0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+E 1000 0 0 0 0 0 0
+E 1250 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S dies
+✅ IMU Accelerometer/Gyro enabled.
+U 301 up=1 reads=2
+E 500 44 -26 999 26 -19 9
+E 1000 52 -31 998 31 -22 12
+❌ IMU stopped responding - IMU fields will read zero.
+U 1391 up=0 reads=111
+E 1500 0 0 0 0 0 0
+E 1750 0 0 0 0 0 0
+E 2000 0 0 0 0 0 0
+E 2250 0 0 0 0 0 0
+R up=0 reads=111 failed=10
+S misconfigured
+❌ LSM6DS3 answered but did not take its configuration (CTRL1_XL 0x00 want 0x4A, CTRL2_G 0x00 want 0x44, CTRL3_C 0x04 want bits 0x44).
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 301 up=0 reads=0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S bdu-lost
+❌ LSM6DS3 answered but did not take its configuration (CTRL1_XL 0x4A want 0x4A, CTRL2_G 0x44 want 0x44, CTRL3_C 0x04 want bits 0x44).
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 301 up=0 reads=0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S lpf1-lost
+❌ LSM6DS3 answered but did not take its configuration (CTRL1_XL 0x48 want 0x4A, CTRL2_G 0x44 want 0x44, CTRL3_C 0x44 want bits 0x44).
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 301 up=0 reads=0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S sensor-reset: not applicable to this sensor

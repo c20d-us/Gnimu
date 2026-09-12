@@ -1,0 +1,41 @@
+S boot-missing
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 1 up=0 reads=0
+E 250 0 0 0 0 0 0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+E 1000 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S dies
+✅ IMU Accelerometer/Gyro enabled.
+U 1 up=1 reads=1
+E 500 51 -31 998 30 -23 12
+E 1000 52 -31 998 30 -22 13
+❌ IMU stopped responding - IMU fields will read zero.
+U 1100 up=0 reads=111
+E 1250 0 0 0 0 0 0
+E 1500 0 0 0 0 0 0
+E 1750 0 0 0 0 0 0
+E 2000 0 0 0 0 0 0
+R up=0 reads=111 failed=10
+S misconfigured
+❌ MPU-6050 answered but did not take its configuration.
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 1 up=0 reads=0
+E 250 0 0 0 0 0 0
+E 500 0 0 0 0 0 0
+R up=0 reads=0 failed=0
+S bdu-lost: not applicable to this sensor
+S lpf1-lost: not applicable to this sensor
+S sensor-reset
+✅ IMU Accelerometer/Gyro enabled.
+U 1 up=1 reads=1
+E 500 51 -31 998 30 -23 12
+E 1000 52 -31 998 30 -22 13
+❌ IMU stopped responding - IMU fields will read zero.
+U 1100 up=0 reads=111
+E 1250 0 0 0 0 0 0
+E 1500 0 0 0 0 0 0
+E 1750 0 0 0 0 0 0
+E 2000 0 0 0 0 0 0
+R up=0 reads=111 failed=10

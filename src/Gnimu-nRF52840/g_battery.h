@@ -62,6 +62,3 @@ BatteryStatus batteryGetStatus();
 // g_state applies the USB gate before entering DEEP_SLEEP.
 bool batteryCutoffRequested();
 
-// The RaceBox protocol battery byte for payload offset 67:
-// bit 7 = charging, bits 0-6 = percent.
-uint8_t batteryProtocolByte();

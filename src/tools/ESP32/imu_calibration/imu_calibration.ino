@@ -70,8 +70,9 @@
 //   * gyro:   rad/s   (Adafruit MPU6050 native, ->centi-deg/s downstream)
 // This is the main difference from the nRF52840 tool, whose LSM6DS3 reports g
 // and deg/s directly. Every threshold below is therefore written in native
-// units with the familiar g / dps equivalent in a comment, the same way
-// config.h writes IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2.
+// units with the familiar g / dps equivalent in a comment. (The firmware no
+// longer works this way: since 2026-09-11 its MPU-6050 driver converts to g
+// and deg/s at the read, so config.h carries no m/s^2 or rad/s values.)
 //
 // Accel Z is calibrated with the sensor's +Z face pointing UP on a level
 // surface, so gravity (9.80665 m/s^2) is subtracted from the average before
@@ -160,8 +161,8 @@
 #define IMU_I2C_CLOCK_HZ 400000
 #define IMU_SAMPLE_INTERVAL_MS 10 // 100 Hz pacing between samples
 
-// Standard gravity, subtracted from the accel Z average. Matches the constant
-// g_imu.cpp uses for its milli-g conversion.
+// Standard gravity, subtracted from the accel Z average. The same constant the
+// firmware's MPU-6050 driver (g_imu_mpu6050.cpp) divides by to report g.
 static const float GRAVITY_MPS2 = 9.80665f;
 
 // ----------------------------------------------------------------------------
@@ -408,7 +409,7 @@ static void imuBringUp() {
   mpu.setFilterBandwidth(IMU_FILTER_BANDWIDTH_HZ);
 
   // MUST come after begin(): that call brings the bus up and would overwrite
-  // anything set earlier. Same ordering constraint g_imu.cpp documents.
+  // anything set earlier. Same ordering constraint g_imu_mpu6050.cpp documents.
   Wire.setClock(IMU_I2C_CLOCK_HZ);
 }
 

@@ -1,0 +1,162 @@
+S at-target
+  HardwareSerial(2)
+  port.setRxBufferSize 512 -> 512
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
+  setDynamicModel 4 layer=3 -> 1
+  setUART1Output 0x01 layer=3 -> 1
+  setVal8 key=0x2091A087 val=0 layer=3 -> 1
+  setVal8 key=0x2091A088 val=0 layer=3 -> 1
+  setVal8 key=0x2091A089 val=0 layer=3 -> 1
+  setVal8 key=0x2091A08A val=0 layer=3 -> 1
+  setVal8 key=0x2091A08B val=0 layer=3 -> 1
+  setVal8 key=0x2091A08C val=0 layer=3 -> 1
+  setVal8 key=0x2091A08D val=0 layer=3 -> 1
+  setVal8 key=0x2091A08E val=0 layer=3 -> 1
+  setVal8 key=0x2091A08F val=0 layer=3 -> 1
+  setVal8 key=0x2091A090 val=0 layer=3 -> 1
+  setVal8 key=0x2091A091 val=0 layer=3 -> 1
+  setVal8 key=0x2091A092 val=0 layer=3 -> 1
+  setVal8 key=0x2091A093 val=0 layer=3 -> 1
+  setVal8 key=0x2091A094 val=0 layer=3 -> 1
+  setVal8 key=0x201100A4 val=5 layer=3 -> 1
+  enableGNSS id=0 en=1 layer=3 -> 1
+  enableGNSS id=2 en=1 layer=3 -> 1
+  enableGNSS id=6 en=0 layer=3 -> 1
+  enableGNSS id=3 en=0 layer=3 -> 1
+  enableGNSS id=5 en=0 layer=3 -> 1
+  enableGNSS id=1 en=0 layer=3 -> 1
+  setNavigationFrequency 20 layer=3 -> 1
+  setAutoPVTcallbackPtr layer=3 -> 1
+✅ at-target: bring-up succeeded
+✅ at-target: the sweep tries GNSS_BAUD first
+✅ at-target: RX ring sized at most once, before the first begin()
+S at-9600
+  HardwareSerial(2)
+  port.setRxBufferSize 512 -> 512
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 0
+  port.end
+  port.begin 9600 rx=16 tx=17
+  gnss.begin(port@9600) -> 1
+  setSerialRate 115200 layer=3 -> 1
+  port.end
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 1
+  saveConfigSelective 0x01 -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
+  setDynamicModel 4 layer=3 -> 1
+  setUART1Output 0x01 layer=3 -> 1
+  setVal8 key=0x2091A087 val=0 layer=3 -> 1
+  setVal8 key=0x2091A088 val=0 layer=3 -> 1
+  setVal8 key=0x2091A089 val=0 layer=3 -> 1
+  setVal8 key=0x2091A08A val=0 layer=3 -> 1
+  setVal8 key=0x2091A08B val=0 layer=3 -> 1
+  setVal8 key=0x2091A08C val=0 layer=3 -> 1
+  setVal8 key=0x2091A08D val=0 layer=3 -> 1
+  setVal8 key=0x2091A08E val=0 layer=3 -> 1
+  setVal8 key=0x2091A08F val=0 layer=3 -> 1
+  setVal8 key=0x2091A090 val=0 layer=3 -> 1
+  setVal8 key=0x2091A091 val=0 layer=3 -> 1
+  setVal8 key=0x2091A092 val=0 layer=3 -> 1
+  setVal8 key=0x2091A093 val=0 layer=3 -> 1
+  setVal8 key=0x2091A094 val=0 layer=3 -> 1
+  setVal8 key=0x201100A4 val=5 layer=3 -> 1
+  enableGNSS id=0 en=1 layer=3 -> 1
+  enableGNSS id=2 en=1 layer=3 -> 1
+  enableGNSS id=6 en=0 layer=3 -> 1
+  enableGNSS id=3 en=0 layer=3 -> 1
+  enableGNSS id=5 en=0 layer=3 -> 1
+  enableGNSS id=1 en=0 layer=3 -> 1
+  setNavigationFrequency 20 layer=3 -> 1
+  setAutoPVTcallbackPtr layer=3 -> 1
+✅ at-9600: found, switched and verified
+S absent
+  HardwareSerial(2)
+  port.setRxBufferSize 512 -> 512
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 0
+  port.end
+  port.begin 9600 rx=16 tx=17
+  gnss.begin(port@9600) -> 0
+  port.end
+  port.begin 38400 rx=16 tx=17
+  gnss.begin(port@38400) -> 0
+  port.end
+  port.begin 57600 rx=16 tx=17
+  gnss.begin(port@57600) -> 0
+  port.end
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 0
+  port.end
+  port.begin 230400 rx=16 tx=17
+  gnss.begin(port@230400) -> 0
+  port.end
+  port.begin 460800 rx=16 tx=17
+  gnss.begin(port@460800) -> 0
+  port.end
+✅ absent: returns false, not up (no halt)
+✅ absent: sweeps all seven rates, then stops
+✅ absent: every attempt closes its port before the next
+✅ absent: the RX ring is sized once for the whole sweep, not per attempt
+  epoch dropped: no callback registered
+  state: after poll up=0 consume=null latest=null
+✅ absent: no epoch can arrive
+S verify-fails
+  HardwareSerial(2)
+  port.setRxBufferSize 512 -> 512
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 0
+  port.end
+  port.begin 9600 rx=16 tx=17
+  gnss.begin(port@9600) -> 1
+  setSerialRate 115200 layer=3 -> 1
+  port.end
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 0
+✅ verify-fails: bring-up abandoned, not up
+S config-rejects (setVal8)
+  HardwareSerial(2)
+  port.setRxBufferSize 512 -> 512
+  port.begin 115200 rx=16 tx=17
+  gnss.begin(port@115200) -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
+  setDynamicModel 4 layer=3 -> 1
+  setUART1Output 0x01 layer=3 -> 1
+  setVal8 key=0x2091A087 val=0 layer=3 -> 0
+  setVal8 key=0x2091A088 val=0 layer=3 -> 0
+  setVal8 key=0x2091A089 val=0 layer=3 -> 0
+  setVal8 key=0x2091A08A val=0 layer=3 -> 0
+  setVal8 key=0x2091A08B val=0 layer=3 -> 0
+  setVal8 key=0x2091A08C val=0 layer=3 -> 0
+  setVal8 key=0x2091A08D val=0 layer=3 -> 0
+  setVal8 key=0x2091A08E val=0 layer=3 -> 0
+  setVal8 key=0x2091A08F val=0 layer=3 -> 0
+  setVal8 key=0x2091A090 val=0 layer=3 -> 0
+  setVal8 key=0x2091A091 val=0 layer=3 -> 0
+  setVal8 key=0x2091A092 val=0 layer=3 -> 0
+  setVal8 key=0x2091A093 val=0 layer=3 -> 0
+  setVal8 key=0x2091A094 val=0 layer=3 -> 0
+  setVal8 key=0x201100A4 val=5 layer=3 -> 0
+  enableGNSS id=0 en=1 layer=3 -> 1
+  enableGNSS id=2 en=1 layer=3 -> 1
+  enableGNSS id=6 en=0 layer=3 -> 1
+  enableGNSS id=3 en=0 layer=3 -> 1
+  enableGNSS id=5 en=0 layer=3 -> 1
+  enableGNSS id=1 en=0 layer=3 -> 1
+  setNavigationFrequency 20 layer=3 -> 1
+  setAutoPVTcallbackPtr layer=3 -> 1
+✅ config-rejects: a rejected key does not stop bring-up
+S epochs
+✅ epoch reaches the driver
+✅ consume-once: the second call sees nothing
+✅ latest survives the consume
+✅ the next epoch replaces it
+  checkUblox
+  checkCallbacks
+  epoch delivered iTOW=100000
+  epoch delivered iTOW=100050
+  port.end
+  epoch delivered iTOW=100100
+✅ gnssEnd: releases the port and marks it down

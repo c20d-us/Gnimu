@@ -39,6 +39,3 @@ struct BatteryStatus {
 // The (constant) battery snapshot.
 BatteryStatus batteryGetStatus();
 
-// The RaceBox protocol battery byte for payload offset 67:
-// bit 7 = charging (never set on this build), bits 0-6 = percent.
-uint8_t batteryProtocolByte();

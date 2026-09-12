@@ -107,13 +107,6 @@ void powerGnssRailOn() {
   pinMode(GNSS_EN_PIN, INPUT);
 }
 
-// Disable power to the GNSS rail.
-void powerGnssRailOff() {
-  // Drive EN low to disable the TPS63020 rail.
-  gnssEnDisable();
-  gnssTxIdleLow();
-}
-
 // Enter deep sleep mode, disabling all peripherals and powering down the
 // system. Does not return.
 void powerEnterDeepSleep() {

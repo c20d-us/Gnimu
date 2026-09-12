@@ -16,11 +16,13 @@
 
 #include "g_gnss.h"
 #include "config.h"
+#include "g_gnss_port.h"
 #include "g_log.h"
 
-// GNSS state
+// GNSS state. The UART itself belongs to the port (g_gnss_port.h): everything
+// here is about the RECEIVER, which is the same part on every board.
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
-static Uart &gnssSerial = Serial1;
+static Stream *gnssStream = nullptr;
 
 // PVT data cache and epoch state
 static UBX_NAV_PVT_data_t latestPVT;
@@ -42,27 +44,28 @@ static bool connectAndConfigureBaud() {
 
   for (int i = 0; i < numRates; i++) {
     uint32_t testBaud = baudRates[i];
-    LOG_PRINTF("🔎 Trying GNSS at %d baud...\n", testBaud);
+    LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)testBaud);
 
-    gnssSerial.begin(testBaud);
+    gnssStream = gnssPortBegin(testBaud);
     delay(100); // Give the serial port a moment to stabilize
 
-    if (myGNSS.begin(gnssSerial)) {
-      LOG_PRINTF("✅ GNSS detected at %d baud.\n", testBaud);
+    if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
+      LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)testBaud);
 
       // If we found it, but it's at the wrong speed, switch it.
       if (testBaud != GNSS_BAUD) {
-        LOG_PRINTF("🔀 Switching GNSS to target %d baud...\n", GNSS_BAUD);
+        LOG_PRINTF("🔀 Switching GNSS to target %u baud...\n",
+                   (unsigned int)GNSS_BAUD);
         myGNSS.setSerialRate(GNSS_BAUD);
         delay(100);
 
         // Cycle the microcontroller's UART to match the new module speed
-        gnssSerial.end();
+        gnssPortEnd();
         delay(100);
-        gnssSerial.begin(GNSS_BAUD);
+        gnssStream = gnssPortBegin(GNSS_BAUD);
         delay(100);
 
-        if (myGNSS.begin(gnssSerial)) {
+        if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
           LOG_PRINTLN("⚡ Baud rate switched. Saving to flash...");
           myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
           return true;
@@ -75,7 +78,7 @@ static bool connectAndConfigureBaud() {
     }
 
     // Clean up and prepare for the next loop iteration if this baud failed
-    gnssSerial.end();
+    gnssPortEnd();
     delay(100);
   }
   return false; // Swept everything and never connected
@@ -83,8 +86,8 @@ static bool connectAndConfigureBaud() {
 
 // Drain the GNSS serial buffer to clear any pending data.
 static void drainSerial() {
-  while (gnssSerial.available()) {
-    gnssSerial.read();
+  while (gnssStream != nullptr && gnssStream->available()) {
+    gnssStream->read();
   }
 }
 
@@ -178,23 +181,44 @@ const UBX_NAV_PVT_data_t *gnssLatestPvt() {
 }
 
 // Initialize the GNSS module.
-void gnssBegin() {
-  // Make sure we can connect to the GNSS module at the target baud rate.
-  // If we can't connect, halt with an error message.
+// True once the receiver has answered and been configured; false before that,
+// after a failed bring-up, and after gnssEnd() releases the UART.
+static bool gnssUp = false;
+
+bool gnssIsUp() { return gnssUp; }
+
+bool gnssBegin() {
+  // A receiver that does not answer used to halt here in an infinite loop.
+  // That was survivable at boot on a USB-powered board and dangerous on a
+  // battery one: setup() never returned, so batteryPoll() and stateUpdate()
+  // never ran and the low-voltage cutoff could never fire - the cell would
+  // discharge to damage while the device sat in a delay loop. (It was
+  // reachable at RUNTIME too, through the LIGHT_SLEEP wake path that existed
+  // then; boot is the only caller now.)
+  //
+  // Now it reports and returns. The device carries on with no telemetry,
+  // battery protection intact, and says so once per second. There is
+  // deliberately no automatic retry: a receiver that did not answer is a
+  // wiring or hardware fault that will not resolve itself, and the library
+  // already polls three times at 1100ms before giving up on each baud rate.
+  // Recovery is a power cycle.
   if (!connectAndConfigureBaud()) {
     LOG_PRINTLN("❌ u-blox GNSS not detected at any standard baud rate.");
-    LOG_PRINTLN("❌ Check your wiring.");
-    while (1)
-      delay(100); // Halt
+    LOG_PRINTLN("❌ Check your wiring. Continuing WITHOUT GNSS: no telemetry "
+                "will be produced; everything else keeps running.");
+    LOG_PRINTLN("❌ Power-cycle the device to try again.");
+    gnssUp = false;
+    return false;
   }
 
   // Let the GNSS settle before pushing CFG-VALSET writes at it.
   delay(500);
   drainSerial();
 
-  // Every setter below deliberately targets VAL_LAYER_RAM_BBR: config.h is
-  // still the single source of truth, but BBR is what lets these settings
-  // survive a LIGHT_SLEEP backup-mode cycle intact
+  // Every setter below deliberately targets VAL_LAYER_RAM_BBR, never flash:
+  // config.h stays the single source of truth, re-applied on every boot. (BBR
+  // once carried these across LIGHT_SLEEP's backup-mode cycle; that state is
+  // gone, and the layer is harmless.)
 
   // AssistNow Autonomous is explicitly DISABLED to save CPU cycles.
   if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
@@ -258,46 +282,31 @@ void gnssBegin() {
   } else {
     LOG_PRINTLN("❌ Failed to register PVT callback / enable automatic PVT.");
   }
+
+  gnssUp = true;
+  return true;
 }
 
-// Release the UART peripheral. After this call D6/D7 are plain GPIO again,
-// so powerHoldPeripheralsOff() can drive D6 LOW to cut the RX back-feed path.
-void gnssEnd() { gnssSerial.end(); }
+// Release the UART. What that buys a given board is the port's business (see
+// g_gnss_port_nrf52.cpp, where it is what allows the rail cutoff); here it is
+// simply "stop talking to the receiver".
+//
+// Deliberately NOT guarded on gnssUp: releasing is correct whether or not the
+// receiver ever answered, and a caller cutting power depends on it.
+void gnssEnd() {
+  gnssPortEnd();
+  gnssStream = nullptr;
+  gnssUp = false;
+}
 
 // GNSS module poller - called every loop().
 // Prompts firing of registered callback when a new PVT epoch is available.
 void gnssPoll() {
+  if (!gnssUp) {
+    return;
+  }
   // Pump the UART and parse incoming bytes into complete packets
   myGNSS.checkUblox();
   // Fire registered callbacks for any completed packets
   myGNSS.checkCallbacks();
-}
-
-// LIGHT_SLEEP entry: RXM-PMREQ backup mode, infinite duration, UART-RX wake
-// armed. Serial1 is deliberately left running so that gnssWake() can release
-// it later for wake pulse.
-void gnssSleep() {
-  myGNSS.powerOffWithInterrupt(0, VAL_RXM_PMREQ_WAKEUPSOURCE_UARTRX);
-  LOG_PRINTLN("💤 GNSS backup mode (UART-RX wake armed).");
-}
-
-// Wake from gnssSleep() via a manual GPIO pulse on the shared UART TX line.
-void gnssWake() {
-  gnssSerial.end();
-  pinMode(GNSS_TX_PIN, OUTPUT);
-  digitalWrite(GNSS_TX_PIN, LOW);
-  delay(GNSS_WAKE_PULSE_MS);
-  digitalWrite(GNSS_TX_PIN, HIGH);
-  delay(GNSS_WAKE_PULSE_MS);
-  digitalWrite(GNSS_TX_PIN, LOW);
-  gnssSerial.begin(GNSS_BAUD);
-
-  // Re-sync with the receiver
-  drainSerial();
-  if (myGNSS.begin(gnssSerial)) {
-    LOG_PRINTLN("⏰ GNSS wake pulse sent and Serial re-synced.");
-  } else {
-    LOG_PRINTLN("⚠️ GNSS wake pulse sent, but re-sync failed - receiver may "
-                "not have woken.");
-  }
 }

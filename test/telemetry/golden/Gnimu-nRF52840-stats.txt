@@ -1,0 +1,44 @@
+## fix, IMU up, trim locked
+RT: 1s|BLE: 20Hz|GNSS: 20Hz|SV: 14|Fix: 3|tA: 25ns|hA: 1200mm|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 2.3° ✅|Batt: 3.87V
+## fix, IMU up, trim locked (steady)
+RT: 2s|BLE: 20Hz|GNSS: 20Hz|SV: 14|Fix: 3|tA: 25ns|hA: 1200mm|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 2.3° ✅|Batt: 3.87V
+## no fix yet: accuracy sentinels, trim waiting, charging
+RT: 3s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 0.0000000|Lon: 0.0000000|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 0.0° ⏳|Batt: 3.87V⚡
+✅ sentinel accuracies print as '-'
+## coordinates out of range, mount too far off level
+RT: 4s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: -|Lon: -|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+✅ impossible coordinates print as '-'
+✅ refused tilt still reported, with ❌
+## IMU down (not fitted, not found, or stopped answering)
+RT: 5s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: -|c°/s: -|Trim: -|Batt: 3.87V⚡
+✅ IMU down prints dashes
+## BLE dropped 3 frames and 2 inbound writes this window
+RT: 6s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+⚠️  BLE dropped 3 frame(s) this window (3 total)
+⚠️  BLE dropped 2 inbound write(s) this window (2 total) - commands may have been lost
+✅ drops get their own lines
+## no new drops: no drop lines
+RT: 7s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+✅ drop lines only when the count moves
+## 7 failed IMU reads this window (IMU still up)
+RT: 8s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+⚠️  IMU: 7 failed read(s) this window (7 total)
+✅ failed IMU reads get their own line
+## 2 more failed IMU reads: the delta, and the running total
+RT: 9s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+⚠️  IMU: 2 failed read(s) this window (9 total)
+✅ the line reports the window's delta and the total
+## no new failed reads: no line
+RT: 10s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌|Batt: 3.87V⚡
+✅ the line only appears when it moves
+## GNSS not responding
+RT: 11s | ❌ GNSS not responding | Batt: 3.87V⚡
+✅ no receiver says so
+## clock jumps to the millis() ceiling: the jump closes an empty window
+RT: 4294966s|BLE: 0Hz|GNSS: 0Hz|SV: 255|Fix: 255|tA: 999999ns|hA: 999999mm|Lat: -90.0000000|Lon: -180.0000000|mG: X=-32768 Y=-32768 Z=-32768|c°/s: X=-32768 Y=-32768 Z=-32768|Trim: 179.9° ❌|Batt: 4.20V⚡
+## widest line
+RT: 4294967s|BLE: 20Hz|GNSS: 20Hz|SV: 255|Fix: 255|tA: 999999ns|hA: 999999mm|Lat: -90.0000000|Lon: -180.0000000|mG: X=-32768 Y=-32768 Z=-32768|c°/s: X=-32768 Y=-32768 Z=-32768|Trim: 179.9° ❌|Batt: 4.20V⚡
+
+longest line: 210 bytes (ceiling 255)
+✅ widest line fits the ceiling
+✅ no line was ever clipped

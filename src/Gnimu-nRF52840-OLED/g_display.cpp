@@ -24,6 +24,7 @@
 #include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
+#include "g_imu.h" // imuIsUp() - no trim indicator without an IMU
 #include "g_imu_trim.h"
 #include "g_log.h"
 #include "g_state.h"
@@ -137,11 +138,12 @@ static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
 // voltage-derived SoC estimate implied more precision than exists. Dropping it
 // also freed the width the USB icon now uses.
 //
-// showTrim gates the runtime-trim indicator to RUNNING. imuPoll() is gated to
-// that state in the .ino, so the trim is not advancing anywhere else; the
-// correction does persist across CHARGE_ONLY and LIGHT_SLEEP, but showing it
-// there would cut against this module's rule that each screen shows only what
-// its state can actually know.
+// showTrim gates the runtime-trim indicator to RUNNING, and to an IMU that is
+// actually up: with none fitted, or one that has died, there is no trim to
+// show, and a ⏳ that never resolves would be a lie. imuPoll() is gated to
+// that state in the .ino, so the trim is not advancing anywhere else; showing
+// it in CHARGE_ONLY would cut against this module's rule that each screen shows
+// only what its state can actually know.
 static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
                           const BatteryStatus &bat) {
   if (bleUp) {
@@ -207,9 +209,10 @@ static void drawRunningBody() {
   const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
   const uint8_t fixType = pvt ? pvt->fixType : 0;
 
-  // Position-valid predicate, deliberately identical to the one g_telemetry
-  // uses to flag Lat/Lon invalid in the packet, so screen and packet can never
-  // disagree about whether a position exists. Note a 2D fix IS valid: hAcc and
+  // Position-valid predicate, deliberately identical to the latLonFlags rule
+  // in g_proto_racebox's encoder, so screen and packet can never disagree
+  // about whether a position exists. (It moved there from g_telemetry when the
+  // protocol was split out - the rule is unchanged, only its home.) Note a 2D fix IS valid: hAcc and
   // pDOP are real numbers there, merely worse.
   const bool posValid = pvt && fixType >= 2;
 
@@ -231,8 +234,9 @@ static void drawRunningBody() {
   strAt(2, 46, buf);
 
   // The PVT rate stays meaningful without a fix - NAV-PVT keeps arriving at the
-  // configured rate regardless of solution status.
-  snprintf(buf, sizeof(buf), "%.1fHz", telemetryGnssRateHz());
+  // configured rate regardless of solution status. Whole numbers, like the
+  // stats line: the tenth only ever carried pickup jitter.
+  snprintf(buf, sizeof(buf), "%.0fHz", telemetryGnssRateHz());
   strRight(126, 46, buf);
 
   if (posValid) {
@@ -272,15 +276,6 @@ static void drawChargeOnlyBody(const BatteryStatus &bat) {
   strAt(x + wNum + gap, baseline, "V");
 }
 
-// Deliberately sparse: fewer lit pixels for power and burn-in during what may
-// be a long idle.
-static void drawLightSleepBody() {
-  oled.setFont(u8g2_font_7x14B_tf);
-  strAt(2, 34, "IDLE - Sleeping");
-  oled.setFont(u8g2_font_5x7_tf);
-  strAt(2, 52, "shake or connect to wake");
-}
-
 // Full-screen alert, no status bar: the slide switch has taken the cell out of
 // circuit, so a battery percentage would be meaningless. Wording is an
 // observation of state - an imperative ("SWITCH OFF") reads as an instruction
@@ -316,16 +311,10 @@ static void renderFrame() {
     drawChargeOnlyBody(bat);
     break;
 
-  case STATE_LIGHT_SLEEP:
-    // Still advertising and connectable - that is the whole point of the state.
-    drawStatusBar("Advertising", true, false, bat);
-    drawLightSleepBody();
-    break;
-
   case STATE_RUNNING:
   default:
-    drawStatusBar(bleIsConnected() ? "Connected" : "Advertising", true, true,
-                  bat);
+    drawStatusBar(bleIsConnected() ? "Connected" : "Advertising", true,
+                  imuIsUp(), bat);
     drawRunningBody();
     break;
   }
@@ -402,9 +391,9 @@ void displayUpdate() {
     epochJustLanded = true;
   }
 
-  // Epochs stop entirely when the receiver is asleep or its rail is cut, and
-  // LIGHT_SLEEP, CHARGE_ONLY and BATTERY_WAIT all have a screen to draw with no
-  // NAV-PVT to key off. Fall back to the old metered spacing there rather than
+  // Epochs stop entirely when the receiver is off or not answering, and
+  // CHARGE_ONLY and BATTERY_WAIT both have a screen to draw with no NAV-PVT to
+  // key off. Fall back to the old metered spacing there rather than
   // waiting forever on an epoch that is not coming.
   const bool epochsFlowing = (lastSeenITOW != ITOW_NONE) &&
                              ((now - lastEpochSeenMs) < DISPLAY_EPOCH_STALE_MS);
@@ -461,15 +450,6 @@ void displaySleep() {
   asleep = true;
 }
 
-void displayWake() {
-  if (!present || !asleep) {
-    return;
-  }
-  oled.setPowerSave(0);
-  asleep = false;
-  lastRenderMs = 0; // force a render on the next poll rather than waiting out
-                    // the refresh interval
-}
 
 #else // !DISPLAY_ENABLED
 
@@ -485,6 +465,5 @@ void displayBegin() {
 void displayUpdate() {}
 bool displayIsPresent() { return false; }
 void displaySleep() {}
-void displayWake() {}
 
 #endif // DISPLAY_ENABLED

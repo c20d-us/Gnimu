@@ -24,13 +24,10 @@
 //   - powerUsbPresent()                (g_power)
 //   - powerSwitchOn()                  (g_power)
 //   - batteryCutoffRequested()         (g_battery)
-//   - bleIsConnected()                 (g_ble)
-//   - imuWakeTriggered()               (g_imu)
+//   - bleIsSubscribed()                (g_ble)
 // Actuates:
-//   - gnssEnd()/gnssSleep()/gnssWake() (g_gnss)
-//   - imuArmWake()/imuDisarmWake()     (g_imu)
+//   - gnssEnd()                        (g_gnss)
 //   - powerHoldPeripheralsOff()        (g_power)
-//   - powerGnssRailOn()/Off()          (g_power)
 //   - powerEnterDeepSleep()            (g_power)
 //   - NVIC_SystemReset()
 // ============================================================================
@@ -42,9 +39,8 @@ enum SystemState {
                       // peripherals held off so the charge IC gets max current
                       // to the cell. Exit is unplug or switch off.
   STATE_BATTERY_WAIT, // USB in but switch off; waits for switch on or unplug
-  STATE_DEEP_SLEEP,   // Entry action only; MCU halts in System OFF
-  STATE_LIGHT_SLEEP,  // GNSS backup + IMU wake-detect armed +
-                      // LED blinks blue slowly. Reversible without a reset.
+  STATE_DEEP_SLEEP,   // Entry action only; MCU halts in System OFF. Reached
+                      // on low voltage, or STATE_IDLE_TIMEOUT_MIN idle.
 };
 
 // Classify + record the initial state (RUNNING / BATTERY_WAIT / DEEP_SLEEP).

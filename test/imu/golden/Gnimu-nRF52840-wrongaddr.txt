@@ -1,0 +1,8 @@
+S wrong-address
+❌ IMU not found - continuing without it: IMU fields will read zero.
+U 301 up=0 reads=0
+E 500 0 0 0 0 0 0
+E 750 0 0 0 0 0 0
+E 1000 0 0 0 0 0 0
+E 1250 0 0 0 0 0 0
+R up=0 reads=0 failed=0

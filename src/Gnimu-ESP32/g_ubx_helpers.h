@@ -15,7 +15,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
-#include <Arduino.h>
+// <stdint.h>/<stddef.h> rather than <Arduino.h>: this header only needs the
+// fixed-width integer types, and keeping Arduino out of it is what lets the
+// protocol encoders that depend on it compile on a host for test/harness.cpp.
+#include <stddef.h>
+#include <stdint.h>
 #include <type_traits>
 
 // ============================================================================
