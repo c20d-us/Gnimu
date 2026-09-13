@@ -85,12 +85,15 @@ must drain *during* each message (a phase-sensitive 5.47 ms deadline); on the
 ESP32 the ring holds 2.5 messages, leaving a duration budget of ~256 ms.
 
 **The one exception is BLE stack callbacks** — the only code we own that runs
-outside `loop()`, and the one thing the project does not schedule:
+outside `loop()`, and the one thing the project does not schedule. Since
+2026-09-13 they live only in the per-core ports behind `g_ble_port.h`; the
+shared driver `g_ble.cpp` runs entirely on the loop apart from
+`bleRxFromCallback()`, the one function a callback may call:
 
-| stack | context | relation to `loop()` |
-|---|---|---|
-| nRF52840 (Bluefruit) | callback task | preemptive, single core |
-| ESP32 (Bluedroid) | BTC task | **different core, truly parallel** |
+| stack | port | context | relation to `loop()` |
+|---|---|---|---|
+| nRF52840 (Bluefruit) | `g_ble_port_nrf52.cpp` | callback task | preemptive, single core |
+| ESP32 (Bluedroid) | `g_ble_port_esp32.cpp` | BTC task | **different core, truly parallel** |
 
 **Rules for callback code:**
 
@@ -100,26 +103,31 @@ outside `loop()`, and the one thing the project does not schedule:
    orders only other volatile accesses, and on ESP32 the reader is on another
    core. Write the data, *then* release-store the flag; the reader
    acquire-loads the flag, *then* reads the data.
-3. **Inbound data goes through the `rxPush()` single-producer/consumer ring**,
-   never straight into shared state. That is what makes a protocol's `onWrite`
-   a loop-thread call (see its contract in `g_protocol.h`).
-4. **Do almost nothing.** The callback task also runs the stack.
+3. **Inbound data goes through `bleRxFromCallback()`** into the driver's
+   single-producer/consumer ring, never straight into shared state. That is what
+   makes a protocol's `onWrite` a loop-thread call (see its contract in
+   `g_protocol.h`).
+4. **Do almost nothing, and never log.** The callback task also runs the stack.
+   Connects and disconnects are logged by the driver, on the loop, when it
+   notices the session count or the connected flag change.
 
 **What crosses today, and the verdict on each:**
 
 | state | writer → reader | verdict |
 |---|---|---|
-| `deviceConnected` (nRF) | callbacks → loop | lone `volatile` flag; publishes nothing — rule 1 |
-| `deviceConnected` + `connectTimeMs` (ESP32) | `onConnect` → loop | flag publishes a timestamp — rule 2, `std::atomic<bool>` |
-| RX ring indices | `onWrite` ↔ loop | `std::atomic`, release/acquire — rule 3 |
+| `connected`, `sessionCount` (both ports) | connect / disconnect callbacks → loop | `std::atomic`; the count is what publishes a new session — rule 2 |
+| `disconnectReason` (both ports) | disconnect callback → loop | `std::atomic`, stored **before** the flag clears, so the loop reads this disconnect's code — rule 2 |
+| `peerMtu` (ESP32 port) | `onConnect` / `onMtuChanged` → loop | `std::atomic`, stored before the connection is published — rule 2 |
+| RX ring indices | `bleRxFromCallback()` ↔ loop | `std::atomic`, release/acquire — rule 3 |
 | `droppedWrites` | callbacks → loop | one writer; 32-bit aligned access is atomic on both MCUs — benign |
-| `lastLoggedMtu` (nRF) | callbacks **and** loop | two writers; worst case one duplicated or missed log line — accepted |
-| serial logging | both contexts | both write paths are mutex-guarded (ESP32 `UART_MUTEX_LOCK`; nRF TinyUSB with its FreeRTOS FIFO mutex) — lines may interleave, not corrupt |
+| serial logging | loop only | since the split no callback logs; before it, both contexts did, over mutex-guarded write paths |
 
-The ESP32 row was wrong until 2026-09-10 (ARC-1): the flag was set *before* the
-timestamp, with an `updatePeerMTU()` call between them, so the loop on the other
-core could see "connected" beside the previous connection's timestamp and skip
-the `BLE_CONNECT_SETTLE_MS` window. It went unnoticed because nothing listed
+An ESP32 row was wrong until 2026-09-10 (ARC-1): the flag was set *before* a
+connection timestamp, with an `updatePeerMTU()` call between them, so the loop
+on the other core could see "connected" beside the previous connection's
+timestamp and skip the `BLE_CONNECT_SETTLE_MS` window. (That window and its
+timestamp were deleted on 2026-09-13, on the baseline's evidence; the ordering
+rule stands, in the `disconnectReason` and `peerMtu` rows.) It went unnoticed because nothing listed
 what crosses — which is what this table is for. **Adding to a callback means
 adding a row here.**
 

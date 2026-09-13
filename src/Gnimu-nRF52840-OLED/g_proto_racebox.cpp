@@ -205,6 +205,13 @@ constexpr ProtocolDescriptor RACEBOX_PROTOCOL = {
     raceboxOnWrite,
 };
 
+// The compile-time shape the transports rely on (g_protocol.h), against the
+// descriptor it describes.
+static_assert(RACEBOX_PROTOCOL.channelCount == PROTOCOL_CHANNEL_COUNT &&
+                  RACEBOX_PROTOCOL.transport == PROTOCOL_TRANSPORT,
+              "ERROR: PROTOCOL_CHANNEL_COUNT / PROTOCOL_TRANSPORT in "
+              "g_proto_racebox.h disagree with RACEBOX_PROTOCOL.");
+
 // The descriptor against the transport it declares (API-4). On nRF the Nordic
 // UART transport is BLEUart, which ignores the table above; on ESP32 the table
 // IS the GATT. This is what keeps the two identical - see nordicUartShapeOk()

@@ -159,7 +159,7 @@ Settings live in [`config.h`](config.h). Those shared by every Gnimu build are d
 | `IMU_ENABLED` | `1` if an MPU-6050 is fitted, `0` to build without one. With `0` the IMU fields read zero, trim never runs, and the Adafruit MPU6050 library isn't needed to build. GNSS and BLE are unaffected. |
 | `IMU_I2C_ADDRESS` | The MPU-6050's I2C address: `0x68` with its AD0 pin low (the usual breakout default), `0x69` with AD0 high. Pointing it at the wrong one is also a safe way to rehearse a missing IMU: the device logs `❌ IMU not found` and carries on. |
 | `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
-| `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see [GNSS module considerations](../../README.md#gnss-module-considerations). |
+| `BLE_TX_POWER_ADV_DBM`, `BLE_TX_POWER_CONN_DBM` | BLE transmit power in **dBm** while advertising vs connected (both default `-12`); this part accepts -12, -9, -6, -3, 0, 3, 6 or 9, checked at compile time. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see [GNSS module considerations](../../README.md#gnss-module-considerations). |
 
 ---
 

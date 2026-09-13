@@ -15,24 +15,17 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
-#include <Arduino.h>
 
 // ============================================================================
-// Status LED module - drives the XIAO's onboard RGB LED to reflect system
-// state. Consumes stateCurrent() (g_state) plus the observable battery and
-// connection state (batteryGetStatus() / bleIsConnected()).
+// Status LED module - drives the board's status LED from the observable system
+// state (connection, and on battery boards the cell and power state).
 //
-// Priority, highest first:
-//   1. BATTERY_WAIT    -> rapid red blink ("check the switch")
-//   2. RUNNING:
-//      a. charging     -> green blink (or steady green if full)
-//      b. critical bat -> red blink
-//      c. warn bat     -> amber blink
-//      d. connected    -> steady blue
-//      e. advertising  -> blue blink
+// The interface is the same on every board; what the LED shows is not, because
+// the hardware is not - a single onboard LED on the ESP32, an RGB LED on the
+// XIAO. Each board's g_led.cpp documents its own priority table.
 // ============================================================================
 
-// Configure the RGB LED pins and turn the LED off. Call once in setup().
+// Configure the LED pin(s) and turn the LED off. Call once in setup().
 void ledBegin();
 
 // Reflect the current state, with blink timing. Safe to call every loop().

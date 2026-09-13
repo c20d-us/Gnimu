@@ -265,15 +265,22 @@ static void telemetrySerialReport(unsigned long now) {
     // Say the true thing instead, and keep the battery segment: the whole
     // point of not halting is that the low-voltage cutoff still runs, and a
     // voltage ticking over is the proof of it.
-    if (!gnssIsUp()) {
+    //
+    // A receiver that answered and then went quiet gets the same treatment:
+    // gnssLatestPvt() would otherwise keep feeding the last epoch into every
+    // field below, and frozen numbers read as data. See gnssStalled().
+    const bool gnssUp = gnssIsUp();
+    if (!gnssUp || gnssStalled()) {
+      const char *why = gnssUp ? "stalled - no data from receiver"
+                               : "not responding";
 #if BATTERY_HAS_GAUGE
       const BatteryStatus nb = batteryGetStatus();
-      LOG_PRINTF("RT: %us | ❌ GNSS not responding | Batt: %.2fV%s\n",
-                 (unsigned int)((now - bootTimeMs) / 1000), nb.voltage,
+      LOG_PRINTF("RT: %us | ❌ GNSS %s | Batt: %.2fV%s\n",
+                 (unsigned int)((now - bootTimeMs) / 1000), why, nb.voltage,
                  nb.charging ? "⚡" : "");
 #else
-      LOG_PRINTF("RT: %us | ❌ GNSS not responding\n",
-                 (unsigned int)((now - bootTimeMs) / 1000));
+      LOG_PRINTF("RT: %us | ❌ GNSS %s\n",
+                 (unsigned int)((now - bootTimeMs) / 1000), why);
 #endif
       // Drop reporting below still runs: inbound writes can arrive with no
       // GNSS, and skipping would only defer the delta rather than drop it.
@@ -368,8 +375,14 @@ static void telemetrySerialReport(unsigned long now) {
     // margin exactly when frames are being lost, which is when the line most
     // needs to survive intact - and its own line costs nothing in the windows
     // with no drops.
+    //
+    // Frames refused because the client had not subscribed are subtracted
+    // (see bleUnsubscribedFrames()): that is expected, announced once by the
+    // transport, and visible every second as BLE: 0Hz. Counting it here printed
+    // this line every second for as long as nRF Connect sat attached, and
+    // inflated the total a real congestion drop is read against.
     static uint32_t lastDropTotal = 0;
-    const uint32_t drops = bleDroppedFrames();
+    const uint32_t drops = bleDroppedFrames() - bleUnsubscribedFrames();
     if (drops != lastDropTotal) {
       LOG_PRINTF("⚠️  BLE dropped %u frame(s) this window (%u total)\n",
                  (unsigned int)(drops - lastDropTotal), (unsigned int)drops);
@@ -445,16 +458,24 @@ void telemetrySendIfReady() {
       // the plug-in seam, and bleEmitFrame matches TelemetryEmit exactly, so
       // no adapter sits in between.
       //
-      // Bracketing the call with the transport's drop counter is what lets
-      // bleSentPacketCount mean "this epoch went out WHOLE" rather than "we
-      // tried". encode() itself stays void: an encoder emitting several frames
-      // knows to stop on a false (see TelemetryEmit), and the transport has
-      // already recorded which ones failed, so there is nothing for a return
-      // value here to add. It also stays correct when a protocol emits more
-      // than one frame per sample.
-      const uint32_t dropsBefore = bleDroppedFrames();
+      // Bracketing the call with the transport's counters is what lets
+      // bleSentPacketCount mean "this epoch went out" rather than "we tried".
+      // It counts when AT LEAST ONE frame was accepted and NONE failed; a frame
+      // refused because its channel is not subscribed counts neither way.
+      // That is the rule for a protocol with more than one notify channel: a
+      // client subscribed to one of RaceChrono's two GPS characteristics is
+      // receiving the stream, and must not read 0 Hz. For RaceBox's single
+      // channel it is exactly "the frame went out" - and a client subscribed to
+      // nothing still reads 0 Hz (R2-4). See docs/multiprotocol-design.md 6.3.
+      //
+      // encode() itself stays void: an encoder emitting several frames knows
+      // to stop on a false (see TelemetryEmit), and the transport has already
+      // recorded which ones failed, so a return value would add nothing.
+      const uint32_t sentBefore = bleSentFrames();
+      const uint32_t failedBefore = bleDroppedFrames() - bleUnsubscribedFrames();
       proto->encode(buildSample(*pvt, imu), bleEmitFrame);
-      if (counted && bleDroppedFrames() == dropsBefore) {
+      if (counted && bleSentFrames() != sentBefore &&
+          bleDroppedFrames() - bleUnsubscribedFrames() == failedBefore) {
         bleSentPacketCount++;
       }
     }

@@ -42,8 +42,13 @@
 // mis-copied field still shows: it was applied once when the capture was taken
 // and is applied again here, and the two do not cancel.
 //
+// The BLE transport is the REAL shared g_ble.cpp, against a fake port - so the
+// counters g_telemetry brackets, and the drop and not-subscribed lines in the
+// stats output, come from the shipping driver rather than a copy of its logic.
+// test/ble covers the driver's own cases in depth.
+//
 // NOT COVERED: the SparkFun library filling the struct from UART bytes (vendor
-// code), and the BLE transport itself.
+// code), and the BLE stacks themselves (the ports).
 //
 // BUILD & RUN: ./test/run_telemetry_harness.sh   (--save rewrites the goldens)
 // ============================================================================
@@ -53,6 +58,7 @@
 #include "config.h"
 #include "g_battery.h"
 #include "g_ble.h"
+#include "g_ble_port.h"
 #include "g_gnss.h"
 #include "g_imu.h"
 #include "g_imu_trim.h"
@@ -110,31 +116,42 @@ const UBX_NAV_PVT_data_t *gnssConsumePvt() {
   return &pvt;
 }
 bool gnssIsUp() { return gnssUp; }
+static bool gnssStall = false;
+bool gnssStalled() { return gnssStall; }
 
-// BLE. A dropped frame is recorded by the transport and reported as not
-// accepted, which is what the real one does.
+// BLE: the port behind the real g_ble.cpp. A central is connected and
+// subscribed unless a scenario says otherwise, the MTU fits any RaceBox frame,
+// and a send the scenario marks is accepted short - which the driver counts as
+// a lost frame, as it would a real one.
 static bool connected = true;
+static bool subscribed = true;
 static bool dropNextFrame = false;
-static uint32_t droppedFrames = 0, droppedWrites = 0;
 static int frames = 0;
 static uint8_t frameChannel = 0xFF;
 static size_t frameLen = 0;
 static uint8_t frame[RACEBOX_PACKET_LEN];
-bool bleIsConnected() { return connected; }
-bool bleEmitFrame(uint8_t channel, const uint8_t *data, size_t len) {
+bool blePortBegin(const BleIdentity &, const ProtocolDescriptor *) {
+  return true;
+}
+bool blePortConnected() { return connected; }
+uint32_t blePortSessionCount() { return 0; }
+uint8_t blePortDisconnectReason() { return 0; }
+bool blePortSubscribed(uint8_t) { return subscribed; }
+size_t blePortMaxFrame(uint8_t) { return 247 - 3; }
+uint16_t blePortMtu() { return 247; }
+size_t blePortSend(uint8_t channel, const uint8_t *data, size_t len) {
   if (dropNextFrame) {
     dropNextFrame = false;
-    droppedFrames++;
-    return false;
+    return 0;
   }
   frames++;
   frameChannel = channel;
   frameLen = len;
   memcpy(frame, data, len <= sizeof(frame) ? len : sizeof(frame));
-  return true;
+  return len;
 }
-uint32_t bleDroppedFrames() { return droppedFrames; }
-uint32_t bleDroppedWrites() { return droppedWrites; }
+void blePortUpdate() {}
+void blePortStop() {}
 
 // Battery: this variant's REAL BatteryStatus, with whatever the test sets.
 static BatteryStatus battery = {};
@@ -412,13 +429,17 @@ static int runRates() {
 
 // One stats window of steady 20 Hz epochs (or none), ending in its report.
 // Everything the report printed is echoed under a label.
-static void window(const char *label, bool epochs = true) {
+static void window(const char *label, bool epochs = true, int dropFirst = 0) {
   serialOut.clear();
   const unsigned long end = nowMs + 1000;
   while (nowMs < end) {
     nowMs++;
     if (epochs && nowMs % 50 == 0) {
       pvtPending = true;
+      if (dropFirst > 0) { // this epoch's frame is lost with a listener
+        dropFirst--;
+        dropNextFrame = true;
+      }
     }
     telemetrySendIfReady();
   }
@@ -477,14 +498,34 @@ static int runStats() {
   ok &= check(printed("mG: -|c°/s: -|Trim: -"), "IMU down prints dashes");
   imuUp = true;
 
-  droppedFrames = 3;
-  droppedWrites = 2;
-  window("BLE dropped 3 frames and 2 inbound writes this window");
+  // Nine writes the loop never drains (this harness does not call bleUpdate):
+  // the queue's seven usable slots take seven, two are dropped.
+  for (uint8_t b = 0; b < 9; b++) {
+    bleRxFromCallback(TELEMETRY_CHANNEL_NORDIC_RX, &b, 1, true);
+  }
+  window("BLE dropped 3 frames and 2 inbound writes this window", true, 3);
   ok &= check(printed("BLE dropped 3 frame(s)") &&
                   printed("BLE dropped 2 inbound write(s)"),
               "drops get their own lines");
   window("no new drops: no drop lines");
   ok &= check(!printed("dropped"), "drop lines only when the count moves");
+
+  // R2-4. A client connected but not subscribed: every frame refused, all of it
+  // in the unsubscribed subset. Expected, and announced once by the driver - so
+  // no per-window drop line, where it used to print one every second.
+  subscribed = false;
+  window("connected, not subscribed: no drop line");
+  ok &= check(!printed("dropped") && printed("has not subscribed"),
+              "pre-subscription refusals print no drop line");
+
+  // Subscribed again, then 3 frames lost with a listener. Only those 3 count,
+  // in the delta AND the total (3 from the earlier drop window, 3 here) - the
+  // 20 refused while unsubscribed are reported once, on the resume line.
+  subscribed = true;
+  window("subscribed again, 3 frames lost with a listener", true, 3);
+  ok &= check(printed("BLE dropped 3 frame(s) this window (6 total)") &&
+                  printed("(20 frame(s) refused while unsubscribed)"),
+              "only frames lost with a listener count, in the delta and the total");
 
   // A flaky IMU bus: held reads, never ten in a row, so the IMU stays up and
   // only this line says anything is wrong.
@@ -503,6 +544,15 @@ static int runStats() {
   window("GNSS not responding", false);
   ok &= check(printed("GNSS not responding"), "no receiver says so");
   gnssUp = true;
+
+  // Up, but silent: without the stall branch this window would print the last
+  // epoch's SV, fix, accuracy and position as though they were current.
+  gnssStall = true;
+  window("GNSS stalled (up, no epochs)", false);
+  ok &= check(printed("GNSS stalled - no data from receiver"),
+              "a stalled receiver says so");
+  ok &= check(!printed("SV:"), "and prints none of the frozen GNSS fields");
+  gnssStall = false;
 
   // Widest realistic line: runtime at the 32-bit millis() ceiling, every
   // bounded field at its bound, every IMU axis at -32768.

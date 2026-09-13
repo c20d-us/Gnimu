@@ -37,6 +37,13 @@ static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
 
 static bool present = false; // panel answered at begin(); false disables all
 static bool asleep = false;  // DISPLAYOFF sent
+
+// False until the first displayUpdate(), which only runs from loop() - i.e.
+// once setup() has finished and gnssBegin() has had its chance. displayBegin()
+// renders its first frame BEFORE gnssBegin() runs, when gnssIsUp() is still
+// false for the innocent reason that nothing has tried yet; without this, every
+// normal boot would open on "No GNSS".
+static bool setupDone = false;
 static unsigned long lastRenderMs = 0;
 static unsigned long lastShiftMs = 0;
 static unsigned long lastSliceMs = 0;
@@ -205,7 +212,40 @@ static const char *fixLabel(uint8_t fixType) {
   }
 }
 
+static void drawUptime() {
+  char buf[16];
+  const unsigned long secs = millis() / 1000UL;
+  snprintf(buf, sizeof(buf), "%lu:%02lu:%02lu", secs / 3600UL,
+           (secs / 60UL) % 60UL, secs % 60UL);
+  strRight(126, 60, buf);
+}
+
 static void drawRunningBody() {
+  // A receiver that never answered, or one that answered and went quiet.
+  // Without this branch every field below is a zero or a placeholder for the
+  // first - "0 SV / No Fix / 0Hz", pixel-identical to a cold start under poor
+  // sky - and the LAST epoch, frozen, for the second. On the variant where this
+  // panel is the only readout. Same reasoning as the serial report's GNSS lines.
+  //
+  // The uptime stays for the reason the serial line keeps its battery field:
+  // the loop is still turning, so battery protection is still running, and a
+  // ticking clock is the proof.
+  //
+  // The second line differs. A receiver that never answered needs a power
+  // cycle - gnssBegin() deliberately never retries - so "No GNSS" says so. A
+  // stall usually does not: a reseated connector recovered on its own (see
+  // gnssStalled()), so "GNSS stalled" states what is happening rather than
+  // prescribing an action that is often unnecessary.
+  if (setupDone && (!gnssIsUp() || gnssStalled())) {
+    const bool stalled = gnssIsUp();
+    oled.setFont(u8g2_font_10x20_tf);
+    strCenter(32, stalled ? "GNSS stalled" : "No GNSS");
+    oled.setFont(u8g2_font_6x12_tf);
+    strCenter(46, stalled ? "Receiver not sending" : "Power-cycle to retry");
+    drawUptime();
+    return;
+  }
+
   const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
   const uint8_t fixType = pvt ? pvt->fixType : 0;
 
@@ -246,10 +286,7 @@ static void drawRunningBody() {
   }
   strAt(2, 60, buf);
 
-  const unsigned long secs = millis() / 1000UL;
-  snprintf(buf, sizeof(buf), "%lu:%02lu:%02lu", secs / 3600UL,
-           (secs / 60UL) % 60UL, secs % 60UL);
-  strRight(126, 60, buf);
+  drawUptime();
 }
 
 // GNSS is held off in CHARGE_ONLY, so there is deliberately no fix data here.
@@ -364,6 +401,7 @@ static void pushSlice() {
 }
 
 void displayUpdate() {
+  setupDone = true; // see its declaration - first call means setup() is over
   if (!present || asleep) {
     return;
   }

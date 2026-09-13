@@ -32,6 +32,19 @@ static bool newEpochAvailable = false;
 // gnssLatestPvt() tell "no data yet" apart from "data, but stale".
 static bool everReceivedPvt = false;
 
+// millis() of the latest epoch - or of bring-up, until the first one arrives,
+// which is what makes "configured but never sent anything" a stall too.
+static unsigned long lastEpochMs = 0;
+
+// How long without an epoch before gnssStalled() says so: the larger of 1s and
+// three epoch periods. The floor is what matters at the shipped 20Hz (a stall
+// of 20 epochs is not jitter); the three periods are what keep a low
+// GNSS_NAV_RATE_HZ, where a flat 1s would sit barely past one epoch, from
+// reporting a stall on every late one.
+static constexpr unsigned long kStallMs = (3000UL / GNSS_NAV_RATE_HZ) > 1000UL
+                                              ? (3000UL / GNSS_NAV_RATE_HZ)
+                                              : 1000UL;
+
 // Try connecting to the GNSS at the baud rate from config.h, and if that fails,
 // sweep through all common u-blox baud rates to find the module and reconfigure
 // it.
@@ -98,6 +111,7 @@ static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
   memcpy(&latestPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
   newEpochAvailable = true;
   everReceivedPvt = true;
+  lastEpochMs = millis();
 }
 
 // Every NMEA sentence the u-blox M10 interface description defines for UART1.
@@ -187,6 +201,8 @@ static bool gnssUp = false;
 
 bool gnssIsUp() { return gnssUp; }
 
+bool gnssStalled() { return gnssUp && (millis() - lastEpochMs) > kStallMs; }
+
 bool gnssBegin() {
   // A receiver that does not answer used to halt here in an infinite loop.
   // That was survivable at boot on a USB-powered board and dangerous on a
@@ -259,7 +275,7 @@ bool gnssBegin() {
   // Set the minimum elevation of satellites to track (anti-multipath)
   if (myGNSS.setVal8(UBLOX_CFG_NAVSPG_INFIL_MINELEV, GNSS_SV_MINELEV_DEG,
                      VAL_LAYER_RAM_BBR)) {
-    LOG_PRINTF("✅ GNSS minimum SV elevation set to %dº.\n",
+    LOG_PRINTF("✅ GNSS minimum SV elevation set to %d°.\n",
                GNSS_SV_MINELEV_DEG);
   } else {
     LOG_PRINTLN("❌ Failed to set GNSS minimum elevation.");
@@ -283,6 +299,7 @@ bool gnssBegin() {
     LOG_PRINTLN("❌ Failed to register PVT callback / enable automatic PVT.");
   }
 
+  lastEpochMs = millis(); // the stall clock starts here, not at boot
   gnssUp = true;
   return true;
 }

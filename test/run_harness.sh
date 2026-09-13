@@ -28,6 +28,13 @@
 
 set -eu
 
+# Sanitizers (R2-5): AddressSanitizer and UndefinedBehaviorSanitizer, made fatal.
+# They catch a memory error even when it lands in unused stack and changes no
+# output - which a golden cannot see - and they change nothing else: every
+# golden is identical with them on. Blank this on a machine that cannot link
+# them (on Linux, LeakSanitizer may also want ASAN_OPTIONS=detect_leaks=0).
+SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -39,7 +46,7 @@ SRC="src/Gnimu-nRF52840"
 OUT="${TMPDIR:-/tmp}/gnimu_harness"
 
 echo "compiling encoder from $SRC ..."
-g++ -std=c++14 -Wall -Wextra -Werror -O1 \
+g++ -std=c++14 -Wall -Wextra -Werror -O1 $SAN \
     -I "$SRC" \
     -o "$OUT" \
     test/harness.cpp \

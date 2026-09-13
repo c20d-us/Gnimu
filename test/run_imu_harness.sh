@@ -32,6 +32,23 @@
 # of the source alone. Golden files are host output: if they mismatch on a
 # different compiler, regenerate them from a known-good commit with --save.
 set -euo pipefail
+# Sanitizers (R2-5): AddressSanitizer and UndefinedBehaviorSanitizer, made fatal.
+# They catch a memory error even when it lands in unused stack and changes no
+# output - which a golden cannot see - and they change nothing else: every
+# golden is identical with them on. Blank this on a machine that cannot link
+# them (on Linux, LeakSanitizer may also want ASAN_OPTIONS=detect_leaks=0).
+SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+
+# Print why a harness process failed. For a sanitizer abort the useful part is
+# the head of the report - the error, the first stack frames, the SUMMARY -
+# not its tail, which is the shadow-memory legend. Anything else: the tail.
+showFailure() {
+  if grep -qE 'ERROR: |runtime error: ' "$1"; then
+    grep -E 'ERROR: |SUMMARY: |runtime error: |^ +#[0-3] ' "$1" | head -8 | sed 's/^/     /'
+  else
+    tail -10 "$1" | sed 's/^/     /'
+  fi
+}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SPARKFUN="${SPARKFUN_UBLOX_SRC:-$HOME/Documents/Arduino/libraries/SparkFun_u-blox_GNSS_v3/src}"
 GOLD="$ROOT/test/imu/golden"
@@ -80,24 +97,33 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
     fi
     PART="-DHARNESS_LSM6DS3"
     case "$V" in *ESP32*) PART="-DHARNESS_MPU6050" ;; esac
-    if ! c++ -std=gnu++11 -ffp-contract=off -I"$B" -I"$SPARKFUN" $PART $BOARD \
+    if ! c++ -std=gnu++11 -Wall -Wextra -Werror $SAN -ffp-contract=off -I"$B" -I"$SPARKFUN" $PART $BOARD \
          "$B"/*.cpp "$ROOT/test/imu/imu_harness.cpp" -o "$B/harness" 2>"$B/build.txt"; then
       echo "❌ $V $PROFILE: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
       status=1; rm -rf "$B"; continue
     fi
+    # Exit status is checked, not just the output: a crash or sanitizer abort
+    # truncates out.txt, and without this --save would write that as a golden.
+    rc=0
+    : >"$B/log.txt"
     if [ "$PROFILE" = notfitted ]; then
-      "$B/harness" not-fitted >"$B/out.txt" 2>&1
+      "$B/harness" not-fitted >"$B/out.txt" 2>&1 || rc=$?
     elif [ "$PROFILE" = wrongaddr ]; then
-      "$B/harness" wrong-address >"$B/out.txt" 2>&1
+      "$B/harness" wrong-address >"$B/out.txt" 2>&1 || rc=$?
     elif [ "$PROFILE" = faults ]; then
       # Logs are part of the behaviour under test here ("once, never per
       # sample"), so stderr is kept, interleaved in order.
       : >"$B/out.txt"
       for S in boot-missing dies misconfigured bdu-lost lpf1-lost sensor-reset; do
-        "$B/harness" "$S" >>"$B/out.txt" 2>&1
+        "$B/harness" "$S" >>"$B/out.txt" 2>&1 || rc=$?
       done
     else
-      "$B/harness" >"$B/out.txt" 2>"$B/log.txt"
+      "$B/harness" >"$B/out.txt" 2>"$B/log.txt" || rc=$?
+    fi
+    if [ $rc -ne 0 ]; then
+      echo "❌ $V $PROFILE  harness failed (exit $rc) - nothing compared or saved:"
+      if [ -s "$B/log.txt" ]; then showFailure "$B/log.txt"; else showFailure "$B/out.txt"; fi
+      status=1; rm -rf "$B"; continue
     fi
     G="$GOLD/$V-$PROFILE.txt"
     N=$(wc -l <"$B/out.txt" | tr -d ' ')

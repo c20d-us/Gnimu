@@ -76,6 +76,10 @@ COMMON_FILES=(
   g_gnss.h
   g_gnss.cpp
   g_gnss_port.h
+  g_ble.h
+  g_ble.cpp
+  g_ble_port.h
+  g_led.h
 )
 
 # --- Group 2: the two nRF52840 trees only.
@@ -87,6 +91,8 @@ NRF_VARIANTS=(
 # Shared between the nRF trees. DELIBERATELY EXCLUDED, each for a real reason -
 # do not "fix" these by adding them here:
 #   g_led.cpp   - OLED tree yields the LED to the panel via displayIsPresent().
+#                 (The ESP32 has one too since 2026-09-13, for its single
+#                 onboard LED - different hardware, so never identical.)
 #   g_state.cpp - OLED tree calls displaySleep() before the MCU halts.
 #
 # g_power.h left this list on 2026-09-10 (ROB-6). It was excluded over two
@@ -107,17 +113,23 @@ NRF_VARIANTS=(
 # with LIGHT_SLEEP on the same day); the ESP32's g_imu_mpu6050.cpp exists
 # in one tree only, so it needs no list. Behaviour across the split is held by
 # test/run_imu_harness.sh.
+#
+# On 2026-09-13 g_ble.h and g_ble.cpp LEFT this list for the all-variant one,
+# the same move for BLE: a driver identical on every board behind g_ble_port.h,
+# and one port per core. g_ble_port_nrf52.cpp is what the two nRF trees share;
+# the ESP32's port exists in one tree only. g_led.h left with them - the LED
+# interface is now board-neutral, with each board's priority table in its own
+# g_led.cpp. Behaviour is held by test/run_ble_harness.sh, and the split itself
+# by the hardware baseline in docs/code-review-remediation.md.
 NRF_COMMON_FILES=(
   g_battery.h
   g_battery.cpp
-  g_ble.h
-  g_ble.cpp
+  g_ble_port_nrf52.cpp
   g_gnss_port_nrf52.cpp
   g_imu_lsm6ds3.cpp
   g_power.cpp
   g_power.h
   g_state.h
-  g_led.h
 )
 
 

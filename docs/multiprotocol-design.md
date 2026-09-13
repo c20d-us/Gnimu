@@ -4,15 +4,16 @@ Design record for separating Gnimu's RaceBox-specific output from its sensor
 pipeline, so a second wire protocol can be added by writing one encoder rather
 than editing the core.
 
-Status: **phases A-E complete, verified on all three variants. RaceChrono (F-H) not started.** Branch
-`gnimu_multiproto`. Started 2026-09-09.
+Status: **phases A-E complete, verified on all three variants. The `g_ble`
+split (§6.3) done and verified on hardware, 2026-09-13. RaceChrono (F-H) not
+started.** Branch `gnimu_multiproto`. Started 2026-09-09.
 
-The canonical sample, the RaceBox encoder and both transport builders exist.
-The encoder is verified against 8,980 golden vectors (§10, §11) and the whole
-chain is verified end-to-end on ESP32 hardware. The nRF variants build from the
-same shared sources but have not been flashed since the refactor. The
-GATT-channels builder exists only on ESP32; the nRF side gets it in phase G
-with RaceChrono.
+The canonical sample, the RaceBox encoder and the transport exist. The encoder
+is verified against 8,980 golden vectors (§10, §11), the telemetry path, GNSS
+driver, IMU pipeline and BLE driver each by a host harness, and the whole chain
+end-to-end on all three variants. The BLE driver is identical on every board
+behind a per-core port; the ESP32 port already builds any channel table, and
+the nRF port's GATT-channels builder arrives in phase G with RaceChrono.
 
 Diagrams (standalone, each answering one question):
 [module dependencies and sharing scope](architecture-modules.md) ·
@@ -61,7 +62,7 @@ not change.
 | Field packing | inline in `sendPacket()` | `g_proto_<name>.cpp` |
 | Protocol policy (fix clamping, validity rules) | inline in `sendPacket()` | `g_proto_<name>.cpp` |
 | BLE identity + service topology | hardcoded in `g_ble.cpp` | protocol descriptor |
-| BLE stack mechanics | `g_ble.cpp` | `g_ble.cpp` |
+| BLE stack mechanics | `g_ble.cpp` | `g_ble_port_<mcu>.cpp` (§6.3) |
 | Protocol constants | `config.h` × 3 | `g_proto_<name>.h` |
 
 ---
@@ -230,7 +231,10 @@ protocol-specific:
 | The byte pipe — `bleSendPacket()` | no | no | gains a channel argument |
 
 So `g_ble` is not split out; it is **inverted**. It stops knowing what RaceBox
-is and starts building whatever the active descriptor hands it.
+is and starts building whatever the active descriptor hands it. *(2026-09-13:
+once a second protocol was in view it was also split - the stack mechanics in
+the first row moved to per-core ports, and the decisions to one shared driver.
+See §6.3.)*
 
 `bleSendPacket(uint8_t*, size_t)` becomes
 `bleEmitFrame(uint8_t channel, const uint8_t*, size_t)`, matching
@@ -278,6 +282,199 @@ Three details, all known at design time:
   characteristic *and* its descriptors. Undersize it and the extra
   characteristics fail to register quietly. Size it from `channelCount` rather
   than accepting the default; verify the arithmetic at implementation time.
+
+### 6.3 The `g_ble` split — agreed, implemented and verified on hardware 2026-09-13
+
+Arising from the second review's structural recommendation (see "Second
+review" in `code-review-remediation.md`). §6's table said `g_ble` was inverted
+rather than split; that held while one protocol existed. It no longer does:
+both stacks carry the same inbound ring (byte-identical, unchecked), the same
+refusal accounting (R2-4 had to be written twice), and phase G would add a
+third copy of the emit policy inside the nRF file.
+
+**The shape is the IMU and GNSS seams' shape, not a helper.** The shared file
+owns the public API and every decision, and calls *down* into a per-core port
+for mechanism:
+
+| | Shared, identical in every tree | Seam | Per core |
+|---|---|---|---|
+| IMU | `g_imu.cpp` | `g_imu_sensor.h` | `g_imu_mpu6050.cpp`, `g_imu_lsm6ds3.cpp` |
+| GNSS | `g_gnss.cpp` | `g_gnss_port.h` | `g_gnss_port_esp32.cpp`, `g_gnss_port_nrf52.cpp` |
+| **BLE** | **`g_ble.cpp`, `g_ble.h`** | **`g_ble_port.h`** | **`g_ble_port_esp32.cpp`, `g_ble_port_nrf52.cpp`** |
+
+A `g_ble_core` helper that each stack file calls was considered and rejected:
+it leaves both platform files owning the flow and deciding when to count, latch
+and log - the "decision lands in one tree" failure again.
+
+#### The seam
+
+Arduino-free (`<stdint.h>`, `<stddef.h>`, `g_protocol.h`), link-time free
+functions like every other seam - no virtual interface or function-pointer
+table (§8.3). **Single central is a contract**: both ports assume one
+connection (`getConnId()`, `Connection(0)`), stated in the header so a
+multi-central change cannot happen by accident.
+
+```cpp
+// Implemented by the port - called from the loop only.
+bool     blePortBegin(const BleIdentity &id, const ProtocolDescriptor *proto);
+bool     blePortConnected();            // link up
+uint32_t blePortSessionCount();         // incremented in the connect callback; std::atomic
+uint8_t  blePortDisconnectReason();     // of the most recent disconnect
+bool     blePortSubscribed(uint8_t channel);
+size_t   blePortMaxFrame(uint8_t channel); // MTU-3, or SIZE_MAX where the stack fragments
+uint16_t blePortMtu();
+size_t   blePortSend(uint8_t channel, const uint8_t *data, size_t len); // bytes accepted, not delivered
+void     blePortUpdate();               // stack housekeeping: re-advertise, Battery Service
+void     blePortStop();
+
+// Implemented by the driver - the ONLY entry from callback context.
+void bleRxFromCallback(uint8_t channel, const uint8_t *data, size_t len,
+                       bool wholeMessage); // discrete: drop whole if oversized; stream: split
+```
+
+`blePortMaxFrame()` replaces the stack-specific MTU branches with one question,
+and already answers phase G correctly: nRF's GATT channels return MTU-3, its
+`BLEUart` path does not limit. `blePortSessionCount()` exists because polling a
+bool can merge a disconnect and reconnect that fall between two loop passes; any
+change in the count ends the previous session.
+
+Capabilities are checked at compile time **in each port**, against two
+constexprs every protocol header now defines beside `PROTOCOL_MAX_FRAME_LEN`:
+`PROTOCOL_CHANNEL_COUNT` and `PROTOCOL_TRANSPORT` (the protocol's own `.cpp`
+asserts both match its descriptor). The ESP32 port asserts the channel count fits
+its table; the nRF port asserts `TRANSPORT_NORDIC_UART` until phase G. *(As
+implemented: the per-core capabilities header first planned here was dropped -
+a port asserting its own limits needs no extra file.)*
+
+#### What the shared `g_ble.cpp` owns
+
+- **The public API.** `g_ble.h` becomes identical in all three trees; the ESP32
+  gains `bleIsSubscribed()` and `bleStop()`, unused there, as `gnssEnd()`
+  exists on every board so the interface does not fork.
+- **Identity.** One `BleIdentity {name, model, serial, manufacturer, fwRev,
+  hwRev}` built from the descriptor and `DEVICE_ID`, handed to the port, so both
+  stacks advertise identical identity by construction. "No manufacturer means
+  no Device Information Service" is decided here.
+- **Compile-time checks.** Largest frame + 3 <= 517, here, for both stacks
+  (previously the ESP32 only). Channel count and transport are the ports'
+  (above). *(As implemented: `ACTIVE_PROTOCOL` stays a pointer - the
+  descriptor is defined in its `.cpp`, so it cannot be read in a constant
+  expression elsewhere; the protocol-header constexprs do that job.)*
+- **Emit policy.** One sequence for both stacks: channel valid and a notify
+  channel -> subscribed -> fits `blePortMaxFrame()` -> `blePortSend()` accepted
+  the whole frame. Every counter, subset, latch and log line lives here once.
+  The not-subscribed pair latches only when **no** notify channel is
+  subscribed: its words are "nothing is being sent", and a latch per refusal
+  would flip on every epoch of a client subscribed to one of two channels (found
+  by the harness, 2026-09-13).
+- **The inbound ring and its dispatch**, unchanged in behaviour.
+- **Session lifecycle, loop-side.** Connect and disconnect are observed from
+  `blePortSessionCount()` / `blePortConnected()`; latches reset at session end.
+  R2-2's consumer-side discard and ARC-5's lifecycle hook will live here. The
+  callbacks shrink to "set a flag, bump the count, push the ring" - no logging
+  in callback context on either stack any more.
+
+#### What each port owns
+
+Stack init, TX power, the GATT builder (the ESP32's descriptor walk; nRF's
+`BLEUart`, with phase G adding its channel builder here), the Device
+Information and nRF Battery Services, advertising and re-advertise, the
+callbacks, and `bleStop()` mechanics.
+
+#### When an epoch counts as sent
+
+`g_telemetry` counts an epoch in the BLE rate only if **at least one frame was
+accepted on a subscribed channel and no frame failed for any other reason**.
+Refusals for an unsubscribed channel count neither way. It brackets two
+counters rather than calling a new begin/end API: `bleSentFrames()` must move,
+and failed frames (`bleDroppedFrames() - bleUnsubscribedFrames()`) must not.
+
+| Case | Sent | Failed | Counted |
+|---|---|---|---|
+| RaceBox, subscribed | 1 | 0 | yes |
+| RaceBox, unsubscribed (R2-4) | 0 | 0 | no - stays 0 Hz |
+| RaceChrono, both channels subscribed | 2 | 0 | yes |
+| RaceChrono, one channel subscribed | 1 | 0 | yes (the old rule read 0 Hz) |
+| One accepted, one MTU-refused or short | 1 | 1 | no |
+
+On the ESP32 "accepted" means handed to the stack, as `TelemetryEmit` documents.
+
+#### Transport log lines, converged
+
+Identical on both stacks; the harness golden captures the driver's. Two
+groups are printed by the port, in the same wording, because only the stack
+knows them: the TX-power lines (the ESP32 can read the power back; nRF cannot)
+and re-advertising (the ESP32 restarts it itself; Bluefruit does so silently).
+Before the split, wording differed between stacks on the lines marked.
+
+| Event | Line |
+|---|---|
+| TX power *(port)* | `✅ BLE TX power: advertising %d dBm, connected %d dBm.` *(differed)* |
+| TX power not applied (where the stack can read it back) | `⚠️  BLE TX power mismatch - requested %d dBm, got %d dBm.` *(ESP32 only today)* |
+| Advertising started / restarted | `📡 BLE advertising started.` / `📡 BLE re-advertising started.` |
+| Re-advertise failed *(port, ESP32)* | `⚠️  BLE re-advertising failed to start - will retry.` |
+| Connect | `✅ BLE client connected (MTU %u).` *(differs today)* |
+| MTU changed | `🔧 BLE MTU changed: %u -> %u` *(nRF only today)* |
+| Disconnect | `❌ BLE client disconnected (reason 0x%02X).` *(differs today; the ESP32 port takes the reason from Bluedroid's `onDisconnect(server, param)` overload)* |
+| Not subscribed / resumed | `❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.` / `✅ BLE: notifications enabled - sending resumed (%u frame(s) refused while unsubscribed).` |
+| MTU refusal / resumed | `❌ BLE: peer MTU %u too small for a %u-byte frame (need %u). Refusing to send - a truncated packet is worse than none.` / `✅ BLE: peer MTU now %u - sending resumed.` |
+| Inbound write | `📨 BLE write: %u byte(s) on channel %u` |
+| Stopped | `📴 BLE stopped (disconnected + advertising off).` *(nRF only today)* |
+
+The two "cannot happen" lines - too many channels, unsupported transport -
+become compile errors and leave the table.
+
+#### Consistency changes riding with it
+
+- **The ESP32's onboard LED moves to its own `g_led.cpp`.** `g_led.h`
+  (`ledBegin()`, `ledUpdate()`) joins the all-variant checked list with a
+  board-neutral comment; each board's priority table lives in its `g_led.cpp`.
+  `g_ble` then drives no hardware on any board.
+- **One set of BLE power names.** The ESP32 moves from `BLE_TX_POWER` (an enum
+  level) to `BLE_TX_POWER_ADV_DBM` / `BLE_TX_POWER_CONN_DBM`, as on nRF; its
+  port maps dBm to the enum with `BLEDevice::setPower(level, type)` and a
+  `static_assert` on the values the part accepts (-12 to +9 in steps of 3).
+  Both at -12 preserves today's behaviour.
+- **`BLE_CONNECT_SETTLE_MS` is deleted.** Decided by the baseline (2026-09-13):
+  with it at 0 and the derived MTU request, five fast Gnimu Monitor reconnects
+  produced no MTU refusal and no dropped frame. The connect-time refusals it once
+  guarded appear only with the MTU request forced to 23.
+
+#### Verification
+
+- **`test/ble/`**: the shared `g_ble.cpp` against a scripted fake port, built
+  with the sanitizers and `-Werror` like every runner. The golden is the
+  ordered port calls **and** the log lines. Scenarios include what hardware
+  reaches only with effort: a disconnect and reconnect merged between polls, a
+  write just before a disconnect, the MTU window before negotiation, a short
+  write, a ring-filling burst, and the sent rule's table above. Mutation-tested.
+- **The telemetry harness drops its hand-written BLE fake** and links the real
+  `g_ble.cpp` against the same fake port, putting the subset counter, resume
+  count and sent rule under one end-to-end test.
+- **No host equivalence is possible for the split itself** - today's
+  `g_ble.cpp` includes the stack headers - so "no behaviour change" is a
+  hardware comparison against a baseline recorded first, on both stacks. The
+  baseline runs with the GNSS connected, as in normal use; the raw logs are
+  handed over as captured, and the stats lines' `Lat:`/`Lon:` fields are
+  redacted during review, before anything is quoted or recorded.
+- **ESP32 flash budget: about +2 KB** from 1,183,043 bytes; more is a design
+  smell to fix, not accept.
+
+#### Sequence
+
+0. **Baseline** on both stacks (the hardware checklist in the remediation
+   record).
+1. **ESP32**: seam, shared `g_ble.cpp`, `g_ble_port_esp32.cpp`, `g_led`, power
+   names, both harness changes. Build, flash, compare with the baseline.
+2. **nRF**: `g_ble_port_nrf52.cpp` in both trees against the same shared file.
+   Same gate, plus the `bleStop()` paths and the idle cutoff.
+3. **Bookkeeping**: `check_common.sh` (`g_ble.h`, `g_ble.cpp`, `g_ble_port.h`,
+   `g_led.h` all-variant; `g_ble_port_nrf52.cpp` nRF-shared), §6's table and §10's
+   phase-H label, the architecture docs, the remediation record.
+
+Before phase F, because phase G must not mix a refactor with first bring-up
+against an unfamiliar app (the B/C separation above), and because F is
+host-only and gains nothing from waiting.
 
 ---
 
@@ -345,8 +542,11 @@ g_proto_<name>.cpp    includes g_protocol.h, g_proto_<name>.h,
                       g_ubx_helpers.h   —   NOT config.h
 g_telemetry.cpp       includes config.h + the protocol headers;
                       performs the #if TELEMETRY_PROTOCOL dispatch
-g_ble.cpp             includes config.h + the active protocol header;
-                      composes the advertised name from modelName + DEVICE_ID
+g_ble.cpp             includes config.h + the active protocol header +
+                      g_ble_port.h; composes the advertised name from
+                      modelName + DEVICE_ID
+g_ble_port.h          includes g_protocol.h, <stdint.h>, <stddef.h> only
+g_ble_port_<mcu>.cpp  includes the seam, config.h, the stack headers
 ```
 
 `config.h` must **never** include a protocol header. Neither `g_protocol.h` nor
@@ -385,7 +585,9 @@ no vtables and no heap.
 The originating brief proposed a single adapter per protocol owning encoding
 *and* advertising. Rejected because the two have different sharing scopes in
 this repo: `g_telemetry.*` is byte-identical across all three variants, while
-`g_ble.*` is shared only by the nRF pair and the ESP32 has its own. An adapter
+`g_ble.*` was shared only by the nRF pair and the ESP32 had its own. (Since §6.3
+the driver is all-variant and only the ports differ - which strengthens the
+point: stack code is per-core, encoding is not.) An adapter
 owning both would inherit the narrower scope, and every protocol's field packing
 would be written twice — once per BLE stack. Encoding is pure and portable;
 transport is not.
@@ -474,19 +676,19 @@ all-variant common set, so there is no asymmetry to encode and no
 | `g_proto_racechrono.h` / `.cpp` | all-variant | **new, later** |
 | `g_telemetry.h` / `.cpp` | all-variant | slimmed to cadence, assembly, dispatch, stats |
 | `g_ubx_helpers.h` | all-variant | `<Arduino.h>` → `<stdint.h>` (§7.4) |
-| `g_ble.h` / `.cpp` (nRF) | nRF-only | inverted; two builders |
-| `g_ble.h` / `.cpp` (ESP32) | ESP32-only | inverted; one builder |
+| `g_ble.h` / `.cpp` | all-variant | the shared driver (§6.3) |
+| `g_ble_port.h` | all-variant | the stack seam (§6.3) |
+| `g_ble_port_nrf52.cpp` | nRF-shared | Bluefruit port; BLEUart |
+| `g_ble_port_esp32.cpp` | ESP32-only | Bluedroid port; one channel builder |
 | `config.h` × 3 | per-variant | `TELEMETRY_PROTOCOL`; protocol constants removed |
 
 The all-variant common set grows from 9 files to 12 (14 once RaceChrono lands).
 New files must be added to `check_common.sh` **in the same commit** that creates
 them, or the duplication contract is briefly unenforced.
 
-**Optional consolidation:** ESP32's `g_ble.h` is currently a strict subset of
-the nRF one — it lacks `bleStop()`. If ESP32 gained a no-op `bleStop()`, the
-header would be byte-identical everywhere and could join the all-variant group,
-making the transport *interface* uniform across variants. Cost is one dead
-function on a variant with no state machine to call it.
+**Optional consolidation — done in §6.3:** `g_ble.h` is byte-identical
+everywhere and all-variant; the ESP32 has `bleStop()` and `bleIsSubscribed()`,
+unused there.
 
 ---
 
@@ -659,10 +861,15 @@ harness against the mapping document before any radio is involved — gates 1 an
 2 of §11.1. First task: establish whether the reference sketch's packing can be
 isolated for gate 2.
 
-**G — nRF GATT-channels builder** + bring-up against the real app — gate 3 of
+**G — nRF GATT-channels builder**, in `g_ble_port_nrf52.cpp` only: the emit
+policy, per-channel subscription and MTU refusal it needs already live in the
+shared driver (§6.3). Flip the port's transport assert. Then bring-up against
+the real app — gate 3 of
 §11.1, then gate 4 freezes the accepted encoder's golden vectors.
 
-**H — ESP32 GATT-channels builder** + bring-up.
+**H — ESP32 bring-up against RaceChrono.** Its port already builds any
+channel table (§6.1), so this is bring-up and the flash-headroom decision
+(API-6), not a second builder.
 
 **B and C are deliberately separate.** B is a large mechanical move with an
 offline test; C is the one step that touches a working radio. Collapsing them

@@ -11,8 +11,10 @@ the protocol layer is put together — they appear in
 ```mermaid
 flowchart TB
     TEL["g_telemetry.*<br/><i>cadence · buildSample · dispatch</i>"]
-    BLENRF["g_ble.* — Bluefruit<br/><i>honors TransportKind, keeps BLEUart</i>"]
-    BLEESP["g_ble.* — ESP32<br/><i>ignores it; one channel builder</i>"]
+    BLE["g_ble.*<br/><i>emit policy · write queue · sessions</i>"]
+    SEAM["g_ble_port.h<br/><i>the stack seam</i>"]
+    PNRF["g_ble_port_nrf52.cpp<br/><i>Bluefruit · BLEUart</i>"]
+    PESP["g_ble_port_esp32.cpp<br/><i>Bluedroid · channel builder</i>"]
     HARNESS["harness.cpp<br/><i>runs the shipping encoder</i>"]
     ACTIVE["g_protocol_active.h<br/><i>resolves TELEMETRY_PROTOCOL</i>"]
     RBX["g_proto_racebox.*<br/><i>identity · UUIDs · encoder</i>"]
@@ -21,11 +23,12 @@ flowchart TB
     CFG["config.h<br/><i>TELEMETRY_PROTOCOL · DEVICE_ID · pins</i>"]
 
     TEL --> ACTIVE
-    BLENRF --> ACTIVE
-    BLEESP --> ACTIVE
+    BLE --> ACTIVE
     TEL --> CFG
-    BLENRF --> CFG
-    BLEESP --> CFG
+    BLE --> CFG
+    BLE --> SEAM
+    PNRF --> SEAM
+    PESP --> SEAM
     ACTIVE --> CFG
     ACTIVE --> PROTO
     ACTIVE --> RBX
@@ -33,6 +36,7 @@ flowchart TB
     RBX --> UBX
     HARNESS --> RBX
     HARNESS --> UBX
+    SEAM --> PROTO
     PROTO -. "✗ never" .-> CFG
     RBX -. "✗ never" .-> CFG
 
@@ -40,11 +44,11 @@ flowchart TB
     classDef nrfonly fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef pervar fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef hostonly fill:#f3e8ff,stroke:#9333ea,color:#4c1d95
-    class TEL,ACTIVE,RBX,PROTO,UBX allvar
-    class BLENRF nrfonly
-    class BLEESP,CFG pervar
+    class TEL,BLE,SEAM,ACTIVE,RBX,PROTO,UBX allvar
+    class PNRF nrfonly
+    class PESP,CFG pervar
     class HARNESS hostonly
-    linkStyle 13,14 stroke:#c0392b,stroke-width:2px,stroke-dasharray:6 4
+    linkStyle 15,16 stroke:#c0392b,stroke-width:2px,stroke-dasharray:6 4
 ```
 
 ## The two red edges are the whole design
@@ -60,7 +64,10 @@ single constraint is what makes the rest possible:
   feed it chosen inputs, so the `fixType` clamp and the numeric edges would go
   untested forever.
 - **It lets one encoder serve two BLE stacks.** Nothing in the protocol layer
-  names a Bluefruit or ESP32 type, so a single copy compiles for both.
+  names a Bluefruit or ESP32 type, so a single copy compiles for both. The BLE
+  driver follows the same idea one level down: `g_ble.cpp` is identical
+  everywhere and names no stack type either, because the stacks sit behind
+  `g_ble_port.h`.
 
 The same rule is why `DEVICE_ID` is *not* baked into the descriptor: the
 advertised name is composed in `g_ble` as `"<modelName> <DEVICE_ID>"`, because
@@ -75,8 +82,8 @@ includes the contract and the encoder, never the selector.
 
 | Colour | Scope | Meaning when you edit it |
 |---|---|---|
-| blue | **all-variant** | Change one copy → copy to the other two sketch folders. `check_common.sh` fails until you do. 13 files. |
-| green | **nRF-shared** | Same, but only the two nRF52840 trees. 11 files. |
+| blue | **all-variant** | Change one copy → copy to the other two sketch folders. `check_common.sh` fails until you do. 24 files. |
+| green | **nRF-shared** | Same, but only the two nRF52840 trees. 8 files. |
 | amber | **per-variant** | Edit freely; the copies legitimately differ. |
 | purple | **host only** | Not compiled into any firmware. |
 
@@ -90,15 +97,18 @@ change would.
 
 Note that `run_harness.sh` compiles from `Gnimu-nRF52840` only, so it will not
 notice a divergence introduced in another variant's copy. `check_common.sh` is
-the only guard for that. (`run_telemetry_harness.sh` and `run_imu_harness.sh`
-build every variant, because what they test also depends on each variant's
+the only guard for that. (The telemetry, IMU, GNSS and BLE harnesses build
+every variant, because what they test also depends on each variant's
 `config.h` and headers.)
 
 ## Adding a protocol
 
 Three edits, and none of them touch `g_telemetry` or `g_ble`:
 
-1. Write `g_proto_<name>.*` — include `g_protocol.h`, nothing else.
+1. Write `g_proto_<name>.*` — include `g_protocol.h`, nothing else. The header
+   defines `PROTOCOL_MAX_FRAME_LEN`, `PROTOCOL_CHANNEL_COUNT` and
+   `PROTOCOL_TRANSPORT`, which each BLE port checks at compile time: the nRF
+   port refuses anything but `TRANSPORT_NORDIC_UART` until phase G.
 2. Give it a `PROTO_*` id in `g_protocol.h`.
 3. Add a branch in `g_protocol_active.h`.
 

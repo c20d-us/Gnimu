@@ -79,6 +79,16 @@ and it is why generating the synthetic vectors with it is legitimate.
   non-halting failure path are covered on the host for the first time. Serial
   wording is deliberately not captured. Proven able to fail: five breakages of
   the real file, each caught.
+- **The BLE harness** catches a change to the transport's decisions: it runs the
+  real shared `g_ble.cpp` against a scripted fake port and a test protocol with
+  two notify channels, covering every emit refusal with its counters and
+  one-shot log lines, the counter movements behind the multi-channel "sent"
+  rule, sessions including reconnects that fall between two polls, and the
+  inbound write queue. The telemetry harness links the same real driver, so the
+  counters `g_telemetry` brackets are the shipping ones. The stacks themselves
+  are covered by a hardware baseline, not a host run. Proven able to fail: nine
+  breakages of the driver and two of the sent rule, each caught (see the `g_ble`
+  split entries in `code-review-remediation.md`).
 - **A fresh capture after flashing** still covers what no host run can: the
   SparkFun library filling that struct from UART bytes, and the BLE transport.
 
@@ -102,6 +112,7 @@ limitation cannot be forgotten. The clamp is unreachable anyway —
 ./test/run_telemetry_harness.sh    # the real telemetry path, all three variants
 ./test/run_gnss_harness.sh         # the real GNSS driver against a fake receiver
 ./test/run_imu_harness.sh          # the real IMU pipeline against fake sensors
+./test/run_ble_harness.sh          # the real BLE driver against a fake port
 ```
 
 On a fresh clone this runs against `synthetic.gc1` alone (42 vectors), because

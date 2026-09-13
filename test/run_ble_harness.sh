@@ -1,22 +1,33 @@
-#!/usr/bin/env bash
-# Gnimu - GNSS harness runner.
+#!/bin/bash
+# Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+# Copyright (C) 2026 Chris Halstead
 #
-# Compiles each variant's REAL g_gnss.cpp - unmodified - with its real config.h,
-# against a fake u-blox receiver (test/gnss). See gnss_harness.cpp for what each
-# scenario covers and why the goldens hold call sequences rather than log text.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-#   ./test/run_gnss_harness.sh          run, and compare against goldens
-#   ./test/run_gnss_harness.sh --save   (re)write the golden output
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
 #
-# Scenarios: at-target, at-9600, absent, verify-fails, config-rejects, epochs.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Build and run the BLE harness: the REAL shared g_ble.cpp against a scripted
+# fake port and a two-notify-channel test protocol (test/ble).
 #
-# Built BEFORE the shared-core split, which it then held to "the receiver sees
-# the same calls in the same order". Since the split it compiles the shared
-# driver plus that variant's port file (g_gnss_port_<mcu>.cpp).
+#   ./test/run_ble_harness.sh          compare against test/ble/golden
+#   ./test/run_ble_harness.sh --save   (re)write the goldens
 #
-# Needs the SparkFun u-blox GNSS v3 library for u-blox_structs.h, which
-# compiles standalone (ROB-6). Override with SPARKFUN_UBLOX_SRC.
+# The driver is copied into a scratch directory next to the harness's own
+# g_protocol_active.h, so its #include "g_protocol_active.h" resolves to the
+# test protocol rather than the variant's real one.
+#
+# Scenarios: begin, begin-fails, emit, multichannel, session, inbound.
 set -euo pipefail
+
 # Sanitizers (R2-5): AddressSanitizer and UndefinedBehaviorSanitizer, made fatal.
 # They catch a memory error even when it lands in unused stack and changes no
 # output - which a golden cannot see - and they change nothing else: every
@@ -34,10 +45,10 @@ showFailure() {
     tail -10 "$1" | sed 's/^/     /'
   fi
 }
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-SPARKFUN="${SPARKFUN_UBLOX_SRC:-$HOME/Documents/Arduino/libraries/SparkFun_u-blox_GNSS_v3/src}"
-GOLD="$ROOT/test/gnss/golden"
+GOLD="$ROOT/test/ble/golden"
 mkdir -p "$GOLD"
 SAVE=0
 [ "${1:-}" = "--save" ] && SAVE=1
@@ -45,17 +56,15 @@ status=0
 
 for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   B="$(mktemp -d)"
+  for F in g_ble.cpp g_ble.h g_ble_port.h g_protocol.h g_log.h config.h g_imu_tuning.h; do
+    cp "$ROOT/src/$V/$F" "$B/"
+  done
+  cp "$ROOT/test/ble/g_protocol_active.h" "$B/"
   BOARD=""
-  PORT="$ROOT/src/$V/g_gnss_port_esp32.cpp"
-  case "$V" in
-    *nRF*) BOARD="-DARDUINO_Seeed_XIAO_nRF52840_Sense"
-           PORT="$ROOT/src/$V/g_gnss_port_nrf52.cpp" ;;
-  esac
-  # Fakes first, so the stand-ins for Arduino and the SparkFun library shadow
-  # the real ones; then test/gnss for the harness's own headers.
+  case "$V" in *nRF*) BOARD="-DARDUINO_Seeed_XIAO_nRF52840_Sense" ;; esac
   if ! c++ -std=gnu++11 -Wall -Wextra -Werror $SAN $BOARD \
-       -I"$ROOT/test/gnss/fakes" -I"$ROOT/src/$V" -I"$SPARKFUN" \
-       "$ROOT/test/gnss/gnss_harness.cpp" "$ROOT/src/$V/g_gnss.cpp" "$PORT" \
+       -I"$B" -I"$ROOT/test/telemetry/fakes" \
+       "$B/g_ble.cpp" "$ROOT/test/ble/ble_harness.cpp" \
        -o "$B/harness" 2>"$B/build.txt"; then
     echo "❌ $V: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
     status=1; rm -rf "$B"; continue
@@ -64,9 +73,7 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   : >"$B/out.txt"
   : >"$B/err.txt"
   rc=0
-  for S in at-target at-9600 absent verify-fails config-rejects epochs silent; do
-    # stderr kept apart: the golden is stdout only, but a sanitizer report
-    # lands on stderr and must be shown when a scenario fails.
+  for S in begin begin-fails emit multichannel session inbound; do
     "$B/harness" "$S" >>"$B/out.txt" 2>>"$B/err.txt" || rc=$?
   done
   G="$GOLD/$V.txt"

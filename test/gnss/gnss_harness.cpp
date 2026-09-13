@@ -304,6 +304,9 @@ static int runAbsent() {
   fakeGnssLogPrint();
   showState("after poll");
   check(gnssLatestPvt() == nullptr, "absent: no epoch can arrive");
+  nowMs += 60000;
+  check(!gnssStalled(),
+        "absent: never up, so never 'stalled' - that is gnssIsUp()'s case");
   return 0;
 }
 
@@ -351,12 +354,45 @@ static int runEpochs() {
   check(second != nullptr && second->iTOW == 100050, "the next epoch replaces it");
   fakeGnssLogPrint();
 
+  // Stall detection. At the harness's GNSS_NAV_RATE_HZ the threshold is the
+  // 1s floor, and it is strict: exactly 1000ms without an epoch is not a stall.
+  check(!gnssStalled(), "stall: not stalled while epochs are arriving");
+  nowMs += 1000;
+  check(!gnssStalled(), "stall: not stalled at exactly the threshold");
+  nowMs += 1;
+  check(gnssStalled(), "stall: stalled once the threshold passes with no epoch");
+  check(gnssIsUp() && gnssLatestPvt() != nullptr,
+        "stall: still up, and the last epoch is still there - which is the "
+        "frozen data the flag exists to call out");
+  fakeGnssDeliverEpoch(100100, 3, 8200);
+  check(!gnssStalled(), "stall: the next epoch clears it");
+
   fakeGnssLogReset();
   gnssEnd();
   gnssPoll(); // must be inert now
   fakeGnssDeliverEpoch(100100, 3, 8200);
   fakeGnssLogPrint();
   check(!gnssIsUp(), "gnssEnd: releases the port and marks it down");
+  nowMs += 60000;
+  check(!gnssStalled(), "gnssEnd: down is not 'stalled'");
+  return 0;
+}
+
+// Configured, then silence from the start: the stall clock runs from bring-up,
+// so a receiver that never sends one PVT is still reported.
+static int runSilent() {
+  printf("S silent\n");
+  // setup() reaches gnssBegin() seconds into boot - the nRF alone waits up to
+  // 3s for USB serial. Starting from a zero clock would hide a stall clock
+  // anchored at boot instead of at bring-up, which would report every boot as
+  // stalled until the first epoch.
+  nowMs += 5000;
+  fakeGnssReceiverBaud(GNSS_BAUD);
+  gnssBegin();
+  check(!gnssStalled(), "silent: not stalled straight after bring-up");
+  nowMs += 1001;
+  check(gnssStalled() && gnssLatestPvt() == nullptr,
+        "silent: configured but no epoch ever, past the threshold, is a stall");
   return 0;
 }
 
@@ -369,6 +405,7 @@ int main(int argc, char **argv) {
   else if (!strcmp(which, "verify-fails")) runVerifyFails();
   else if (!strcmp(which, "config-rejects")) runConfigRejects();
   else if (!strcmp(which, "epochs")) runEpochs();
+  else if (!strcmp(which, "silent")) runSilent();
   else {
     fprintf(stderr, "unknown scenario: %s\n", which);
     return 2;

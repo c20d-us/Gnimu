@@ -97,6 +97,7 @@ S absent
   epoch dropped: no callback registered
   state: after poll up=0 consume=null latest=null
 ✅ absent: no epoch can arrive
+✅ absent: never up, so never 'stalled' - that is gnssIsUp()'s case
 S verify-fails
   port.begin 115200
   gnss.begin(port@115200) -> 0
@@ -147,6 +148,15 @@ S epochs
   checkCallbacks
   epoch delivered iTOW=100000
   epoch delivered iTOW=100050
+✅ stall: not stalled while epochs are arriving
+✅ stall: not stalled at exactly the threshold
+✅ stall: stalled once the threshold passes with no epoch
+✅ stall: still up, and the last epoch is still there - which is the frozen data the flag exists to call out
+✅ stall: the next epoch clears it
   port.end
   epoch delivered iTOW=100100
 ✅ gnssEnd: releases the port and marks it down
+✅ gnssEnd: down is not 'stalled'
+S silent
+✅ silent: not stalled straight after bring-up
+✅ silent: configured but no epoch ever, past the threshold, is a stall

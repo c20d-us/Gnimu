@@ -15,59 +15,62 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
-#include <Arduino.h>
+#include <stddef.h>
+#include <stdint.h>
 
 // ============================================================================
-// BLE module - Bluetooth Low Energy peripheral
-//
-// Owns the BLE stack, its services, and the connection state internally.
-// Callers interact only through the small interface below; the live Bluefruit
-// objects are never exposed.
+// BLE module - the Bluetooth Low Energy peripheral, identical on every board.
 //
 // Knows nothing about any particular protocol: identity, service topology and
 // characteristic UUIDs all come from the active ProtocolDescriptor
-// (g_protocol.h). What stays here is stack MECHANICS - MTU, TX power,
-// connection lifecycle, advertising - which is platform-specific and protocol
-// independent.
+// (g_protocol.h). The decisions live in g_ble.cpp; the stack's mechanism lives
+// in a per-core port behind g_ble_port.h. Callers see only this interface.
 // ============================================================================
 
-// Initialize the BLE peripheral: raise the MTU ceiling, set TX power, expose
-// the Nordic UART (RaceBox) service and the Device Information service, then
-// start advertising. Call once in setup().
+// Bring up the peripheral: identity, TX power, the protocol's service, the
+// Device Information Service, advertising. Call once in setup().
 void bleBegin();
 
-// True while a client is connected.
+// True while a central is connected.
 bool bleIsConnected();
 
-// True while a client is connected AND subscribed to notifications - that is,
-// actually receiving the stream. g_state keys its idle cutoff on this rather
-// than bleIsConnected(): a client that connects and never subscribes gets
-// nothing, and must not hold the device at full power until the battery
-// cutoff. Same check bleEmitFrame() makes before every send.
+// True while a central is connected AND subscribed to notifications on at
+// least one of the protocol's notify channels - that is, actually receiving
+// the stream. The nRF state machine keys its idle cutoff on this rather than
+// bleIsConnected(): a client that connects and never subscribes gets nothing,
+// and must not hold the device at full power until the battery cutoff.
 bool bleIsSubscribed();
 
-// Send one encoded frame to the connected client. Signature matches
-// TelemetryEmit (g_protocol.h), so it can be handed straight to an encoder as
-// its frame sink with no adapter.
+// Send one encoded frame to the connected central. Signature matches
+// TelemetryEmit (g_protocol.h), so it is handed straight to an encoder as its
+// frame sink.
 //
-// `channel` indexes the active protocol's channel table. The Nordic UART
-// transport has only one stream and ignores it; the GATT-channels transport
-// routes to the matching characteristic.
-//
-// Returns whether the transport accepted the frame - see TelemetryEmit in
-// g_protocol.h for what that does and does not guarantee, which differs by
-// stack. Never a delivery receipt.
+// `channel` indexes the active protocol's channel table and must be a notify
+// channel. Returns whether the transport accepted the frame - see
+// TelemetryEmit for what that does and does not guarantee. Never a delivery
+// receipt.
 //
 // Caller is responsible for checking bleIsConnected() first if it cares.
 bool bleEmitFrame(uint8_t channel, const uint8_t *data, size_t len);
 
-// Frames this transport refused or truncated, cumulative since boot.
+// Frames the transport accepted, cumulative since boot.
+uint32_t bleSentFrames();
+
+// Frames the transport did not send, for any reason, cumulative since boot.
 //
-// Counts FRAMES, not epochs - a protocol emitting several frames per sample
-// can lose one and keep the rest. g_telemetry uses the delta across an encode
-// call to decide whether that epoch went out whole, and reports the
-// per-window delta on the stats output.
+// Counts FRAMES, not epochs - a protocol emitting several frames per sample can
+// lose one and keep the rest.
 uint32_t bleDroppedFrames();
+
+// The part of bleDroppedFrames() refused because the central had not enabled
+// notifications on that channel - always <= it, cumulative since boot.
+//
+// That refusal is BLE working as specified (NEW-1), not a fault: nRF Connect
+// connects without subscribing, and apps take a moment to subscribe. So a
+// failure is bleDroppedFrames() - bleUnsubscribedFrames(), and that is what
+// g_telemetry reports and what decides whether an epoch counts as sent: at
+// least one frame accepted (bleSentFrames() moved) and none failed.
+uint32_t bleUnsubscribedFrames();
 
 // Inbound writes this transport could not deliver, cumulative since boot.
 //
@@ -77,10 +80,11 @@ uint32_t bleDroppedFrames();
 // alongside the outbound drop count rather than left to accumulate quietly.
 uint32_t bleDroppedWrites();
 
-// Service the connection lifecycle.
+// Service the connection: dispatch one queued inbound write, follow session
+// changes and the MTU, and run the stack's own housekeeping. Call every loop().
 void bleUpdate();
 
-// Disconnect any active peripheral connection and stop advertising, so the
-// device disappears from BLE scans and any connected client cleanly sees the
-// link end. Does NOT tear down the Bluefruit stack.
+// Disconnect any central and stop advertising. A no-op if bleBegin() never
+// brought the stack up. Every board has it so the interface does not fork; the
+// nRF state machine is what calls it.
 void bleStop();

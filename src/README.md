@@ -58,7 +58,12 @@ g_protocol_active.h     Resolves TELEMETRY_PROTOCOL to one descriptor - the
 
 g_proto_racebox.*       RaceBox wire format: identity, UUIDs, packet encoder
 
-g_ble.*                 BLE stack mechanics; builds services from the descriptor
+g_ble.*                 BLE driver, identical everywhere: identity, emit policy,
+                        write queue, sessions
+
+g_ble_port.h,           The seam to the BLE stack, and one port per core
+g_ble_port_<mcu>.cpp    (Bluefruit, Bluedroid) that builds the GATT from the
+                        descriptor
 
 g_battery.*             Cell voltage, state of charge, charge detection
 

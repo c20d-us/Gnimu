@@ -27,6 +27,23 @@
 # of the source alone. Goldens are host output: if they mismatch on a different
 # compiler, regenerate them from a known-good commit with --save.
 set -euo pipefail
+# Sanitizers (R2-5): AddressSanitizer and UndefinedBehaviorSanitizer, made fatal.
+# They catch a memory error even when it lands in unused stack and changes no
+# output - which a golden cannot see - and they change nothing else: every
+# golden is identical with them on. Blank this on a machine that cannot link
+# them (on Linux, LeakSanitizer may also want ASAN_OPTIONS=detect_leaks=0).
+SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+
+# Print why a harness process failed. For a sanitizer abort the useful part is
+# the head of the report - the error, the first stack frames, the SUMMARY -
+# not its tail, which is the shadow-memory legend. Anything else: the tail.
+showFailure() {
+  if grep -qE 'ERROR: |runtime error: ' "$1"; then
+    grep -E 'ERROR: |SUMMARY: |runtime error: |^ +#[0-3] ' "$1" | head -8 | sed 's/^/     /'
+  else
+    tail -10 "$1" | sed 's/^/     /'
+  fi
+}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT" # the vector loader reads test/*.gc1 relative to the repo root
 SPARKFUN="${SPARKFUN_UBLOX_SRC:-$HOME/Documents/Arduino/libraries/SparkFun_u-blox_GNSS_v3/src}"
@@ -42,9 +59,9 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   case "$V" in *nRF*) BOARD="-DARDUINO_Seeed_XIAO_nRF52840_Sense" ;; esac
   # Include order matters: the fakes first, so the SparkFun stand-in shadows
   # the real library header; then test/ for gc1.h; then the variant itself.
-  if ! c++ -std=gnu++11 -Wall -Wextra -Werror -ffp-contract=off $BOARD \
+  if ! c++ -std=gnu++11 -Wall -Wextra -Werror $SAN -ffp-contract=off $BOARD \
        -I"$ROOT/test/telemetry/fakes" -I"$ROOT/test" -I"$ROOT/src/$V" -I"$SPARKFUN" \
-       "$ROOT/test/telemetry/telemetry_harness.cpp" \
+       "$ROOT/test/telemetry/telemetry_harness.cpp" "$ROOT/src/$V/g_ble.cpp" \
        "$ROOT/src/$V/g_telemetry.cpp" "$ROOT/src/$V/g_proto_racebox.cpp" \
        "$ROOT/src/$V/g_ubx_helpers.cpp" -o "$B/harness" 2>"$B/build.txt"; then
     echo "❌ $V: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
@@ -65,8 +82,11 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
     "$B/harness" "$MODE" >"$B/out.txt" 2>&1 || rc=$?
     G="$GOLD/$V-$MODE.txt"
     if [ $rc -ne 0 ]; then
-      # An assertion failed: never save over a golden with a failing run.
-      echo "❌ $V $MODE  assertion failed:"; grep '^❌' "$B/out.txt" | sed 's/^/     /'
+      # An assertion failed or the process aborted (a sanitizer report is the
+      # tail of the output): never save over a golden with a failing run.
+      echo "❌ $V $MODE  failed (exit $rc):"
+      grep '^❌' "$B/out.txt" | sed 's/^/     /' || true
+      showFailure "$B/out.txt"
       status=1
     elif [ $SAVE = 1 ]; then
       cp "$B/out.txt" "$G"

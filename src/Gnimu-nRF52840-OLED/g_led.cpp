@@ -15,11 +15,25 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "g_led.h"
+#include <Arduino.h>
 #include "config.h"
 #include "g_battery.h"
 #include "g_display.h"
 #include "g_ble.h"
 #include "g_state.h"
+
+// The XIAO's onboard RGB LED. Consumes stateCurrent() (g_state) plus the
+// observable battery and connection state (batteryGetStatus() /
+// bleIsConnected()).
+//
+// Priority, highest first:
+//   1. BATTERY_WAIT    -> rapid red blink ("check the switch")
+//   2. RUNNING:
+//      a. charging     -> green blink (or steady green if full)
+//      b. critical bat -> red blink
+//      c. warn bat     -> amber blink
+//      d. connected    -> steady blue
+//      e. advertising  -> blue blink
 
 // Drive the RGB LED, honoring the active-LOW wiring.
 static void setLed(bool r, bool g, bool b) {

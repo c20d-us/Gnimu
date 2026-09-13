@@ -98,8 +98,8 @@
 // The default is NOT 400kHz and has to be set explicitly. Wire.begin() leaves
 // the ESP32 bus at 100kHz; Adafruit_BusIO exposes setSpeed() but the MPU-6050
 // library never calls it, so nothing raises it on its own. The MPU-6050
-// driver (g_imu_mpu6050.cpp) applies this AFTER myIMU.begin(). begin() brings the bus up and would overwrite any
-// earlier setting.
+// driver (g_imu_mpu6050.cpp) applies this AFTER myIMU.begin(). begin() brings
+// the bus up and would overwrite any earlier setting.
 #define IMU_I2C_CLOCK_HZ 400000
 
 // Sample interval, smoothing, transient thresholds and runtime trim: shared by
@@ -176,27 +176,15 @@
 // --- BLE ---
 // ----------------------------------------------------------------------------
 
-// BLE Transmit Power
-// Select one of the following levels by assigning it to BLE_TX_POWER.
-// Lower power reduces potential RF interference with the GNSS module.
-// The receiver will usually be close, so high power is not really needed.
-// If you have connection drop issues, try increasing the power level.
-//   ESP_PWR_LVL_N12  =  -12 dBm (minimum power)
-//   ESP_PWR_LVL_N9   =   -9 dBm
-//   ESP_PWR_LVL_N6   =   -6 dBm
-//   ESP_PWR_LVL_N3   =   -3 dBm
-//   ESP_PWR_LVL_N0   =    0 dBm
-//   ESP_PWR_LVL_P3   =   +3 dBm (default)
-//   ESP_PWR_LVL_P6   =   +6 dBm
-//   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
-#define BLE_TX_POWER ESP_PWR_LVL_N12
+// BLE transmit power, in dBm: while advertising, and while a client is
+// connected. The same names and units as the nRF builds.
+// Lower power reduces RF interference with the GNSS module, and the receiver is
+// usually close, so high power is rarely needed. If connections drop, raise it.
+// This part accepts exactly -12, -9, -6, -3, 0, 3, 6 or 9 (checked below).
+#define BLE_TX_POWER_ADV_DBM -12
+#define BLE_TX_POWER_CONN_DBM -12
 
 #define BLE_READVERTISE_DELAY_MS 500 // delay before re-advertising
-
-// How long after a client connects before bleIsConnected() reports true.
-// Gives the MTU negotiation a moment to finish so the first notify isn't
-// sent against the default 23-byte MTU and chunked.
-#define BLE_CONNECT_SETTLE_MS 100
 
 // ----------------------------------------------------------------------------
 // --- LED (onboard status LED) ---
@@ -364,8 +352,17 @@ static_assert((1000 / GNSS_NAV_RATE_HZ) >= IMU_SAMPLE_INTERVAL_MS,
 // effectively never fire).
 static_assert(BLE_READVERTISE_DELAY_MS > 0,
               "ERROR: BLE_READVERTISE_DELAY_MS must be greater than 0.");
-static_assert(BLE_CONNECT_SETTLE_MS > 0,
-              "ERROR: BLE_CONNECT_SETTLE_MS must be greater than 0.");
+// Only the levels the radio implements. Checked in dBm rather than as the
+// esp_power_level_t enum, whose backward-compatibility aliases would accept
+// -14 or +7 and transmit at -12 or +9 instead.
+static_assert(BLE_TX_POWER_ADV_DBM >= -12 && BLE_TX_POWER_ADV_DBM <= 9 &&
+                  (BLE_TX_POWER_ADV_DBM + 12) % 3 == 0,
+              "ERROR: BLE_TX_POWER_ADV_DBM must be -12, -9, -6, -3, 0, 3, 6 or "
+              "9 dBm.");
+static_assert(BLE_TX_POWER_CONN_DBM >= -12 && BLE_TX_POWER_CONN_DBM <= 9 &&
+                  (BLE_TX_POWER_CONN_DBM + 12) % 3 == 0,
+              "ERROR: BLE_TX_POWER_CONN_DBM must be -12, -9, -6, -3, 0, 3, 6 or "
+              "9 dBm.");
 static_assert(LED_BLINK_INTERVAL_MS > 0,
               "ERROR: LED_BLINK_INTERVAL_MS must be greater than 0.");
 static_assert(LOG_STATS_INTERVAL_MS > 0,

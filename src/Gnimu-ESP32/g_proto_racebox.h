@@ -77,6 +77,11 @@ constexpr size_t RACEBOX_PACKET_LEN = 88;
 // RaceBox emits exactly one frame size, so this is simply the packet length.
 constexpr size_t PROTOCOL_MAX_FRAME_LEN = RACEBOX_PACKET_LEN;
 
+// The descriptor's shape, for the same compile-time reason (see g_protocol.h).
+// g_proto_racebox.cpp asserts both against RACEBOX_PROTOCOL itself.
+constexpr uint8_t PROTOCOL_CHANNEL_COUNT = 2;
+constexpr TransportKind PROTOCOL_TRANSPORT = TRANSPORT_NORDIC_UART;
+
 // ----------------------------------------------------------------------------
 // UUID format validation
 // ----------------------------------------------------------------------------

@@ -172,11 +172,16 @@ constexpr size_t TELEMETRY_MAX_WRITE_LEN = 64;
 //
 // Alongside its descriptor, each g_proto_<name>.h must define:
 //
-//   constexpr size_t PROTOCOL_MAX_FRAME_LEN   largest frame the protocol emits
+//   constexpr size_t PROTOCOL_MAX_FRAME_LEN        largest frame the protocol emits
+//   constexpr uint8_t PROTOCOL_CHANNEL_COUNT       its descriptor's channelCount
+//   constexpr TransportKind PROTOCOL_TRANSPORT     its descriptor's transport
 //
-// A transport uses it to size the MTU it requests and to reject a link that
-// cannot carry the protocol's frames. It is a constexpr rather than a
-// descriptor field because both of those uses are compile-time. Omitting it is
+// A transport uses the first to size the MTU it requests and to reject a link
+// that cannot carry the protocol's frames, and the other two to refuse, at
+// compile time, a protocol it cannot serve (more channels than its table, a
+// transport kind it does not build). They are constexprs rather than
+// descriptor fields because those uses are compile-time; the protocol's own
+// .cpp asserts the last two agree with its descriptor. Omitting the first is
 // caught by g_protocol_active.h.
 
 // ----------------------------------------------------------------------------

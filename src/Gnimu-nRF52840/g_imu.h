@@ -83,10 +83,15 @@ void imuPoll();
 //
 // Call exactly once per consumed GNSS epoch, from g_telemetry, and outside any
 // BLE-connected test: draining the window must not depend on a client being
-// attached. There is no timer fallback and none is needed - no epoch means no
-// packet, so there is nothing to drain. If the receiver stops delivering
-// entirely the cached value freezes and the window widens until epochs resume,
-// a state in which the device is not producing telemetry anyway.
+// attached. There is no timer fallback, and while the transient thresholds
+// are parked none is needed. If the receiver stops delivering, the cached
+// value freezes and the window keeps widening - harmless while it lasts, since
+// no epoch means no packet. The problem is the RECOVERY edge: the first epoch
+// after a stall latches the peak of the whole gap, so with the thresholds live
+// one packet would carry a transient from anywhere in it, possibly minutes old.
+// Parked, read() never blends and the stale peak is discarded unseen.
+// Un-parking therefore needs a stall drain - see "UN-PARKING ALSO NEEDS A
+// STALL DRAIN" in g_imu_tuning.h (R2-3).
 ImuProtocolUnits imuLatchForEpoch();
 
 // Retrieve the most recently latched IMU values in RaceBox protocol units.

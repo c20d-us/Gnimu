@@ -20,6 +20,7 @@
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
+#include "g_led.h"
 #include "g_log.h"
 #include "g_telemetry.h"
 
@@ -91,6 +92,7 @@ void setup() {
   // See the nRF note: continue regardless so the loop keeps running.
   (void)gnssBegin();
   imuBegin();
+  ledBegin();
   bleBegin();
   telemetryBegin();
 }
@@ -100,4 +102,5 @@ void loop() {
   imuPoll();
   telemetrySendIfReady();
   bleUpdate();
+  ledUpdate();
 }

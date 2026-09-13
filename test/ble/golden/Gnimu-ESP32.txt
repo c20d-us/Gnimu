@@ -1,0 +1,105 @@
+S begin
+port.begin name="Test Model 1000000001" model="Test Model" serial="1000000001" manufacturer=Test Maker fw="FW9" hw="HW2" channels=3 -> 1
+📡 BLE advertising started.
+port.stop
+📴 BLE stopped (disconnected + advertising off).
+S begin-fails
+port.begin name="Test Model 1000000001" model="Test Model" serial="1000000001" manufacturer=Test Maker fw="FW9" hw="HW2" channels=3 -> 0
+✅ begin-fails: no advertising line and no port.stop above
+S emit
+✅ BLE client connected (MTU 247).
+✅ emit: a channel the protocol lacks, and a write-only one, are refused
+  counts after invalid channels: sent=0 dropped=2 unsubscribed=0 failed=2
+❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
+  counts after 3 unsubscribed: sent=0 dropped=5 unsubscribed=3 failed=2
+✅ emit: unsubscribed refusals are the subset; the invalid channels are the failures
+✅ BLE: notifications enabled - sending resumed (3 frame(s) refused while unsubscribed).
+port.send ch=0 len=20
+✅ emit: subscribed frame sent
+  counts after subscribing: sent=1 dropped=5 unsubscribed=3 failed=2
+❌ BLE: peer MTU 13 too small for a 20-byte frame (need 23). Refusing to send - a truncated packet is worse than none.
+✅ BLE: peer MTU now 247 - sending resumed.
+port.send ch=0 len=20
+✅ emit: the MTU refusal ends once the frame fits
+  counts after 2 MTU refusals: sent=2 dropped=7 unsubscribed=3 failed=4
+port.send ch=0 len=20
+✅ emit: a stack that fragments is never refused on MTU
+✅ emit: MTU refusals are failures, not unsubscribed
+port.send ch=0 len=20 (short)
+✅ emit: a short send is a failure
+  counts after a short send: sent=3 dropped=8 unsubscribed=3 failed=5
+✅ emit: sent counts only frames the port accepted whole
+S multichannel
+✅ BLE client connected (MTU 247).
+port.send ch=0 len=20
+port.send ch=2 len=20
+  both subscribed: sent +2, failed +0, unsubscribed +0
+✅ multichannel: both subscribed - counts
+port.send ch=0 len=20
+  one subscribed: sent +1, failed +0, unsubscribed +1
+✅ multichannel: one of two subscribed - counts (the old rule read 0 Hz)
+port.send ch=0 len=20
+  one subscribed, again: sent +1, failed +0, unsubscribed +1
+port.send ch=0 len=20
+  one subscribed, again: sent +1, failed +0, unsubscribed +1
+✅ multichannel: a partly subscribed client logs no not-subscribed or resumed lines, epoch after epoch
+❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
+  none subscribed: sent +0, failed +0, unsubscribed +2
+✅ multichannel: none subscribed - does not count
+✅ BLE: notifications enabled - sending resumed (2 frame(s) refused while unsubscribed).
+port.send ch=0 len=20 (short)
+port.send ch=2 len=20
+  one accepted, one short: sent +1, failed +1, unsubscribed +0
+✅ multichannel: one accepted and one failed - does not count
+✅ multichannel: bleIsSubscribed with a notify channel subscribed
+✅ multichannel: bleIsSubscribed with none
+S session
+✅ BLE client connected (MTU 23).
+🔧 BLE MTU changed: 23 -> 247
+❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
+❌ BLE client disconnected (reason 0x13).
+  -- reconnect after a visible disconnect
+✅ BLE client connected (MTU 23).
+❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
+✅ session: the not-subscribed line above fired afresh
+  -- disconnect and reconnect both between two polls
+❌ BLE client disconnected (reason 0x08).
+✅ BLE client connected (MTU 23).
+❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
+✅ session: one disconnect, one connect, and the latch reset
+  -- connect and disconnect both between two polls
+❌ BLE client disconnected (reason 0x08).
+✅ BLE client connected (MTU 23).
+❌ BLE client disconnected (reason 0x3E).
+✅ session: a session seen only by its count is still reported, and ends not connected
+S inbound
+📨 BLE write: 5 byte(s) on channel 1
+proto.onWrite ch=1 len=5 first=0x00
+✅ inbound: one write, dispatched on the next update
+✅ inbound: an oversized discrete write is dropped whole and counted
+📨 BLE write: 64 byte(s) on channel 1
+proto.onWrite ch=1 len=64 first=0x00
+📨 BLE write: 64 byte(s) on channel 1
+proto.onWrite ch=1 len=64 first=0x40
+📨 BLE write: 64 byte(s) on channel 1
+proto.onWrite ch=1 len=64 first=0x80
+📨 BLE write: 8 byte(s) on channel 1
+proto.onWrite ch=1 len=8 first=0xC0
+✅ inbound: a 200-byte stream slice is split 64/64/64/8, one dispatch per update
+✅ inbound: a burst of 9 fills the 7 usable slots and drops 2
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x00
+✅ inbound: exactly one dispatch per update
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x01
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x02
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x03
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x04
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x05
+📨 BLE write: 1 byte(s) on channel 1
+proto.onWrite ch=1 len=1 first=0x06
+✅ inbound: the queue drains in order, then is empty

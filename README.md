@@ -53,7 +53,7 @@ Start with the README for whichever hardware you're building (links at the top o
 
 2. There are other u-blox compatible GNSS modules that should work with this firmware, either as a drop-in replacement or with minor code tweaks. I have not tried any other options, but you can easily find several other M10-based modules on Amazon, DigiKey, and Mouser. Keep in mind that M10-based modules will all have similar performance and constraints as the HGLRC modules.
 
-3. GNSS reception is sensitive to nearby RF noise. On compact builds, the BLE radio can desensitize the GNSS receiver. Dialing `BLE_TX_POWER` (`BLE_TX_POWER_ADV_DBM` / `BLE_TX_POWER_CONN_DBM` on the nRF52840 builds) down to the lowest level that works for you is advised. The receiving app is usually close by, so high power isn't generally needed. When the BLE power level was left at the default value of +9dbm on my ESP32 build, the device had significantly worse lock quality, sometimes not getting a fix at all (especially indoors).
+3. GNSS reception is sensitive to nearby RF noise. On compact builds, the BLE radio can desensitize the GNSS receiver. Dialing `BLE_TX_POWER_ADV_DBM` / `BLE_TX_POWER_CONN_DBM` down to the lowest level that works for you is advised. The receiving app is usually close by, so high power isn't generally needed. When the BLE power level was left at the default value of +9dbm on my ESP32 build, the device had significantly worse lock quality, sometimes not getting a fix at all (especially indoors).
 
 ## GNSS fix rate and enabled constellations
 
@@ -232,6 +232,9 @@ test/
   gnss/                  Runs the real GNSS driver against a fake receiver:
                          baud sweep, config sequence, epoch plumbing
   run_gnss_harness.sh    Builds and runs it for all three variants
+  ble/                   Runs the real BLE driver against a fake port: emit
+                         policy, sessions, the inbound write queue
+  run_ble_harness.sh     Builds and runs it for all three variants
 images/
   ESP32/                 Build photos for the Gnimu ESP32 variant
   nRF52840/              Build photos for the Gnimu nRF52840 variant

@@ -103,6 +103,17 @@
 // kerb strikes it exists to catch. If the boards come out needing different
 // values, that is the moment to move these two defines into each config.h.
 //
+// UN-PARKING ALSO NEEDS A STALL DRAIN (R2-3). The transient window is reset only
+// by ImuAxis::read(), which runs once per GNSS epoch, while imuPoll() keeps
+// feeding it at 100Hz. Across a receiver stall it widens for as long as the
+// stall lasts, and the first epoch afterwards would blend the gap's peak into
+// one packet. Parked, that peak is never blended, so nothing is needed today.
+// The cheapest drain: in imuPoll(), while gnssStalled() (g_gnss.h) is true,
+// call read() on all six axes after update() and discard the result. That caps
+// a stale peak's age at the stall threshold (1s at 20Hz) instead of the stall's
+// length. Without it, a live threshold reports stale transients after every
+// stall.
+//
 // The two settings are NOT independent. A lower alpha makes the EMA baseline
 // lag further, which INCREASES |raw - smoothedValue_| and so makes the blend
 // fire MORE. Lowering the alpha without raising the threshold first makes the

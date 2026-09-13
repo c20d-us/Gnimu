@@ -57,10 +57,15 @@ static uint8_t g_txAddr = 0, g_regPtr = 0;
 static uint8_t g_rx[16];
 static size_t g_rxLen = 0, g_rxPos = 0;
 
+// Only the sensor models below use this, and notfitted removes both sensor
+// headers - so it exists under the same condition as its callers, rather than
+// being marked unused.
+#if __has_include("Adafruit_MPU6050.h") || __has_include("LSM6DS3.h")
 static int16_t counts(float v, float perUnit) {
   const long c = lroundf(v * perUnit);
   return (int16_t)(c > 32767 ? 32767 : c < -32768 ? -32768 : c);
 }
+#endif
 
 void FakeWire::beginTransmission(uint8_t addr) { g_txAddr = addr; }
 size_t FakeWire::write(uint8_t b) {
@@ -182,6 +187,7 @@ static size_t lsmBurst(uint8_t *out) {
 #endif
 
 size_t FakeWire::requestFrom(uint8_t addr, size_t len, bool) {
+  (void)len; // read only when a sensor header is present - notfitted has none
   g_rxLen = g_rxPos = 0;
   if (addr != g_txAddr) {
     return 0;

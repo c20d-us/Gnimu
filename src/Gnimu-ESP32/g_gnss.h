@@ -60,6 +60,25 @@ bool gnssBegin();
 // fix rather than one that has none.
 bool gnssIsUp();
 
+// Whether the receiver is up but has stopped delivering epochs: none for longer
+// than the larger of 1s and three epoch periods. The clock starts at bring-up,
+// so a receiver that was configured but never sent a single PVT counts too.
+//
+// gnssIsUp() cannot say this - nothing at runtime clears it - and
+// gnssLatestPvt() keeps returning the last epoch indefinitely, so without this
+// a receiver lost mid-session reads as frozen data rather than as no data.
+// Clears on the next epoch. Always false while gnssIsUp() is false: that case
+// is "not responding", and callers report it separately.
+//
+// A short loss of power at the receiver recovers by itself. gnssBegin()
+// writes the runtime configuration to RAM/BBR only, but the module's backup
+// supply holds BBR: a GNSS connector unplugged for a few seconds and reseated
+// (nRF52840-OLED, 2026-09-13) came back at 20 Hz with a 3D fix a second later,
+// no power cycle. An outage long enough to drain that supply would leave the
+// receiver at the right baud with PVT output off, silent until a power cycle
+// re-runs bring-up - expected, but untested.
+bool gnssStalled();
+
 // Stop talking to the receiver and release the UART, leaving gnssIsUp() false.
 //
 // What that buys depends on the board, and is documented in its port file: on
