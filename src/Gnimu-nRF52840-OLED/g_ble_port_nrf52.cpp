@@ -14,9 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include "g_ble_port.h"
+
 #include "config.h"
 #include "g_battery.h"
-#include "g_ble_port.h"
 #include "g_log.h"
 #include "g_protocol_active.h"
 #include <atomic>

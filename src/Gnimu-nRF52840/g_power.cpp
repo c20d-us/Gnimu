@@ -18,6 +18,9 @@
 #include "config.h"
 #include "g_log.h"
 
+static bool switchOnCached = true;
+static unsigned long switchLastPollMs = 0;
+
 // Drive GNSS EN low. The pin must be an output to override the regulator's
 // pullup.
 static void gnssEnDisable() {
@@ -41,9 +44,6 @@ static void ledPinsOff() {
   digitalWrite(LED_GREEN_PIN, HIGH);
   digitalWrite(LED_BLUE_PIN, HIGH);
 }
-
-static bool switchOnCached = true;
-static unsigned long switchLastPollMs = 0;
 
 static bool switchReadOnce() {
   const float adcMax = (float)((1UL << SAADC_RESOLUTION_BITS) - 1);

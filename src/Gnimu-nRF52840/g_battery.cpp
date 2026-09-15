@@ -19,6 +19,14 @@
 #include "g_log.h"
 #include "g_power.h"
 
+// Discharge curve from BATTERY_DISCHARGE_CURVE.
+struct CurvePoint {
+  float voltage;
+  uint8_t percent;
+};
+static const CurvePoint kCurve[] = BATTERY_DISCHARGE_CURVE;
+static const size_t kCurveLen = sizeof(kCurve) / sizeof(kCurve[0]);
+
 static BatteryStatus status = {0.0f, 0, false, false, false, false};
 
 // Smoothed voltage for display. The cutoff uses the unsmoothed peak.
@@ -28,15 +36,16 @@ static bool voltagePrimed = false;
 // millis() when the peak first dropped below BATTERY_CUTOFF_V, or 0.
 static unsigned long belowCutoffSinceMs = 0;
 
-// Discharge curve from BATTERY_DISCHARGE_CURVE.
-namespace {
-struct CurvePoint {
-  float voltage;
-  uint8_t percent;
-};
-const CurvePoint kCurve[] = BATTERY_DISCHARGE_CURVE;
-const size_t kCurveLen = sizeof(kCurve) / sizeof(kCurve[0]);
-} // namespace
+// Non-blocking sampler. A run starts every BATTERY_POLL_INTERVAL_MS and takes
+// BATTERY_SAMPLE_COUNT paced reads. The max feeds ingestPeak(); the min is
+// unused.
+enum SamplerState { S_IDLE, S_SAMPLING };
+static SamplerState sState = S_IDLE;
+static unsigned long sRunStartMs = 0;
+static unsigned long sLastSampleUs = 0;
+static int sMinAdc = 0;
+static int sMaxAdc = 0;
+static int sSampleCount = 0;
 
 // The VBAT divider is enabled only while sampling.
 static void dividerEnable(bool on) {
@@ -94,17 +103,6 @@ static void ingestPeak(float freshVoltage, unsigned long nowMs) {
     belowCutoffSinceMs = 0;
   }
 }
-
-// Non-blocking sampler. A run starts every BATTERY_POLL_INTERVAL_MS and takes
-// BATTERY_SAMPLE_COUNT paced reads. The max feeds ingestPeak(); the min is
-// unused.
-enum SamplerState { S_IDLE, S_SAMPLING };
-static SamplerState sState = S_IDLE;
-static unsigned long sRunStartMs = 0;
-static unsigned long sLastSampleUs = 0;
-static int sMinAdc = 0;
-static int sMaxAdc = 0;
-static int sSampleCount = 0;
 
 static void samplerBeginRun(unsigned long nowMs) {
   sRunStartMs = nowMs;

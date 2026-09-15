@@ -14,10 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "config.h"
 #include "g_imu_sensor.h"
+
+#include "config.h"
 #include "g_log.h"
-#include <Arduino.h> // first: config.h and the calls below assume it
+#include <Arduino.h>
 
 // IMU driver for the InvenSense MPU-6050 (ESP32). The Adafruit library handles
 // bring-up; samples use this file's checked burst read. See g_imu_sensor.h.
@@ -26,9 +27,6 @@
 // Inside the #if so IMU_ENABLED 0 builds don't need the library.
 #include <Adafruit_MPU6050.h>
 #include <Wire.h>
-
-// Bring-up only. getEvent() reports success regardless of bus errors.
-static Adafruit_MPU6050 myIMU;
 
 // Counts per g and per deg/s for each range, fixed at compile time.
 // imuSensorBegin() verifies the chip took the configured range.
@@ -59,6 +57,14 @@ static_assert(kGyroCountsPerDps > 0.0f,
 // each a big-endian pair.
 static constexpr size_t kBurstBytes = 14;
 
+// Bring-up only. getEvent() reports success regardless of bus errors.
+static Adafruit_MPU6050 myIMU;
+
+// Big-endian register pair, high byte first.
+static inline int16_t rawPair(const uint8_t *p) {
+  return (int16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
+}
+
 bool imuSensorBegin() {
   if (!myIMU.begin(IMU_I2C_ADDRESS)) {
     return false;
@@ -80,11 +86,6 @@ bool imuSensorBegin() {
     return false;
   }
   return true;
-}
-
-// Big-endian register pair, high byte first.
-static inline int16_t rawPair(const uint8_t *p) {
-  return (int16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
 }
 
 bool imuSensorRead(ImuRawSample *out) {

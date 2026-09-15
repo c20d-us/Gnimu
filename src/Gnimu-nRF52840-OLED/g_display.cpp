@@ -30,6 +30,29 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 
+// USB plug icon, 7x8:
+//
+//     . # # . # # .
+//     . # # . # # .
+//     # # # # # # #
+//     # # # # # # #
+//     # # # # # # #
+//     . # # # # # .
+//     . . # # # . .
+//     . . # # # . .
+static const uint8_t USB_XBM[] = {0x36, 0x36, 0x7F, 0x7F,
+                                  0x7F, 0x3E, 0x1C, 0x1C};
+static const int USB_W = 7, USB_H = 8;
+
+static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded
+
+// open_iconic_check glyphs.
+static const uint16_t ICON_TRIM_OK = 64;  // check
+static const uint16_t ICON_TRIM_BAD = 68; // X
+
+// Trim icon x, between the longest label (ends at 66) and the USB icon (88).
+static const int TRIM_X = 78;
+
 // Full-buffer hardware-I2C driver.
 static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
 
@@ -58,33 +81,11 @@ static unsigned long lastEpochSeenMs = 0;
 static uint8_t shiftIdx = 0;
 static const int8_t SHIFT_X[8] = {0, 1, 2, 2, 2, 1, 0, 0};
 static const int8_t SHIFT_Y[8] = {0, 0, 0, 1, 2, 2, 2, 1};
-static inline int ox(int x) { return x + SHIFT_X[shiftIdx]; }
-static inline int oy(int y) { return y + SHIFT_Y[shiftIdx]; }
-
-// USB plug icon, 7x8:
-//
-//     . # # . # # .
-//     . # # . # # .
-//     # # # # # # #
-//     # # # # # # #
-//     # # # # # # #
-//     . # # # # # .
-//     . . # # # . .
-//     . . # # # . .
-static const uint8_t USB_XBM[] = {0x36, 0x36, 0x7F, 0x7F,
-                                  0x7F, 0x3E, 0x1C, 0x1C};
-static const int USB_W = 7, USB_H = 8;
-
-static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded
-
-// open_iconic_check glyphs.
-static const uint16_t ICON_TRIM_OK = 64;  // check
-static const uint16_t ICON_TRIM_BAD = 68; // X
-
-// Trim icon x, between the longest label (ends at 66) and the USB icon (88).
-static const int TRIM_X = 78;
 
 // Draw helpers
+
+static inline int ox(int x) { return x + SHIFT_X[shiftIdx]; }
+static inline int oy(int y) { return y + SHIFT_Y[shiftIdx]; }
 
 static void strAt(int x, int y, const char *s) {
   oled.drawStr(ox(x), oy(y), s);
@@ -275,6 +276,16 @@ static void renderFrame() {
   }
 }
 
+// Push the next slice; clear the cursor after the last.
+static void pushSlice() {
+  const uint8_t tx = (pushCursor % SLICES_PER_ROW) * DISPLAY_CHUNK_TILES_W;
+  const uint8_t ty = pushCursor / SLICES_PER_ROW;
+  oled.updateDisplayArea(tx, ty, DISPLAY_CHUNK_TILES_W, 1);
+  if (++pushCursor >= SLICE_COUNT) {
+    pushCursor = -1;
+  }
+}
+
 // Public API
 
 void displayBegin() {
@@ -300,18 +311,6 @@ void displayBegin() {
   renderFrame();
   oled.sendBuffer();
   LOG_PRINTLN("✅ OLED display enabled.");
-}
-
-bool displayIsPresent() { return present; }
-
-// Push the next slice; clear the cursor after the last.
-static void pushSlice() {
-  const uint8_t tx = (pushCursor % SLICES_PER_ROW) * DISPLAY_CHUNK_TILES_W;
-  const uint8_t ty = pushCursor / SLICES_PER_ROW;
-  oled.updateDisplayArea(tx, ty, DISPLAY_CHUNK_TILES_W, 1);
-  if (++pushCursor >= SLICE_COUNT) {
-    pushCursor = -1;
-  }
 }
 
 void displayUpdate() {
@@ -376,6 +375,8 @@ void displayUpdate() {
   pushCursor = 0;
   lastSliceMs = now;
 }
+
+bool displayIsPresent() { return present; }
 
 void displaySleep() {
   if (!present || asleep) {

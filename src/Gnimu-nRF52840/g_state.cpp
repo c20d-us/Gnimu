@@ -28,6 +28,9 @@ static SystemState current = STATE_RUNNING;
 // STATE_SWITCH_OFF_DEBOUNCE_MS.
 static unsigned long switchOffSinceMs = 0;
 
+// millis() when idling began, or 0. See STATE_IDLE_TIMEOUT_MIN.
+static unsigned long idleSinceMs = 0;
+
 // True unless the switch has read off continuously for the debounce period.
 // Switch-on is immediate.
 static bool switchOnDebounced(unsigned long nowMs) {
@@ -39,9 +42,6 @@ static bool switchOnDebounced(unsigned long nowMs) {
     switchOffSinceMs = nowMs;
   return (nowMs - switchOffSinceMs) < STATE_SWITCH_OFF_DEBOUNCE_MS;
 }
-
-// millis() when idling began, or 0. See STATE_IDLE_TIMEOUT_MIN.
-static unsigned long idleSinceMs = 0;
 
 // Shut down from RUNNING and enter System OFF. Does not return.
 static void enterDeepSleepFrom(const char *reasonLog) {

@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "config.h"
 #include "g_gnss_port.h"
+
+#include "config.h"
 #include "g_log.h"
 
 // GNSS UART port for ESP32: HardwareSerial(2) on GNSS_RX_PIN / GNSS_TX_PIN.
@@ -24,9 +25,9 @@
 // messages doesn't matter, only total stall time. At 2000 bytes/s (20Hz) the
 // loop may stall about 256ms before bytes are lost (see g_gnss.h).
 
-static HardwareSerial gnssSerial(2);
-
 static constexpr size_t kGnssRxRingBytes = 512;
+
+static HardwareSerial gnssSerial(2);
 
 // setRxBufferSize() must run once, before the first begin(), and fails
 // silently otherwise, so the result is checked. It survives end().

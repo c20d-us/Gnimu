@@ -19,6 +19,24 @@
 #include "g_gnss_port.h"
 #include "g_log.h"
 
+// Stall threshold: the larger of 1s and three epoch periods.
+static constexpr unsigned long kStallMs = (3000UL / GNSS_NAV_RATE_HZ) > 1000UL
+                                              ? (3000UL / GNSS_NAV_RATE_HZ)
+                                              : 1000UL;
+
+// Every M10 UART1 NMEA sentence. setUART1Output(COM_TYPE_UBX) filters NMEA but
+// leaves each sentence's rate set, so the rates are zeroed too. A rejected key
+// is a sentence this firmware lacks, not an error.
+static const uint32_t NMEA_MSGOUT_KEYS[] = {
+    UBLOX_CFG_MSGOUT_NMEA_ID_DTM_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GBS_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GGA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GLL_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GNS_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GRS_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GSA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GST_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_GSV_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_RLM_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_RMC_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_VLW_UART1,
+    UBLOX_CFG_MSGOUT_NMEA_ID_VTG_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_ZDA_UART1,
+};
+
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static Stream *gnssStream = nullptr;
 
@@ -31,10 +49,7 @@ static bool everReceivedPvt = false;
 // millis() of the latest epoch, or of bring-up before the first one.
 static unsigned long lastEpochMs = 0;
 
-// Stall threshold: the larger of 1s and three epoch periods.
-static constexpr unsigned long kStallMs = (3000UL / GNSS_NAV_RATE_HZ) > 1000UL
-                                              ? (3000UL / GNSS_NAV_RATE_HZ)
-                                              : 1000UL;
+static bool gnssUp = false;
 
 // Find the receiver, trying GNSS_BAUD first and then common u-blox rates. If
 // found at another rate, switch it to GNSS_BAUD and save that to flash.
@@ -90,27 +105,6 @@ static void drainSerial() {
   }
 }
 
-// Called by checkCallbacks() for each new UBX-NAV-PVT.
-static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
-  memcpy(&latestPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
-  newEpochAvailable = true;
-  everReceivedPvt = true;
-  lastEpochMs = millis();
-}
-
-// Every M10 UART1 NMEA sentence. setUART1Output(COM_TYPE_UBX) filters NMEA but
-// leaves each sentence's rate set, so the rates are zeroed too. A rejected key
-// is a sentence this firmware lacks, not an error.
-static const uint32_t NMEA_MSGOUT_KEYS[] = {
-    UBLOX_CFG_MSGOUT_NMEA_ID_DTM_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GBS_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_GGA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GLL_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_GNS_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GRS_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_GSA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GST_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_GSV_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_RLM_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_RMC_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_VLW_UART1,
-    UBLOX_CFG_MSGOUT_NMEA_ID_VTG_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_ZDA_UART1,
-};
-
 // Enable or disable each constellation listed in GNSS_CONSTELLATIONS.
 static void setConstellations() {
   struct Constellations {
@@ -141,24 +135,13 @@ static void setConstellations() {
   }
 }
 
-const UBX_NAV_PVT_data_t *gnssConsumePvt() {
-  if (!newEpochAvailable) {
-    return nullptr;
-  } else {
-    newEpochAvailable = false;
-    return &latestPVT;
-  }
+// Called by checkCallbacks() for each new UBX-NAV-PVT.
+static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
+  memcpy(&latestPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
+  newEpochAvailable = true;
+  everReceivedPvt = true;
+  lastEpochMs = millis();
 }
-
-const UBX_NAV_PVT_data_t *gnssLatestPvt() {
-  return everReceivedPvt ? &latestPVT : nullptr;
-}
-
-static bool gnssUp = false;
-
-bool gnssIsUp() { return gnssUp; }
-
-bool gnssStalled() { return gnssUp && (millis() - lastEpochMs) > kStallMs; }
 
 bool gnssBegin() {
   // No receiver: report and continue without telemetry. No retry; the library
@@ -239,6 +222,10 @@ bool gnssBegin() {
   return true;
 }
 
+bool gnssIsUp() { return gnssUp; }
+
+bool gnssStalled() { return gnssUp && (millis() - lastEpochMs) > kStallMs; }
+
 // Not guarded on gnssUp: power-cut callers need the UART released regardless.
 void gnssEnd() {
   gnssPortEnd();
@@ -252,4 +239,17 @@ void gnssPoll() {
   }
   myGNSS.checkUblox();     // parse incoming bytes
   myGNSS.checkCallbacks(); // fire callbacks for completed packets
+}
+
+const UBX_NAV_PVT_data_t *gnssConsumePvt() {
+  if (!newEpochAvailable) {
+    return nullptr;
+  } else {
+    newEpochAvailable = false;
+    return &latestPVT;
+  }
+}
+
+const UBX_NAV_PVT_data_t *gnssLatestPvt() {
+  return everReceivedPvt ? &latestPVT : nullptr;
 }

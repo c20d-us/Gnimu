@@ -17,6 +17,9 @@
 #include "g_imu_trim.h"
 #include <math.h>
 
+// Rolling variance window for the stillness gate.
+static const float GYRO_VAR_WINDOW_MS = 500.0f;
+
 // State, all reset by imuTrimBegin().
 
 static ImuTrimConfig cfg_;
@@ -42,7 +45,6 @@ static bool converged_;
 
 // Gate: rolling variance (EMA). varSamples_ keeps an unsettled estimate from
 // passing.
-static const float GYRO_VAR_WINDOW_MS = 500.0f;
 static float varMean_[3];
 static float varSq_[3];
 static float aVarMean_[3];
@@ -147,54 +149,6 @@ static void resetWindow() {
   }
   lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
   lockBlocksSeen_ = 0;
-}
-
-void imuTrimBegin(const ImuTrimConfig &cfg) {
-  cfg_ = cfg;
-
-  // Level, uncorrected start.
-  gRef_[0] = 0.0f;
-  gRef_[1] = 0.0f;
-  gRef_[2] = 1.0f;
-  setIdentity(R_);
-  for (int i = 0; i < 3; i++) {
-    gyroBias_[i] = 0.0f;
-    varMean_[i] = 0.0f;
-    varSq_[i] = 0.0f;
-    aVarMean_[i] = 0.0f;
-    aVarSq_[i] = 0.0f;
-  }
-  accelZBias_ = 0.0f;
-  lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
-  lockBlocksSeen_ = 0;
-  tiltDeg_ = 0.0f;
-  converged_ = false;
-
-  // Convert durations to sample counts, each at least 1.
-  const float interval =
-      (cfg_.sampleIntervalMs > 0.0f) ? cfg_.sampleIntervalMs : 1.0f;
-  qualifyNeeded_ = (uint32_t)(cfg_.qualifyMs / interval);
-  blockNeeded_ = (uint32_t)(cfg_.blockMs / interval);
-  varSamplesNeeded_ = (uint32_t)(GYRO_VAR_WINDOW_MS / interval);
-  if (qualifyNeeded_ < 1)
-    qualifyNeeded_ = 1;
-  if (blockNeeded_ < 1)
-    blockNeeded_ = 1;
-  if (varSamplesNeeded_ < 1)
-    varSamplesNeeded_ = 1;
-
-  // EMA alpha equivalent to an N-sample window.
-  varAlpha_ = 2.0f / ((float)varSamplesNeeded_ + 1.0f);
-  varSamples_ = 0;
-
-  gyroVarMaxSq_ = cfg_.gyroVarMax * cfg_.gyroVarMax;
-  accelVarMaxSq_ = cfg_.accelVarMax * cfg_.accelVarMax;
-  const float lo = cfg_.gravityNative * (1.0f - cfg_.accelSanityTol);
-  const float hi = cfg_.gravityNative * (1.0f + cfg_.accelSanityTol);
-  accelMagLoSq_ = lo * lo;
-  accelMagHiSq_ = hi * hi;
-
-  resetWindow();
 }
 
 // Update the rolling variances and return whether every stillness test passes.
@@ -307,6 +261,54 @@ static void consumeBlock() {
   accelZBias_ = mn - cfg_.gravityNative;
 
   converged_ = true; // locked until the next imuTrimBegin()
+}
+
+void imuTrimBegin(const ImuTrimConfig &cfg) {
+  cfg_ = cfg;
+
+  // Level, uncorrected start.
+  gRef_[0] = 0.0f;
+  gRef_[1] = 0.0f;
+  gRef_[2] = 1.0f;
+  setIdentity(R_);
+  for (int i = 0; i < 3; i++) {
+    gyroBias_[i] = 0.0f;
+    varMean_[i] = 0.0f;
+    varSq_[i] = 0.0f;
+    aVarMean_[i] = 0.0f;
+    aVarSq_[i] = 0.0f;
+  }
+  accelZBias_ = 0.0f;
+  lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
+  lockBlocksSeen_ = 0;
+  tiltDeg_ = 0.0f;
+  converged_ = false;
+
+  // Convert durations to sample counts, each at least 1.
+  const float interval =
+      (cfg_.sampleIntervalMs > 0.0f) ? cfg_.sampleIntervalMs : 1.0f;
+  qualifyNeeded_ = (uint32_t)(cfg_.qualifyMs / interval);
+  blockNeeded_ = (uint32_t)(cfg_.blockMs / interval);
+  varSamplesNeeded_ = (uint32_t)(GYRO_VAR_WINDOW_MS / interval);
+  if (qualifyNeeded_ < 1)
+    qualifyNeeded_ = 1;
+  if (blockNeeded_ < 1)
+    blockNeeded_ = 1;
+  if (varSamplesNeeded_ < 1)
+    varSamplesNeeded_ = 1;
+
+  // EMA alpha equivalent to an N-sample window.
+  varAlpha_ = 2.0f / ((float)varSamplesNeeded_ + 1.0f);
+  varSamples_ = 0;
+
+  gyroVarMaxSq_ = cfg_.gyroVarMax * cfg_.gyroVarMax;
+  accelVarMaxSq_ = cfg_.accelVarMax * cfg_.accelVarMax;
+  const float lo = cfg_.gravityNative * (1.0f - cfg_.accelSanityTol);
+  const float hi = cfg_.gravityNative * (1.0f + cfg_.accelSanityTol);
+  accelMagLoSq_ = lo * lo;
+  accelMagHiSq_ = hi * hi;
+
+  resetWindow();
 }
 
 void imuTrimUpdate(const float accel[3], const float gyro[3], float speedMps,

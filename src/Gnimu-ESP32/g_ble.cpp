@@ -89,6 +89,21 @@ static bool rxPush(uint8_t channel, const uint8_t *data, size_t len) {
   return true;
 }
 
+// Consumer. Dispatches one write per call to bound per-loop work; the loop runs
+// far faster than writes arrive.
+static void rxDispatchOne() {
+  const uint8_t head = rxHead.load(std::memory_order_relaxed);
+  if (head == rxTail.load(std::memory_order_acquire)) {
+    return; // empty
+  }
+  LOG_PRINTF("📨 BLE write: %u byte(s) on channel %u\n",
+             (unsigned int)rxLen[head], (unsigned int)rxChannel[head]);
+  if (proto->onWrite != nullptr) {
+    proto->onWrite(rxChannel[head], rxBuf[head], rxLen[head]);
+  }
+  rxHead.store((uint8_t)((head + 1) % kRxSlots), std::memory_order_release);
+}
+
 void bleRxFromCallback(uint8_t channel, const uint8_t *data, size_t len,
                        bool wholeMessage) {
   if (len == 0) {
@@ -111,21 +126,6 @@ void bleRxFromCallback(uint8_t channel, const uint8_t *data, size_t len,
     data += n;
     len -= n;
   }
-}
-
-// Consumer. Dispatches one write per call to bound per-loop work; the loop runs
-// far faster than writes arrive.
-static void rxDispatchOne() {
-  const uint8_t head = rxHead.load(std::memory_order_relaxed);
-  if (head == rxTail.load(std::memory_order_acquire)) {
-    return; // empty
-  }
-  LOG_PRINTF("📨 BLE write: %u byte(s) on channel %u\n",
-             (unsigned int)rxLen[head], (unsigned int)rxChannel[head]);
-  if (proto->onWrite != nullptr) {
-    proto->onWrite(rxChannel[head], rxBuf[head], rxLen[head]);
-  }
-  rxHead.store((uint8_t)((head + 1) % kRxSlots), std::memory_order_release);
 }
 
 // Session lifecycle
@@ -181,6 +181,16 @@ static void followSession() {
   }
 }
 
+// True if notifications are enabled on any notify channel.
+static bool anyChannelSubscribed() {
+  for (uint8_t i = 0; i < proto->channelCount; i++) {
+    if ((proto->channels[i].props & PROP_NOTIFY) && blePortSubscribed(i)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Public interface
 
 void bleBegin() {
@@ -197,16 +207,6 @@ void bleBegin() {
 }
 
 bool bleIsConnected() { return blePortConnected(); }
-
-// True if notifications are enabled on any notify channel.
-static bool anyChannelSubscribed() {
-  for (uint8_t i = 0; i < proto->channelCount; i++) {
-    if ((proto->channels[i].props & PROP_NOTIFY) && blePortSubscribed(i)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 bool bleIsSubscribed() { return blePortConnected() && anyChannelSubscribed(); }
 

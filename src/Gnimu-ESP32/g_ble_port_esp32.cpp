@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "config.h"
 #include "g_ble_port.h"
+
+#include "config.h"
 #include "g_log.h"
 #include "g_protocol_active.h"
 #include <Arduino.h>
@@ -27,6 +28,11 @@
 
 // BLE port for the ESP32 core (Bluedroid). See g_ble_port.h.
 
+// Requested ATT MTU: the largest frame plus the 3-byte notify header. Recorded
+// as the peer MTU on connect so frames aren't refused while the exchange is in
+// progress. Set to 23 to exercise the MTU refusal path.
+static constexpr uint16_t kRequestedMtu = PROTOCOL_MAX_FRAME_LEN + 3;
+
 // Characteristics and CCCDs, indexed by channel.
 static constexpr uint8_t kMaxChannels = 8;
 static_assert(PROTOCOL_CHANNEL_COUNT <= kMaxChannels,
@@ -36,6 +42,18 @@ static BLECharacteristic *channelChr[kMaxChannels] = {nullptr};
 static BLE2902 *channelCccd[kMaxChannels] = {nullptr};
 
 static BLEServer *pServer = nullptr;
+
+// Callback state
+//
+// Written by Bluedroid callbacks on the other core. Callbacks only set these
+// and call bleRxFromCallback().
+static std::atomic<bool> connected{false};
+static std::atomic<uint32_t> sessionCount{0};
+static std::atomic<uint8_t> disconnectReason{0};
+static std::atomic<uint16_t> peerMtu{23};
+
+// Set by blePortStop() to suppress re-advertising.
+static bool stopped = false;
 
 // Map dBm to the named power level. Named constants avoid esp_bt.h's
 // misleading compatibility aliases.
@@ -49,20 +67,6 @@ static constexpr esp_power_level_t powerLevelFor(int dBm) {
          : dBm == 6  ? ESP_PWR_LVL_P6
                      : ESP_PWR_LVL_P9;
 }
-
-// Requested ATT MTU: the largest frame plus the 3-byte notify header. Recorded
-// as the peer MTU on connect so frames aren't refused while the exchange is in
-// progress. Set to 23 to exercise the MTU refusal path.
-static constexpr uint16_t kRequestedMtu = PROTOCOL_MAX_FRAME_LEN + 3;
-
-// Callback state
-//
-// Written by Bluedroid callbacks on the other core. Callbacks only set these
-// and call bleRxFromCallback().
-static std::atomic<bool> connected{false};
-static std::atomic<uint32_t> sessionCount{0};
-static std::atomic<uint8_t> disconnectReason{0};
-static std::atomic<uint16_t> peerMtu{23};
 
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *server, esp_ble_gatts_cb_param_t *param) override {
@@ -239,8 +243,6 @@ size_t blePortSend(uint8_t channel, const uint8_t *data, size_t len) {
 
 // Restart advertising BLE_READVERTISE_DELAY_MS after a disconnect, retrying on
 // failure.
-static bool stopped = false;
-
 void blePortUpdate() {
   static bool wasConnected = false;
   static bool reAdvertisePending = false;

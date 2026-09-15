@@ -33,6 +33,11 @@ static_assert(IMU_AXIS_X_SRC != IMU_AXIS_Y_SRC &&
               "ERROR: IMU_AXIS_X_SRC / _Y_SRC / _Z_SRC must be three different "
               "sensor axes - the map is a permutation, never a duplication.");
 
+// A run of failed reads lasting this long marks the IMU down.
+static constexpr unsigned long kImuDownAfterMs = 100;
+static constexpr unsigned int kImuFailedReadsToDown =
+    (kImuDownAfterMs + IMU_SAMPLE_INTERVAL_MS - 1) / IMU_SAMPLE_INTERVAL_MS;
+
 // [0]=X [1]=Y [2]=Z. Thresholds in g and deg/s.
 static ImuAxis accelAxes[3] = {
     ImuAxis(IMU_ACCEL_ALPHA, IMU_ACCEL_TRANSIENT_THRESHOLD_G),
@@ -50,10 +55,6 @@ static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 
 static bool imuUp = false;
 
-// A run of failed reads lasting this long marks the IMU down.
-static constexpr unsigned long kImuDownAfterMs = 100;
-static constexpr unsigned int kImuFailedReadsToDown =
-    (kImuDownAfterMs + IMU_SAMPLE_INTERVAL_MS - 1) / IMU_SAMPLE_INTERVAL_MS;
 static unsigned int consecutiveFailedReads = 0;
 
 // All failed reads since boot, so an intermittent bus shows up.

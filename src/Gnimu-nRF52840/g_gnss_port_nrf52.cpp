@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "config.h"
 #include "g_gnss_port.h"
+
+#include "config.h"
 
 // GNSS UART port for nRF52840: Serial1 on the XIAO's D6 (TX) / D7 (RX).
 //
@@ -27,13 +28,14 @@
 // SERIAL_BUFFER_SIZE is set in the prebuilt core. Overriding it from the sketch
 // would mismatch the Uart object layout.
 
-static Uart &gnssSerial = Serial1;
-
 static_assert(SERIAL_BUFFER_SIZE < 100,
               "Serial1's ring now holds a whole NAV-PVT, so the drain deadline "
               "documented above no longer applies. Update this comment (and "
               "g_protocol.h's onWrite contract, g_ble.cpp's ring sizing, and "
               "the OLED config.h slice rationale) before removing this.");
+
+static Uart &gnssSerial = Serial1;
+
 Stream *gnssPortBegin(uint32_t baud) {
   gnssSerial.begin(baud); // pins are fixed by the core
   return &gnssSerial;

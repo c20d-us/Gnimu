@@ -120,9 +120,6 @@ static void updateRates(unsigned long now) {
   lastReportMs = now;
 }
 
-float telemetryGnssRateHz() { return gnssRateHz; }
-float telemetryBleRateHz() { return bleRateHz; }
-
 #if LOG_ENABLED
 // Stats line rendering
 //
@@ -316,3 +313,6 @@ void telemetrySendIfReady() {
     telemetrySerialReport(now);
   }
 }
+
+float telemetryGnssRateHz() { return gnssRateHz; }
+float telemetryBleRateHz() { return bleRateHz; }

@@ -14,10 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "config.h"
 #include "g_imu_sensor.h"
+
+#include "config.h"
 #include "g_log.h"
-#include <Arduino.h> // first: config.h and the calls below assume it
+#include <Arduino.h>
 
 // IMU driver for the ST LSM6DS3TR-C on the XIAO nRF52840 Sense. The library
 // reports g and deg/s directly. See g_imu_sensor.h.
@@ -26,25 +27,6 @@
 // Inside the #if so IMU_ENABLED 0 builds don't need the library.
 #include <LSM6DS3.h>
 #include <Wire.h>
-
-static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
-
-// Read `len` registers, checking both the address write and the byte count.
-// The library's readRegisterRegion() does not check the count.
-static bool readRegs(uint8_t reg, uint8_t *out, uint8_t len) {
-  Wire1.beginTransmission((uint8_t)IMU_I2C_ADDRESS);
-  Wire1.write(reg);
-  if (Wire1.endTransmission() != 0) {
-    return false;
-  }
-  if (Wire1.requestFrom((uint8_t)IMU_I2C_ADDRESS, (size_t)len) != len) {
-    return false;
-  }
-  for (uint8_t i = 0; i < len; i++) {
-    out[i] = (uint8_t)Wire1.read();
-  }
-  return true;
-}
 
 // Register codes for the configured settings, written and verified by
 // imuSensorBegin().
@@ -92,26 +74,28 @@ static_assert(accelFsCode(IMU_ACCEL_RANGE_G) != 0xFF &&
               "ERROR: IMU_ACCEL_RANGE_G / IMU_GYRO_RANGE_DPS is not a range "
               "this driver can encode - keep it in step with config.h's list.");
 
+static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
+
+// Read `len` registers, checking both the address write and the byte count.
+// The library's readRegisterRegion() does not check the count.
+static bool readRegs(uint8_t reg, uint8_t *out, uint8_t len) {
+  Wire1.beginTransmission((uint8_t)IMU_I2C_ADDRESS);
+  Wire1.write(reg);
+  if (Wire1.endTransmission() != 0) {
+    return false;
+  }
+  if (Wire1.requestFrom((uint8_t)IMU_I2C_ADDRESS, (size_t)len) != len) {
+    return false;
+  }
+  for (uint8_t i = 0; i < len; i++) {
+    out[i] = (uint8_t)Wire1.read();
+  }
+  return true;
+}
+
 // Little-endian register pair, low byte first.
 static inline int16_t rawPair(const uint8_t *p) {
   return (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
-}
-
-bool imuSensorRead(ImuRawSample *out) {
-  // One burst of 12 bytes from OUTX_L_G (0x22): gyro X/Y/Z then accel X/Y/Z,
-  // so all six axes come from the same sample.
-  uint8_t raw[12];
-  if (!readRegs(LSM6DS3_ACC_GYRO_OUTX_L_G, raw, sizeof(raw))) {
-    return false;
-  }
-
-  out->gyro[0] = myIMU.calcGyro(rawPair(&raw[0]));
-  out->gyro[1] = myIMU.calcGyro(rawPair(&raw[2]));
-  out->gyro[2] = myIMU.calcGyro(rawPair(&raw[4]));
-  out->accel[0] = myIMU.calcAccel(rawPair(&raw[6]));
-  out->accel[1] = myIMU.calcAccel(rawPair(&raw[8]));
-  out->accel[2] = myIMU.calcAccel(rawPair(&raw[10]));
-  return true;
 }
 
 bool imuSensorBegin() {
@@ -161,6 +145,23 @@ bool imuSensorBegin() {
                (unsigned int)kCtrl2G, (unsigned int)c3, (unsigned int)kCtrl3C);
     return false;
   }
+  return true;
+}
+
+bool imuSensorRead(ImuRawSample *out) {
+  // One burst of 12 bytes from OUTX_L_G (0x22): gyro X/Y/Z then accel X/Y/Z,
+  // so all six axes come from the same sample.
+  uint8_t raw[12];
+  if (!readRegs(LSM6DS3_ACC_GYRO_OUTX_L_G, raw, sizeof(raw))) {
+    return false;
+  }
+
+  out->gyro[0] = myIMU.calcGyro(rawPair(&raw[0]));
+  out->gyro[1] = myIMU.calcGyro(rawPair(&raw[2]));
+  out->gyro[2] = myIMU.calcGyro(rawPair(&raw[4]));
+  out->accel[0] = myIMU.calcAccel(rawPair(&raw[6]));
+  out->accel[1] = myIMU.calcAccel(rawPair(&raw[8]));
+  out->accel[2] = myIMU.calcAccel(rawPair(&raw[10]));
   return true;
 }
 
