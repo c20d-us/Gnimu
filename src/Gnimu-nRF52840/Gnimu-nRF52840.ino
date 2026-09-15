@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,9 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-// Settings live in config.h. Hardware & protocol logic lives in the
-// battery/power/state/ble/gnss/imu/led/telemetry modules. This top-level
-// sketch orchestrates lifecycles per the state machine (see g_state.h).
+// Settings are in config.h.
+// This sketch sequences module lifecycles by state (see g_state.h).
 #include "config.h"
 #include "g_battery.h"
 #include "g_ble.h"
@@ -29,16 +28,11 @@
 #include "g_telemetry.h"
 
 void setup() {
-  // Prologue: unconditionally hold every peripheral control pin in its safe
-  // off state so a switch-off or low-voltage boot never lights the GNSS or
-  // IMU. Runs before Serial.begin() so nothing can leak power before we know
-  // what state to enter.
+  // Hold all peripherals off until the boot state is known.
   powerHoldPeripheralsOff();
 
 #if LOG_ENABLED
-  // Wait up to 3s for the USB CDC port to enumerate on the host, so the
-  // startup lines aren't dropped into the void while the terminal is still
-  // re-attaching.
+  // Wait up to 3s for USB CDC to enumerate so boot messages aren't lost.
   Serial.begin(115200);
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 3000) {
@@ -46,29 +40,17 @@ void setup() {
 #endif
   LOG_PRINTF("🚀 Gnimu [%s] starting up...\n", GNIMU_VARIANT);
 
-  // powerBegin configures the shared ADC.
-  // batteryBegin primes the sampler.
-  // ledBegin sets LED to the initial off-state.
-  powerBegin();
+  powerBegin(); // configures the shared ADC
   batteryBegin();
   ledBegin();
 
-  // Classify our initial state.
-  // If the classifier lands in DEEP_SLEEP, this call enters System OFF directly
-  // and does not return.
+  // Enters System OFF directly if the result is DEEP_SLEEP.
   const SystemState initial = stateBegin();
 
-  // GNSS / IMU / BLE / telemetry only come up for the RUNNING branch.
   if (initial == STATE_RUNNING) {
-    // Power the GNSS rail before talking to the receiver.
-    // Serial1.begin inside gnssBegin claims/reclaims D6/D7 as UART pins.
-    // imuBegin drives its own power pin high.
     powerGnssRailOn();
-    // Return value deliberately not acted on: a receiver that did not answer
-    // leaves gnssIsUp() false, gnssPoll() a no-op and the stats line saying so.
-    // Bringing up IMU/BLE/telemetry anyway is the point - the loop must keep
-    // running so battery protection stays alive, and a device that still
-    // advertises and explains itself beats one that silently vanishes.
+    // Continue even if GNSS is absent; the loop must keep running for battery
+    // protection.
     (void)gnssBegin();
     imuBegin();
     bleBegin();
@@ -77,17 +59,11 @@ void setup() {
 }
 
 void loop() {
-  // The state machine runs first so a switch-off while plugged into USB or a
-  // low-voltage cutoff request is caught *before* the peripheral loops do work
-  // in a state that's about to change.
+  // State first, so a pending transition happens before peripheral work.
   stateUpdate();
 
-  // Battery + LED are safe calls in every state. batteryPoll advances the
-  // voltage sampler, ledUpdate reflects the current state.
   batteryPoll();
   ledUpdate();
-
-  // Peripheral polls are gated by the live state.
   if (stateCurrent() == STATE_RUNNING) {
     gnssPoll();
     imuPoll();

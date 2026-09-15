@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -16,8 +16,7 @@
 
 #include "g_ubx_helpers.h"
 
-// Calculate the payload's checksum using the UBX checksum algorithm (an 8-bit
-// Fletcher checksum). Return the checksum as a UbxChecksum struct.
+// UBX 8-bit Fletcher checksum over class, id, length, and payload.
 UbxChecksum calculateChecksum(const uint8_t *payload, uint16_t len, uint8_t cls,
                               uint8_t id) {
   uint8_t a = 0;

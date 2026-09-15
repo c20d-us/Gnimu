@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,12 +19,9 @@
 #include "g_ble.h"
 #include <Arduino.h>
 
-// The ESP32 dev board's single onboard LED (LED_ONBOARD_PIN). Consumes
-// bleIsConnected().
-//
-// Priority, highest first:
-//   1. connected    -> solid
-//   2. advertising  -> blink at LED_BLINK_INTERVAL_MS
+// Single onboard LED (LED_ONBOARD_PIN):
+//   connected    -> solid
+//   advertising  -> blink at LED_BLINK_INTERVAL_MS
 
 void ledBegin() {
   pinMode(LED_ONBOARD_PIN, OUTPUT);
@@ -32,11 +29,8 @@ void ledBegin() {
 }
 
 void ledUpdate() {
-  // Blink phase is tracked here rather than read back off the pin: reading an
-  // output pin to decide what to drive it to makes the LED's state live in the
-  // pin rather than in us, and read-back does not reflect the driven value on
-  // every pin configuration. blinkOn is kept in step in the connected branch
-  // too - a cache written on one path only is how these drift (LAT-4).
+  // Blink phase is tracked here, not read back from the pin, and kept in step
+  // on both branches.
   static bool blinkOn = false;
 
   if (!bleIsConnected()) {
@@ -47,7 +41,7 @@ void ledUpdate() {
       digitalWrite(LED_ONBOARD_PIN, blinkOn ? HIGH : LOW);
     }
   } else {
-    digitalWrite(LED_ONBOARD_PIN, HIGH); // solid while a client is attached
+    digitalWrite(LED_ONBOARD_PIN, HIGH);
     blinkOn = true;
   }
 }

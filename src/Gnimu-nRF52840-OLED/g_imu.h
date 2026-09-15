@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -15,89 +15,37 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
-#include "g_imu_sensor.h" // ImuProtocolUnits
+#include "g_imu_sensor.h"
 #include <Arduino.h>
 
-// ============================================================================
-// IMU module - accelerometer + gyroscope, whatever part is fitted.
-//
-// The pipeline behind this interface is identical in every tree; only the
-// sensor driver differs (see g_imu_sensor.h). Owns all IMU state internally.
-// ============================================================================
+// IMU: the accelerometer and gyro pipeline, shared by every board.
+// The sensor driver is behind g_imu_sensor.h.
 
-// Start the runtime trim, bring up the sensor, and seed the filters with a
-// first reading.
-//
-// DOES NOT HALT if the sensor does not answer. The IMU is marked down instead:
-// every IMU field reads zero, trim never runs, and the rest of the device -
-// GNSS, BLE, and on the battery builds the low-voltage cutoff - carries on. A
-// halt here was the IMU twin of the GNSS defect ROB-1 fixed.
+// Start trim, bring up the sensor, and seed the filters. If the sensor does not
+// answer, the IMU is marked down (fields read zero) and nothing halts.
 void imuBegin();
 
-// True while the IMU is delivering samples. False if it never answered at
-// bring-up, or has since stopped answering (a run of failed reads). While
-// false, imuLatchForEpoch() and imuReadProtocolUnits() return zeros, and it
-// stays false until the next boot.
+// True while the IMU delivers samples. Goes false if bring-up failed or a run
+// of reads fails, and stays false until reboot.
 bool imuIsUp();
 
-// Failed sensor reads since boot, the count g_telemetry reports when it moves.
-//
-// Isolated failures are held (the last good sample is reused) and deliberately
-// not logged one by one - at IMU_SAMPLE_INTERVAL_MS that would be its own
-// latency problem. Only a RUN of them is loud, as the IMU going down. This
-// counter covers the gap between: a flaky bus degrading the data while never
-// failing enough times in a row to be declared dead.
+// Failed sensor reads since boot. A single failure reuses the last good sample
+// and is not logged; only a run of them takes the IMU down.
 uint32_t imuFailedReads();
 
-// Poll the IMU and advance its filters. Self-throttles on
-// IMU_SAMPLE_INTERVAL_MS, so it is safe to call every loop(). Does nothing
-// while the IMU is down.
-//
-// Sampling is free-running and deliberately NOT tied to the GNSS epoch: the
-// EMA and the transient tracker both want a uniform rate. Producing the value
-// that actually gets transmitted is a separate step - see imuLatchForEpoch().
+// Sample the sensor and advance the filters, throttled to
+// IMU_SAMPLE_INTERVAL_MS. Free-running, not tied to GNSS epochs.
+// Safe to call every loop(); no-op while the IMU is down.
 void imuPoll();
 
-// Close the current transient window, latch a decimated sample for this GNSS
-// epoch, and return it.
+// Close the transient window, latch a sample for this GNSS epoch, and return
+// it. Locking to the epoch gives each packet a constant sample age, and each
+// window spans exactly one packet interval.
 //
-// PHASE-LOCKED TO THE EPOCH rather than to a timer, which is the whole point.
-// Two timers sharing a period do not share a phase, so a free-running
-// decimation left the sample riding each packet anywhere from 0 to one full
-// interval old, with that age walking as the two clocks beat against each
-// other. Driving it from epoch arrival makes the offset constant instead.
-//
-// A constant offset remains - the epoch describes an instant already past by
-// the receiver's output latency, the UART transit of the message, and up to
-// one poll interval. That is characterisable in a way a wandering one is not,
-// which is the property being bought here. It is not zero, and no protocol
-// field expresses it.
-//
-// RETURNS the latched values rather than leaving the caller to fetch them
-// separately, so "latch before you encode" is a data dependency the compiler
-// enforces rather than an ordering comment someone can reorder past.
-//
-// Each axis's transient window therefore spans exactly the interval between
-// two transmitted samples - the peak reported in a packet is the peak over the
-// interval that packet represents.
-//
-// Call exactly once per consumed GNSS epoch, from g_telemetry, and outside any
-// BLE-connected test: draining the window must not depend on a client being
-// attached. There is no timer fallback, and while the transient thresholds
-// are parked none is needed. If the receiver stops delivering, the cached
-// value freezes and the window keeps widening - harmless while it lasts, since
-// no epoch means no packet. The problem is the RECOVERY edge: the first epoch
-// after a stall latches the peak of the whole gap, so with the thresholds live
-// one packet would carry a transient from anywhere in it, possibly minutes old.
-// Parked, read() never blends and the stale peak is discarded unseen.
-// Un-parking therefore needs a stall drain - see "UN-PARKING ALSO NEEDS A
-// STALL DRAIN" in g_imu_tuning.h (R2-3).
+// Call once per consumed epoch from g_telemetry, whether or not a client is
+// connected. With transient thresholds live, the first epoch after a GNSS stall
+// would carry a stale peak; see g_imu_tuning.h.
 ImuProtocolUnits imuLatchForEpoch();
 
-// Retrieve the most recently latched IMU values in RaceBox protocol units.
-//
-// The OBSERVER half of the pair: cheap, const, no side effects, safe to call
-// any number of times per frame. It does not advance anything - the serial
-// report uses it to show whatever was last transmitted. Producers want
-// imuLatchForEpoch() instead.
+// Return the last latched values without side effects.
 ImuProtocolUnits imuReadProtocolUnits();

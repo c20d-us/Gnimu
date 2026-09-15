@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,52 +17,34 @@
 #pragma once
 #include <stdint.h>
 
-// ============================================================================
-// The seam between the IMU PIPELINE (g_imu.cpp - identical in every tree) and
-// a SENSOR DRIVER (g_imu_<part>.cpp - one per sensor part).
+// IMU sensor: the interface between the shared pipeline (g_imu.cpp) and one
+// driver per sensor part. The pipeline owns remap, trim, filtering,
+// decimation, unit conversion, and failure handling. A driver owns bring-up,
+// reading, and conversion to g and deg/s.
 //
-// The pipeline owns everything that is the same whatever chip is fitted: the
-// axis remap, runtime trim, the per-axis filters, epoch-locked decimation,
-// conversion to protocol units, and what a failed or missing sensor means. A
-// driver owns only what is specific to its part: bring-up, one read, and
-// converting its library's units to the ones below. Drivers are named after
-// the PART, not the board, because the part is what varies - nothing ties a
-// sensor to an MCU family.
+//   g_imu_mpu6050.cpp  InvenSense MPU-6050 (ESP32)
+//   g_imu_lsm6ds3.cpp  ST LSM6DS3TR-C (XIAO nRF52840 Sense)
 //
-// ONE UNIT SYSTEM: every driver reports acceleration in g and rotation in
-// deg/s. That is what lets every IMU constant in config.h be identical on every
-// board - the ESP32's used to be in m/s^2 and rad/s, because that is what its
-// library returns.
-//
-//   g_imu_mpu6050.cpp - InvenSense MPU-6050 via Adafruit (the ESP32 build)
-//   g_imu_lsm6ds3.cpp - ST LSM6DS3TR-C on the XIAO nRF52840 Sense
-//
-// Deliberately Arduino-free (only <stdint.h>), so host tools - the IMU harness
-// and the planned buildSample() harness - can use these types directly.
-// ============================================================================
+// No Arduino dependency, so host tools can use these types.
 
-// The filtered IMU values converted to RaceBox protocol units.
+// Filtered IMU values in TelemetrySample units (see g_protocol.h).
 struct ImuProtocolUnits {
-  int16_t gX, gY, gZ; // acceleration, milli-g
-  int16_t rX, rY, rZ; // rotation rate, centi-deg/sec
+  int16_t gX, gY, gZ; // milli-g
+  int16_t rX, rY, rZ; // centi-deg/s
 };
 
-// One coherent six-axis sample, in the SENSOR's frame. Indexed [0]=X, [1]=Y,
-// [2]=Z. The pipeline remaps it into the vehicle frame.
+// One six-axis sample in the sensor frame, [0]=X [1]=Y [2]=Z.
 struct ImuRawSample {
   float accel[3]; // g
   float gyro[3];  // deg/s
 };
 
-// --- Implemented by the driver ----------------------------------------------
+// Implemented by the driver
 
-// Power the part if it needs it, configure ranges/rates, confirm it answers.
-// Returns false if it did not answer. MUST NOT halt: the pipeline decides what
-// a missing sensor means, and on the battery builds a halt here would stop the
-// low-voltage cutoff ever running (the same defect ROB-1 fixed for the GNSS).
+// Power and configure the part. Returns false if it does not answer. Must not
+// halt.
 bool imuSensorBegin();
 
-// Take one sample, in g and deg/s. Returns false if the read failed, leaving
-// `out` unspecified - the pipeline holds its last good sample rather than
-// filtering garbage.
+// Read one sample in g and deg/s. Returns false on failure, leaving `out`
+// unspecified.
 bool imuSensorRead(ImuRawSample *out);

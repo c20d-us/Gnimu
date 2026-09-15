@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,40 +19,28 @@
 #include "g_gnss_port.h"
 #include "g_log.h"
 
-// GNSS state. The UART itself belongs to the port (g_gnss_port.h): everything
-// here is about the RECEIVER, which is the same part on every board.
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static Stream *gnssStream = nullptr;
 
-// PVT data cache and epoch state
+// PVT cache and epoch state
 static UBX_NAV_PVT_data_t latestPVT;
 static bool newEpochAvailable = false;
-// Latches true on the first epoch ever received and never clears. Distinct
-// from newEpochAvailable, which is per-epoch and consumed: this one lets
-// gnssLatestPvt() tell "no data yet" apart from "data, but stale".
+// Set on the first epoch and never cleared.
 static bool everReceivedPvt = false;
 
-// millis() of the latest epoch - or of bring-up, until the first one arrives,
-// which is what makes "configured but never sent anything" a stall too.
+// millis() of the latest epoch, or of bring-up before the first one.
 static unsigned long lastEpochMs = 0;
 
-// How long without an epoch before gnssStalled() says so: the larger of 1s and
-// three epoch periods. The floor is what matters at the shipped 20Hz (a stall
-// of 20 epochs is not jitter); the three periods are what keep a low
-// GNSS_NAV_RATE_HZ, where a flat 1s would sit barely past one epoch, from
-// reporting a stall on every late one.
+// Stall threshold: the larger of 1s and three epoch periods.
 static constexpr unsigned long kStallMs = (3000UL / GNSS_NAV_RATE_HZ) > 1000UL
                                               ? (3000UL / GNSS_NAV_RATE_HZ)
                                               : 1000UL;
 
-// Try connecting to the GNSS at the baud rate from config.h, and if that fails,
-// sweep through all common u-blox baud rates to find the module and reconfigure
-// it.
+// Find the receiver, trying GNSS_BAUD first and then common u-blox rates. If
+// found at another rate, switch it to GNSS_BAUD and save that to flash.
 static bool connectAndConfigureBaud() {
-  // Array of baud rates to test. We test the config.h rate first for the
-  // fastest normal boot, followed by common u-blox rates.
-  const uint32_t baudRates[] = {GNSS_BAUD, 9600,   38400, 57600,
-                                115200,    230400, 460800};
+  const uint32_t baudRates[] = {GNSS_BAUD, 4800,   9600,   19200,  38400,
+                                57600,     115200, 230400, 460800, 921600};
   const int numRates = sizeof(baudRates) / sizeof(baudRates[0]);
 
   for (int i = 0; i < numRates; i++) {
@@ -60,19 +48,18 @@ static bool connectAndConfigureBaud() {
     LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)testBaud);
 
     gnssStream = gnssPortBegin(testBaud);
-    delay(100); // Give the serial port a moment to stabilize
+    delay(100); // let the port settle
 
     if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
       LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)testBaud);
 
-      // If we found it, but it's at the wrong speed, switch it.
       if (testBaud != GNSS_BAUD) {
         LOG_PRINTF("🔀 Switching GNSS to target %u baud...\n",
                    (unsigned int)GNSS_BAUD);
         myGNSS.setSerialRate(GNSS_BAUD);
         delay(100);
 
-        // Cycle the microcontroller's UART to match the new module speed
+        // Reopen the UART at the new rate.
         gnssPortEnd();
         delay(100);
         gnssStream = gnssPortBegin(GNSS_BAUD);
@@ -84,51 +71,36 @@ static bool connectAndConfigureBaud() {
           return true;
         } else {
           LOG_PRINTLN("❌ Failed to verify new baud rate.");
-          return false; // Something went deeply wrong
+          return false;
         }
       }
-      return true; // We connected successfully at the target baud rate
+      return true;
     }
 
-    // Clean up and prepare for the next loop iteration if this baud failed
     gnssPortEnd();
     delay(100);
   }
-  return false; // Swept everything and never connected
+  return false;
 }
 
-// Drain the GNSS serial buffer to clear any pending data.
+// Discard any pending UART bytes.
 static void drainSerial() {
   while (gnssStream != nullptr && gnssStream->available()) {
     gnssStream->read();
   }
 }
 
-// The callback function triggered automatically by checkCallbacks()
-// when a new UBX-NAV-PVT packet has been constructed.
+// Called by checkCallbacks() for each new UBX-NAV-PVT.
 static void pvtCallback(UBX_NAV_PVT_data_t *ubxDataStruct) {
-  // Copy the new PVT data our local copy
   memcpy(&latestPVT, ubxDataStruct, sizeof(UBX_NAV_PVT_data_t));
   newEpochAvailable = true;
   everReceivedPvt = true;
   lastEpochMs = millis();
 }
 
-// Every NMEA sentence the u-blox M10 interface description defines for UART1.
-//
-// setUART1Output(COM_TYPE_UBX) below clears the port's NMEA protocol bit, which
-// suppresses NMEA at the output stage but leaves each sentence's CFG-MSGOUT
-// rate untouched - a factory M10 keeps GGA, GLL, GSA, GSV, RMC and VTG at rate
-// 1 underneath the filter, which tools/common/gnss_ver phase 5 will show you.
-// Whether the receiver still composes a sentence it is going to discard is not
-// documented either way, so the rates are zeroed as well rather than relying on
-// the filter alone: it makes the intent explicit, and removes any composition
-// cost if one exists.
-//
-// The full set is listed rather than only the six a factory module enables, so
-// a receiver carrying some other stored config is covered too. A rejected key
-// means that sentence does not exist on this firmware - there is nothing to
-// disable, so it is not an error.
+// Every M10 UART1 NMEA sentence. setUART1Output(COM_TYPE_UBX) filters NMEA but
+// leaves each sentence's rate set, so the rates are zeroed too. A rejected key
+// is a sentence this firmware lacks, not an error.
 static const uint32_t NMEA_MSGOUT_KEYS[] = {
     UBLOX_CFG_MSGOUT_NMEA_ID_DTM_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GBS_UART1,
     UBLOX_CFG_MSGOUT_NMEA_ID_GGA_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_GLL_UART1,
@@ -138,21 +110,15 @@ static const uint32_t NMEA_MSGOUT_KEYS[] = {
     UBLOX_CFG_MSGOUT_NMEA_ID_RMC_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_VLW_UART1,
     UBLOX_CFG_MSGOUT_NMEA_ID_VTG_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_ZDA_UART1,
 };
-static const int NUM_NMEA_MSGOUT_KEYS =
-    sizeof(NMEA_MSGOUT_KEYS) / sizeof(NMEA_MSGOUT_KEYS[0]);
 
-// Set up the constellations defined in config.h
-// Explicitly disable unwanted constellations to ensure that only the desired
-// constellations are active.
+// Enable or disable each constellation listed in GNSS_CONSTELLATIONS.
 static void setConstellations() {
-  // Struct to hold the constellation configuration from config.h
   struct Constellations {
     const char *name;
     sfe_ublox_gnss_ids_e id;
     bool enabled;
   };
 
-  // Instantiate the array directly from the config macro
   const Constellations targetConstellations[] = GNSS_CONSTELLATIONS;
 
   LOG_PRINTLN("🛰️ Enabling GNSS constellations...");
@@ -166,37 +132,28 @@ static void setConstellations() {
       }
     } else {
       if (target.enabled) {
-        // We wanted it ON, but the chip rejected it. Real error.
         LOG_PRINTF("❌ Failed to enable %s.\n", target.name);
       } else {
-        // We wanted it OFF, and the chip rejected it. It's unsupported.
+        // A rejected disable means the receiver doesn't support it.
         LOG_PRINTF("⚪ %s unsupported.\n", target.name);
       }
     }
   }
 }
 
-// Consume the cached PVT data if available, returning nullptr if no new data.
 const UBX_NAV_PVT_data_t *gnssConsumePvt() {
   if (!newEpochAvailable) {
-    return nullptr; // No new data since last time
+    return nullptr;
   } else {
-    newEpochAvailable = false; // "Consume" the flag
-    return &latestPVT;         // Return the fresh data
+    newEpochAvailable = false;
+    return &latestPVT;
   }
 }
 
-// Non-consuming peek - see the header for why read-only observers must use
-// this rather than gnssConsumePvt(). Guarded by a latching "have we ever
-// received one" flag so callers never see the zero-initialised struct as if it
-// were a real fix.
 const UBX_NAV_PVT_data_t *gnssLatestPvt() {
   return everReceivedPvt ? &latestPVT : nullptr;
 }
 
-// Initialize the GNSS module.
-// True once the receiver has answered and been configured; false before that,
-// after a failed bring-up, and after gnssEnd() releases the UART.
 static bool gnssUp = false;
 
 bool gnssIsUp() { return gnssUp; }
@@ -204,20 +161,8 @@ bool gnssIsUp() { return gnssUp; }
 bool gnssStalled() { return gnssUp && (millis() - lastEpochMs) > kStallMs; }
 
 bool gnssBegin() {
-  // A receiver that does not answer used to halt here in an infinite loop.
-  // That was survivable at boot on a USB-powered board and dangerous on a
-  // battery one: setup() never returned, so batteryPoll() and stateUpdate()
-  // never ran and the low-voltage cutoff could never fire - the cell would
-  // discharge to damage while the device sat in a delay loop. (It was
-  // reachable at RUNTIME too, through the LIGHT_SLEEP wake path that existed
-  // then; boot is the only caller now.)
-  //
-  // Now it reports and returns. The device carries on with no telemetry,
-  // battery protection intact, and says so once per second. There is
-  // deliberately no automatic retry: a receiver that did not answer is a
-  // wiring or hardware fault that will not resolve itself, and the library
-  // already polls three times at 1100ms before giving up on each baud rate.
-  // Recovery is a power cycle.
+  // No receiver: report and continue without telemetry. No retry; the library
+  // already polls each baud rate three times.
   if (!connectAndConfigureBaud()) {
     LOG_PRINTLN("❌ u-blox GNSS not detected at any standard baud rate.");
     LOG_PRINTLN("❌ Check your wiring. Continuing WITHOUT GNSS: no telemetry "
@@ -227,38 +172,33 @@ bool gnssBegin() {
     return false;
   }
 
-  // Let the GNSS settle before pushing CFG-VALSET writes at it.
+  // Let the receiver settle before configuring it.
   delay(500);
   drainSerial();
 
-  // Every setter below deliberately targets VAL_LAYER_RAM_BBR, never flash:
-  // config.h stays the single source of truth, re-applied on every boot. (BBR
-  // once carried these across LIGHT_SLEEP's backup-mode cycle; that state is
-  // gone, and the layer is harmless.)
+  // All settings go to RAM/BBR and are reapplied every boot. The only flash
+  // write is the baud rate, saved by connectAndConfigureBaud() after a switch.
 
-  // AssistNow Autonomous is explicitly DISABLED to save CPU cycles.
-  if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
-    LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
-  } else {
-    LOG_PRINTLN("❌ Failed to disable AssistNow Autonomous.");
-  }
+  // if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
+  //   LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
+  // } else {
+  //   LOG_PRINTLN("❌ Failed to disable AssistNow Autonomous.");
+  // }
 
-  // Set the GNSS dynamic model
   if (myGNSS.setDynamicModel(GNSS_DYNAMIC_MODEL, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTF("✅ GNSS dynamic model set to %d.\n", GNSS_DYNAMIC_MODEL);
   } else {
     LOG_PRINTLN("❌ Failed to set GNSS dynamic model.");
   }
 
-  // Turn off NMEA messages - we want UBX only
+  // UBX only.
   if (myGNSS.setUART1Output(COM_TYPE_UBX, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTLN("✅ NMEA messages disabled.");
   } else {
     LOG_PRINTLN("❌ Failed to disable NMEA messages.");
   }
 
-  // Zero the NMEA sentence rates sitting behind that protocol filter. See
-  // NMEA_MSGOUT_KEYS above for why the filter alone isn't the whole job.
+  // Zero the NMEA sentence rates (see NMEA_MSGOUT_KEYS).
   {
     int zeroed = 0;
     for (const auto &key : NMEA_MSGOUT_KEYS) {
@@ -266,13 +206,11 @@ bool gnssBegin() {
         zeroed++;
       }
     }
-    LOG_PRINTF("✅ NMEA sentence rates zeroed (%d of %d; any remainder is "
-               "unsupported by this firmware).\n",
-               zeroed, NUM_NMEA_MSGOUT_KEYS);
-    (void)zeroed; // only read by the log line, which silent builds compile out
+    LOG_PRINTF("✅ NMEA sentence rates zeroed (%d of %d).\n", zeroed,
+               (int)(sizeof(NMEA_MSGOUT_KEYS) / sizeof(NMEA_MSGOUT_KEYS[0])));
+    (void)zeroed; // unused when logging is compiled out
   }
 
-  // Set the minimum elevation of satellites to track (anti-multipath)
   if (myGNSS.setVal8(UBLOX_CFG_NAVSPG_INFIL_MINELEV, GNSS_SV_MINELEV_DEG,
                      VAL_LAYER_RAM_BBR)) {
     LOG_PRINTF("✅ GNSS minimum SV elevation set to %d°.\n",
@@ -281,49 +219,37 @@ bool gnssBegin() {
     LOG_PRINTLN("❌ Failed to set GNSS minimum elevation.");
   }
 
-  // Constellation setup
   setConstellations();
 
-  // Set the GNSS PVT update frequency.
   if (myGNSS.setNavigationFrequency(GNSS_NAV_RATE_HZ, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTF("✅ GNSS update rate set to %dHz.\n", GNSS_NAV_RATE_HZ);
   } else {
     LOG_PRINTLN("❌ Failed to set GNSS update rate.");
   }
 
-  // Register our callback and enable automatic PVT output.
-  // setAutoPVTcallbackPtr() implicitly enables AutoPVT.
+  // Registering the callback also enables automatic PVT output.
   if (myGNSS.setAutoPVTcallbackPtr(&pvtCallback, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTLN("✅ PVT callback registered; automatic PVT output enabled.");
   } else {
     LOG_PRINTLN("❌ Failed to register PVT callback / enable automatic PVT.");
   }
 
-  lastEpochMs = millis(); // the stall clock starts here, not at boot
+  lastEpochMs = millis(); // start the stall clock
   gnssUp = true;
   return true;
 }
 
-// Release the UART. What that buys a given board is the port's business (see
-// g_gnss_port_nrf52.cpp, where it is what allows the rail cutoff); here it is
-// simply "stop talking to the receiver".
-//
-// Deliberately NOT guarded on gnssUp: releasing is correct whether or not the
-// receiver ever answered, and a caller cutting power depends on it.
+// Not guarded on gnssUp: power-cut callers need the UART released regardless.
 void gnssEnd() {
   gnssPortEnd();
   gnssStream = nullptr;
   gnssUp = false;
 }
 
-// GNSS module poller - called every loop().
-// Prompts firing of registered callback when a new PVT epoch is available.
 void gnssPoll() {
   if (!gnssUp) {
     return;
   }
-  // Pump the UART and parse incoming bytes into complete packets
-  myGNSS.checkUblox();
-  // Fire registered callbacks for any completed packets
-  myGNSS.checkCallbacks();
+  myGNSS.checkUblox();     // parse incoming bytes
+  myGNSS.checkCallbacks(); // fire callbacks for completed packets
 }

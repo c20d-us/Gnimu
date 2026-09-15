@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -15,70 +15,57 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "g_led.h"
-#include <Arduino.h>
 #include "config.h"
 #include "g_battery.h"
 #include "g_ble.h"
 #include "g_state.h"
+#include <Arduino.h>
 
-// The XIAO's onboard RGB LED. Consumes stateCurrent() (g_state) plus the
-// observable battery and connection state (batteryGetStatus() /
-// bleIsConnected()).
-//
-// Priority, highest first:
-//   1. BATTERY_WAIT    -> rapid red blink ("check the switch")
+// XIAO onboard RGB LED. Priority, highest first:
+//   1. BATTERY_WAIT    -> rapid red blink
 //   2. RUNNING:
-//      a. charging     -> green blink (or steady green if full)
+//      a. charging     -> green blink (steady when full)
 //      b. critical bat -> red blink
 //      c. warn bat     -> amber blink
 //      d. connected    -> steady blue
 //      e. advertising  -> blue blink
 
-// Drive the RGB LED, honoring the active-LOW wiring.
+// Set the RGB LED (active-low).
 static void setLed(bool r, bool g, bool b) {
   digitalWrite(LED_RED_PIN, r ? LOW : HIGH);
   digitalWrite(LED_GREEN_PIN, g ? LOW : HIGH);
   digitalWrite(LED_BLUE_PIN, b ? LOW : HIGH);
 }
 
-// Configure the RGB LED pins and turn the LED off.
 void ledBegin() {
   pinMode(LED_RED_PIN, OUTPUT);
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(LED_BLUE_PIN, OUTPUT);
-  setLed(false, false, false); // off
+  setLed(false, false, false);
 }
 
-// State-first priority. BATTERY_WAIT overrides everything else because a
-// held-off device doesn't have meaningful battery/BLE state to reflect and
-// we need the "check the switch" signal to be unmissable.
 void ledUpdate() {
   const SystemState st = stateCurrent();
 
   if (st == STATE_BATTERY_WAIT) {
-    // Rapid red blink - draws the eye without hunting for other status.
     const bool on = (millis() / LED_BATTERY_WAIT_BLINK_MS) % 2 == 0;
     setLed(on, false, false);
     return;
   }
 
-  // RUNNING: a battery/charge condition always wins.
-  // Priority: charge state (while on USB) > critical > warn > connected >
-  // advertising.
-  // Colors: blue = BLE, green = charge, amber = warn, red = critical.
   const BatteryStatus bat = batteryGetStatus();
   const bool blinkOn = (millis() / LED_BLINK_INTERVAL_MS) % 2 == 0;
 
   if (bat.charging) {
-    const bool on = bat.full ? true : blinkOn; // steady green when full
-    setLed(false, on, false);
+    const bool on = bat.full ? true : blinkOn;
+    setLed(false, on, false); // green
   } else if (bat.critical) {
-    setLed(blinkOn, false, false); // red blink - critical battery
+    setLed(blinkOn, false, false); // red
   } else if (bat.warn) {
-    setLed(blinkOn, blinkOn, false); // amber blink - low-battery warning
+    setLed(blinkOn, blinkOn, false); // amber
   } else if (bleIsConnected()) {
-    setLed(false, false, true); // blue steady - connected
+    setLed(false, false, true); // steady blue
   } else {
-    setLed(false, false, blinkOn); // blue blink - advertising
+    setLed(false, false, blinkOn); // blue blink
   }
 }

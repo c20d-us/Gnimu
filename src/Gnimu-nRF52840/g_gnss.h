@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,111 +18,44 @@
 #include <Arduino.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 
-// ============================================================================
-// GNSS module - the u-blox receiver, identical on every board.
+// GNSS: the u-blox receiver, its configuration, and the epoch cache. The UART
+// is behind g_gnss_port.h.
 //
-// Owns the receiver object, its configuration and the epoch cache. It does NOT
-// own the serial port: that is g_gnss_port.h, with one implementation per core
-// (g_gnss_port_esp32.cpp / g_gnss_port_nrf52.cpp). Callers interact only
-// through the small read-only interface below.
-//
-// THE UART DRAIN CONSTRAINT lives with the port, because it differs in KIND
-// between the cores - a phase-sensitive deadline on the nRF's 63-byte ring, a
-// duration budget on the ESP32's 512-byte one. Read the port file for your
-// board before adding work to loop() or to a BLE/display callback.
-//
-// What is common to both, and the reason either matters: RING OVERFLOW IS
-// SILENT. The byte is dropped with no flag and no counter; it surfaces one step
-// removed as a checksum failure costing a whole epoch, and one step further as
-// a GNSS rate below GNSS_NAV_RATE_HZ on the 1Hz stats line. A sagging rate with
-// no other explanation is the signature. g_protocol.h's onWrite contract states
-// the same constraint for inbound BLE writes.
-// ============================================================================
+// The UART ring overflows silently. A lost byte fails an epoch's checksum and
+// shows as a GNSS rate below GNSS_NAV_RATE_HZ on the stats line. Each port file
+// documents its drain deadline; check it before adding work to loop() or a
+// callback.
 
-// Bring up the receiver and configure the GNSS.
-//
-// RETURNS false if the receiver never answered the baud sweep. It does NOT
-// halt: a halt in setup() stops batteryPoll() and stateUpdate() from ever
-// running, so on a battery build the low-voltage cutoff could never fire and
-// the cell would discharge to damage. The device continues without telemetry
-// instead, saying so once per second, and a power cycle is the recovery.
-//
-// There is deliberately no automatic retry - see the implementation.
+// Bring up and configure the receiver. Returns false if it never answered the
+// baud sweep. Does not halt, so battery protection keeps running; there is no
+// retry, and a power cycle recovers.
 bool gnssBegin();
 
-// Whether the receiver is currently configured and usable.
-//
-// False before the first successful gnssBegin(), after a failed one, and after
-// gnssEnd() releases the UART.
-//
-// Callers use this to avoid reporting meaningless data - with no receiver every
-// GNSS field is a sentinel or zero, which reads like a device searching for a
-// fix rather than one that has none.
+// True once configured, until gnssEnd(). With no receiver, GNSS fields are
+// sentinels that look like a search for a fix, so callers check this first.
 bool gnssIsUp();
 
-// Whether the receiver is up but has stopped delivering epochs: none for longer
-// than the larger of 1s and three epoch periods. The clock starts at bring-up,
-// so a receiver that was configured but never sent a single PVT counts too.
+// True if the receiver is up but no epoch has arrived for the larger of 1s and
+// three epoch periods, counting from bring-up. Clears on the next epoch. Always
+// false while gnssIsUp() is false.
 //
-// gnssIsUp() cannot say this - nothing at runtime clears it - and
-// gnssLatestPvt() keeps returning the last epoch indefinitely, so without this
-// a receiver lost mid-session reads as frozen data rather than as no data.
-// Clears on the next epoch. Always false while gnssIsUp() is false: that case
-// is "not responding", and callers report it separately.
-//
-// A short loss of power at the receiver recovers by itself. gnssBegin()
-// writes the runtime configuration to RAM/BBR only, but the module's backup
-// supply holds BBR: a GNSS connector unplugged for a few seconds and reseated
-// (nRF52840-OLED, 2026-09-13) came back at 20 Hz with a 3D fix a second later,
-// no power cycle. An outage long enough to drain that supply would leave the
-// receiver at the right baud with PVT output off, silent until a power cycle
-// re-runs bring-up - expected, but untested.
+// A brief power loss recovers on its own (configuration is held in BBR). An
+// outage long enough to drain the backup supply needs a power cycle.
 bool gnssStalled();
 
-// Stop talking to the receiver and release the UART, leaving gnssIsUp() false.
-//
-// What that buys depends on the board, and is documented in its port file: on
-// the nRF it is what lets powerHoldPeripheralsOff() idle the TX pin low, so it
-// MUST be called before the state machine enters BATTERY_WAIT or DEEP_SLEEP
-// from RUNNING - a UART that still owns the pin idles it HIGH and
-// phantom-powers the receiver through its RX ESD diode even with the rail cut.
-// The ESP32 build has no rail to cut and never calls it today; it exists on
-// every board so this interface does not fork.
+// Release the UART and clear gnssIsUp(). On nRF this must be called before
+// BATTERY_WAIT or DEEP_SLEEP: an open UART holds TX high and back-powers the
+// receiver through its RX pin.
 void gnssEnd();
 
-// Pumps the GNSS UART and triggers a callback if a new epoch has arrived.
-//
-// That is ALL it does: checkUblox() to parse incoming bytes, checkCallbacks()
-// to fire the PVT handler, and an early return when gnssIsUp() is false.
-//
-// It does NOT touch the navigation rate, whatever an earlier version of this
-// comment said. setNavigationFrequency() is called exactly once, in
-// gnssBegin(), at the fixed GNSS_NAV_RATE_HZ; nothing varies it at runtime -
-// not the system state, not the BLE connection. Said explicitly rather than
-// just deleted, because two separate versions of this header have now claimed
-// a dynamic rate that has never existed.
-//
-// Call every loop(). See the drain-deadline note above for how often "every
-// loop()" actually has to be.
+// Parse incoming bytes and fire the PVT callback. No-op while gnssIsUp() is
+// false. The nav rate is fixed at GNSS_NAV_RATE_HZ. Call every loop().
 void gnssPoll();
 
-// Fetches a pointer to the most recent PVT data.
-// Returns a valid pointer to the PVT if a new epoch has arrived since the last
-// call, otherwise returns nullptr.
+// Return the newest PVT if a new epoch arrived since the last call, else
+// nullptr. Only g_telemetry may call this.
 const UBX_NAV_PVT_data_t *gnssConsumePvt();
 
-// Peek at the most recent PVT WITHOUT consuming it. Returns nullptr until the
-// first epoch has ever arrived; afterwards it always returns the last one,
-// however stale.
-//
-// gnssConsumePvt() is consume-once by design - it clears the new-epoch flag on
-// the way out, so exactly one caller can ever see a given epoch, and that
-// caller is g_telemetry. Any second consumer calling it would race: whichever
-// ran first in a loop iteration takes the epoch and the other sees nullptr,
-// producing dropped BLE packets or a half-rate reader depending on call order.
-// Read-only observers (a display, a health check) must use this instead.
-//
-// Staleness is the caller's problem: this says nothing about how old the data
-// is, or whether the receiver is still answering - if it stops, the last epoch
-// simply stops advancing.
+// Return the newest PVT without consuming it, or nullptr before the first
+// epoch. For read-only observers. Says nothing about staleness.
 const UBX_NAV_PVT_data_t *gnssLatestPvt();

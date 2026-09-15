@@ -255,6 +255,12 @@ fix. Accepted deliberately — the gyro only needs to land occasionally to track
 thermal drift, and a second gate is not worth the extra constant or the longer
 explanation. This design's value has been that it explains in a sentence.
 
+**A frozen fix is not a fix.** `gnssLatestPvt()` returns the last epoch however
+old, so a receiver that dies mid-drive would freeze its speed at whatever it last
+reported — possibly 0 m/s — and let the gate pass while moving. `trimSpeedMps()`
+watches `iTOW` and stops trusting the speed once it has not advanced for
+`IMU_TRIM_PVT_STALE_MS` (1 s).
+
 ### 5.6 Engine vibration: gate thresholds measured, not guessed
 
 Raised as a concern after the first in-car run — an idling engine shakes the
@@ -438,9 +444,10 @@ independent of mounting orientation.
 
 **Motion** — both frozen.
 
-Noise is not what sets these durations. The LSM6DS3TR-C runs about 90 µg/√Hz; at
-50 Hz bandwidth that is ~0.6 mg RMS per sample, and 50 samples of averaging puts
-it under 0.1 mg. **Half a second already gives an estimate 100× finer than
+Noise is not what sets these durations. The LSM6DS3TR-C runs about 90 µg/√Hz,
+behind a 26 Hz LPF1 (ODR/4 at 104 Hz — the "50 Hz" this section first cited was
+a misreading of the part; see `IMU_ACCEL_LPF1_ODR_DIV`), so half a second of
+averaging lands well under 0.1 mg. **Half a second already gives an estimate 100× finer than
 anything that matters.** Everything beyond that buys confidence that we are
 really stopped, not precision — which is why the qualification window, not the
 averaging window, is the number that matters.
@@ -658,13 +665,40 @@ job and is about right for its new one.
   refuses both a moving device and a missing fix. That check is **not committed
   and will not re-run**, so any future change to the rotation math has nothing
   standing behind it but bench verification.
-  Two things partly compensate: the derivation is worked by hand in the comment
-  above `rebuildRotation()`, including the expanded matrix and a check that
-  `R * u = z` for a pitched device, and the vector helpers are written in
+  Two things partly compensate: the derivation is worked by hand below,
+  including the expanded matrix and a check that `R * u = z` for a pitched
+  device, and the vector helpers are written in
   general form rather than folded into specialised expressions so the whole
   derivation is auditable by eye. The module has no Arduino dependency, so
   `g++ -Wall -Wextra -c g_imu_trim.cpp` remains available as a compile check and
   passes clean.
+- **Rotation sign convention, worked by hand.** `rebuildRotation()` builds the
+  R that carries the measured gravity direction u onto vehicle-up z = (0, 0, 1),
+  using Rodrigues in the trig-free form for rotating unit vector a onto unit
+  vector b, with v = a × b and c = a · b:
+
+  ```
+  R = I + [v]x + [v]x² · 1/(1+c)
+  ```
+
+  where [v]x is the skew-symmetric cross-product matrix of v. For a device
+  pitched by θ so gravity gains a +X component:
+
+  ```
+  u = (sin θ, 0, cos θ)
+  v = u × z = (u_y, −u_x, 0) = (0, −sin θ, 0)
+  c = u · z = cos θ
+
+  R = [ cos θ   0   −sin θ ]
+      [   0     1     0    ]
+      [ sin θ   0    cos θ ]
+
+  R · u = (cos θ sin θ − sin θ cos θ, 0, sin²θ + cos²θ) = (0, 0, 1)
+  ```
+
+  The tilt is removed rather than doubled. The 1/(1+c) term is singular at
+  c = −1 (fully inverted), which cannot be reached: blocks tilted past
+  `maxTiltDeg`, validated well under 90°, are refused, so c stays near +1.
 - **Bench, on hardware.** Tilt converges to a known wedge angle; converged flag
   behaves; gyro bias drops to ~0 at rest. Needs `IMU_TRIM_REQUIRE_FIX 0`.
 - **In-car.** The gate does not fire while driving; the correction is stable
@@ -672,8 +706,79 @@ job and is about right for its new one.
 
 ## 13. What this does not touch
 
-`IMU_ACCEL_TRANSIENT_THRESHOLD_G` stays at its holding value of 1.5 g. Trim
-shifts DC; the transient detector keys on `|raw − smoothedValue_|`, where both
+The transient thresholds are not part of this module (their tuning is recorded
+in §14). Trim shifts DC; the transient detector keys on `|raw − smoothedValue_|`, where both
 terms shift equally. The two workstreams are independent, and the `alpha = 1.0`
 vibration-floor diagnostic still works unchanged — provided the correction is
 frozen while moving rather than adapting, which is §5.1.
+
+## 14. Filter and transient tuning (`ImuAxis`)
+
+Not part of the trim, but recorded here because `g_imu_tuning.h` holds both sets
+of constants and its comments no longer carry the measurements behind them.
+
+### 14.1 Filter alpha
+
+`IMU_ACCEL_ALPHA` / `IMU_GYRO_ALPHA` = **0.09** at the 100 Hz sample rate, a
+corner of ~1.5 Hz. An EMA's corner scales with how often it is fed, so the
+alphas are only valid at `IMU_SAMPLE_INTERVAL_MS` 10; change them together.
+
+The accel value was tuned from **13 autocross runs** (2018 M2, RE-71RS tyres) on
+the nRF52840 build, checked against the GNSS solution: longitudinal against
+d(speed)/dt, lateral against v × yaw-rate. 0.09 measured best, **0.99
+correlation** with the GNSS reference, while leaving real cornering amplitude
+intact. Below ~0.06 it starts eating genuine signal.
+
+The alpha is also the anti-alias filter for the 100 Hz → transmit-rate
+decimation, so it cannot be raised freely: mount resonance above the transmit
+Nyquist folds into the signal band, where nothing downstream can remove it.
+
+**Not re-measured on the ESP32** (MPU-6050, not LSM6DS3TR-C). **The gyro values
+are placeholders on every build** — the logging app records no gyro channel, so
+they have never been tested against real data.
+
+### 14.2 Transient threshold
+
+Each axis blends a window's raw peak into the output when the peak deviation
+exceeds the threshold (fully at 2×). The threshold must sit **above the car's
+vibration floor**:
+
+- At the original **0.2 g** it sat below it. The blend fired on **50–100 %** of
+  transmit windows, and since `maxDeviation_` is a max over the window it can
+  only push the output away from the baseline, never toward it. Logged lateral
+  peaks ran up to **+105 %** over the true value (2.57 g against a real 1.16 g),
+  and correlation with the GNSS reference fell to **0.92**.
+- On the nRF52840 build the mount is too springy: the vibration floor alone
+  drives `|raw − smoothedValue_|` to **~1.55 g**, and no threshold below that
+  separates vibration from real events.
+- **1.5 g** was the first holding value, chosen to sit just clear of the floor.
+  It did not — 1.5 is below 1.55, so the blend still fired on vibration.
+
+The blend is therefore **parked**: both thresholds are `IMU_TRANSIENT_PARKED`
+(1.0e6), unreachable at any configurable range, so the output is the plain EMA
+baseline. A sentinel rather than a "high enough" number, because deviation is
+bounded only by about twice full scale (~8 g at ±4 g) and a near-miss threshold
+reads as tuned while failing invisibly. The sentinel is unit-agnostic, a choice
+made when the trees still used different units and a bare 99.0f was copied
+between them.
+
+**Alpha and threshold interact.** A lower alpha lags the baseline further,
+which *increases* `|raw − smoothedValue_|` and makes the blend fire more.
+Lowering the alpha without first raising the threshold makes the output worse.
+
+### 14.3 Un-parking
+
+1. **Stiffen the mount**, then measure the vibration floor on **each board**
+   (`IMU_*_ALPHA` 1.0 makes the logged values raw). The ESP32's has never been
+   measured.
+2. Set the threshold to roughly **1.2× the observed peak deviation** (expected
+   ~0.6–0.8 g on a rigid mount). If the boards need different values, move the
+   two defines out of `g_imu_tuning.h` into each `config.h`.
+3. **Add a stall drain first.** The transient window is reset only by
+   `ImuAxis::read()`, once per GNSS epoch, while `imuPoll()` keeps feeding it at
+   100 Hz. Across a receiver stall the window widens for the length of the
+   stall, and the first epoch afterwards blends the whole gap's peak into one
+   packet. Parked, the peak is never blended. The cheapest drain: in `imuPoll()`,
+   while `gnssStalled()` is true, call `read()` on all six axes after `update()`
+   and discard the result, capping a stale peak's age at the stall threshold
+   (1 s at 20 Hz).

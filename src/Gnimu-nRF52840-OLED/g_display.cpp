@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,14 +17,12 @@
 #include "g_display.h"
 #include "config.h"
 
-// See DISPLAY_ENABLED in config.h. When 0, none of this module's real
-// implementation is compiled in.
 #if DISPLAY_ENABLED
 
 #include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
-#include "g_imu.h" // imuIsUp() - no trim indicator without an IMU
+#include "g_imu.h"
 #include "g_imu_trim.h"
 #include "g_log.h"
 #include "g_state.h"
@@ -32,48 +30,38 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 
-// Full-buffer (F) hardware-I2C driver.
+// Full-buffer hardware-I2C driver.
 static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
 
-static bool present = false; // panel answered at begin(); false disables all
+static bool present = false; // panel answered; false disables the module
 static bool asleep = false;  // DISPLAYOFF sent
 
-// False until the first displayUpdate(), which only runs from loop() - i.e.
-// once setup() has finished and gnssBegin() has had its chance. displayBegin()
-// renders its first frame BEFORE gnssBegin() runs, when gnssIsUp() is still
-// false for the innocent reason that nothing has tried yet; without this, every
-// normal boot would open on "No GNSS".
+// Set by the first displayUpdate(). The boot frame is drawn before gnssBegin(),
+// so it must not show "No GNSS".
 static bool setupDone = false;
 static unsigned long lastRenderMs = 0;
 static unsigned long lastShiftMs = 0;
 static unsigned long lastSliceMs = 0;
 
-// Push cursor: -1 = nothing pending, otherwise the next slice index. A frame is
-// DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W slices per tile row.
+// Next slice to push, or -1 when idle.
 static const int SLICES_PER_ROW = DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W;
 static const int SLICE_COUNT = SLICES_PER_ROW * DISPLAY_TILES_H;
 static int pushCursor = -1;
 
-// --- Phase lock to the navigation epoch -------------------------------------
-// iTOW of the last epoch this module acted on, and the local time it was seen.
-// iTOW is ms-of-week, so it never reaches this sentinel and no separate "have
-// we seen one" flag is needed.
+// Epoch phase lock: iTOW of the last epoch seen and when. iTOW never reaches
+// ITOW_NONE.
 static const uint32_t ITOW_NONE = 0xFFFFFFFFUL;
 static uint32_t lastSeenITOW = ITOW_NONE;
 static unsigned long lastEpochSeenMs = 0;
 
-// --- Burn-in pixel shift ----------------------------------------------------
-// Walks the perimeter of a 3x3 grid so every element visits 8 distinct pixel
-// positions rather than sliding along one diagonal.
+// Burn-in shift: walks the 8 perimeter positions of a 3x3 grid.
 static uint8_t shiftIdx = 0;
 static const int8_t SHIFT_X[8] = {0, 1, 2, 2, 2, 1, 0, 0};
 static const int8_t SHIFT_Y[8] = {0, 0, 0, 1, 2, 2, 2, 1};
 static inline int ox(int x) { return x + SHIFT_X[shiftIdx]; }
 static inline int oy(int y) { return y + SHIFT_Y[shiftIdx]; }
 
-// --- USB plug icon ----------------------------------------------------------
-// Hand-drawn, like everything small on this panel: Open Iconic's "embedded"
-// subset has no USB glyph.
+// USB plug icon, 7x8:
 //
 //     . # # . # # .
 //     . # # . # # .
@@ -87,31 +75,23 @@ static const uint8_t USB_XBM[] = {0x36, 0x36, 0x7F, 0x7F,
                                   0x7F, 0x3E, 0x1C, 0x1C};
 static const int USB_W = 7, USB_H = 8;
 
-static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded encoding
+static const uint16_t ICON_BLUETOOTH = 74; // open_iconic_embedded
 
-// open_iconic_check encodings. The set holds five glyphs at 64-68; these two
-// were confirmed by decoding the font's own bitmaps rather than inferred from
-// the icon names, since the naming order does not match the encoding order.
-// 64 is 8x6 and 68 is 8x8, but drawGlyph positions from the baseline and each
-// glyph carries its own y-offset, so both sit correctly at the same oy().
+// open_iconic_check glyphs.
 static const uint16_t ICON_TRIM_OK = 64;  // check
 static const uint16_t ICON_TRIM_BAD = 68; // X
 
-// Trim indicator column. Lives in the gap between the status label and the USB
-// icon: the longest label ("Advertising", 11 chars in the 5px-advance 5x7 font)
-// ends at x=66, and USB starts at 88, so 78-85 is dead space in every case with
-// 12px of margin for a longer label later.
+// Trim icon x, between the longest label (ends at 66) and the USB icon (88).
 static const int TRIM_X = 78;
 
-// --- Draw helpers -----------------------------------------------------------
+// Draw helpers
+
 static void strAt(int x, int y, const char *s) {
   oled.drawStr(ox(x), oy(y), s);
 }
 
-// Right-aligned and centred variants measure with getStrWidth() rather than
-// assuming a fixed advance - not every u8g2 "_tf" font is fixed-pitch. Centring
-// is relative to the LAYOUT area, not the panel, so text stays centred as the
-// pixel shift moves everything.
+// Measured with getStrWidth(), since not every font is fixed-pitch. Centered
+// within the layout width.
 static void strRight(int rightX, int y, const char *s) {
   oled.drawStr(ox(rightX - (int)oled.getStrWidth(s)), oy(y), s);
 }
@@ -119,9 +99,7 @@ static void strCenter(int y, const char *s) {
   oled.drawStr(ox((DISPLAY_LAYOUT_W - (int)oled.getStrWidth(s)) / 2), oy(y), s);
 }
 
-// Proportionally-filled battery. Drawn rather than taken from an icon font:
-// g_battery produces a continuous 0-100%, while icon glyphs offer only
-// empty/half/full.
+// Battery outline filled to pct.
 static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
   oled.drawFrame(ox(x), oy(y), w, h);
   oled.drawBox(ox(x + w), oy(y + h / 4), 2, h / 2); // terminal nub
@@ -132,25 +110,8 @@ static void batteryBar(int x, int y, int w, int h, uint8_t pct) {
   }
 }
 
-// --- Status bar -------------------------------------------------------------
-// BLE icon + label on the left; USB icon + battery gauge on the right.
-//
-// In RUNNING the label carries the BLE link state rather than the state name:
-// RUNNING is the implicit default, and spending scarce bar width restating it
-// is wasteful when the link state is the thing that changes and the thing the
-// user is checking for.
-//
-// The battery shows as a gauge only - no percentage. The bar conveys the level
-// well enough at a glance, and a number that close to the noise floor of a
-// voltage-derived SoC estimate implied more precision than exists. Dropping it
-// also freed the width the USB icon now uses.
-//
-// showTrim gates the runtime-trim indicator to RUNNING, and to an IMU that is
-// actually up: with none fitted, or one that has died, there is no trim to
-// show, and a ⏳ that never resolves would be a lie. imuPoll() is gated to
-// that state in the .ino, so the trim is not advancing anywhere else; showing
-// it in CHARGE_ONLY would cut against this module's rule that each screen shows
-// only what its state can actually know.
+// Status bar: BLE icon and label on the left, trim icon, then USB icon and
+// battery gauge on the right. showTrim is true only in RUNNING with the IMU up.
 static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
                           const BatteryStatus &bat) {
   if (bleUp) {
@@ -161,18 +122,7 @@ static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
   oled.setFont(u8g2_font_5x7_tf);
   strAt(11, 8, label);
 
-  // Runtime trim: check once locked, X once it has measured a mount too far
-  // off level to correct, nothing while it is still deciding.
-  //
-  // Blank covers two cases deliberately - no stationary window has closed yet
-  // (tiltDegrees() reads 0 until the first block, so a badly mounted device
-  // shows blank for the first ~31s before the X appears), and a mount inside
-  // the correctable range that simply has not converged. Neither is worth
-  // distinguishing here: the check is the thing being waited for.
-  //
-  // This is the mounting guard of docs/imu-trim-design.md section 9 arriving in
-  // its cheapest form, with the 15/35 degree tiering folded down to one
-  // threshold - anything the trim refuses gets the X.
+  // Check when locked, X when tilt exceeds the limit, blank while deciding.
   if (showTrim) {
     oled.setFont(u8g2_font_open_iconic_check_1x_t);
     if (imuTrimConverged()) {
@@ -182,9 +132,7 @@ static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
     }
   }
 
-  // bat.charging is `usbPresent && switchOn`. Every state that draws a status
-  // bar already has the switch on (switch-off routes to BATTERY_WAIT, which
-  // draws no bar), so within this function it is exactly "USB plugged in".
+  // The switch is always on when a bar is drawn, so this means USB present.
   if (bat.charging) {
     oled.drawXBM(ox(88), oy(1), USB_W, USB_H, USB_XBM);
   }
@@ -194,11 +142,9 @@ static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
   oled.drawHLine(ox(0), oy(12), DISPLAY_LAYOUT_W);
 }
 
-// --- Bodies -----------------------------------------------------------------
+// Bodies
 
-// Map u-blox fixType to something short enough for the headline. The protocol
-// packer clamps this to {0,2,3} for the wire format; that clamp belongs to the
-// wire and must not leak here.
+// Short fix label from the raw fixType.
 static const char *fixLabel(uint8_t fixType) {
   switch (fixType) {
   case 2:
@@ -206,7 +152,7 @@ static const char *fixLabel(uint8_t fixType) {
   case 3:
     return "3D";
   case 4:
-    return "3D"; // GNSS + dead reckoning; no DR sensors on the M100
+    return "3D"; // GNSS + dead reckoning
   default:
     return "No Fix";
   }
@@ -221,21 +167,8 @@ static void drawUptime() {
 }
 
 static void drawRunningBody() {
-  // A receiver that never answered, or one that answered and went quiet.
-  // Without this branch every field below is a zero or a placeholder for the
-  // first - "0 SV / No Fix / 0Hz", pixel-identical to a cold start under poor
-  // sky - and the LAST epoch, frozen, for the second. On the variant where this
-  // panel is the only readout. Same reasoning as the serial report's GNSS lines.
-  //
-  // The uptime stays for the reason the serial line keeps its battery field:
-  // the loop is still turning, so battery protection is still running, and a
-  // ticking clock is the proof.
-  //
-  // The second line differs. A receiver that never answered needs a power
-  // cycle - gnssBegin() deliberately never retries - so "No GNSS" says so. A
-  // stall usually does not: a reseated connector recovered on its own (see
-  // gnssStalled()), so "GNSS stalled" states what is happening rather than
-  // prescribing an action that is often unnecessary.
+  // GNSS absent or stalled: say so instead of showing zeros or frozen values.
+  // Uptime keeps ticking to show the loop is alive.
   if (setupDone && (!gnssIsUp() || gnssStalled())) {
     const bool stalled = gnssIsUp();
     oled.setFont(u8g2_font_10x20_tf);
@@ -249,11 +182,7 @@ static void drawRunningBody() {
   const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
   const uint8_t fixType = pvt ? pvt->fixType : 0;
 
-  // Position-valid predicate, deliberately identical to the latLonFlags rule
-  // in g_proto_racebox's encoder, so screen and packet can never disagree
-  // about whether a position exists. (It moved there from g_telemetry when the
-  // protocol was split out - the rule is unchanged, only its home.) Note a 2D fix IS valid: hAcc and
-  // pDOP are real numbers there, merely worse.
+  // Same rule as the RaceBox latLonFlags.
   const bool posValid = pvt && fixType >= 2;
 
   char buf[24];
@@ -263,9 +192,7 @@ static void drawRunningBody() {
   strRight(126, 32, fixLabel(fixType));
 
   oled.setFont(u8g2_font_6x12_tf);
-  // Without a solution the receiver reports a sentinel hAcc and a meaningless
-  // pDOP. Rendering them raw would put plausible-looking numbers on screen that
-  // read as "the fix is poor" rather than "there is no fix".
+  // hAcc and pDOP are meaningless without a fix.
   if (posValid) {
     snprintf(buf, sizeof(buf), "pDOP %.2f", pvt->pDOP / 100.0f);
   } else {
@@ -273,9 +200,7 @@ static void drawRunningBody() {
   }
   strAt(2, 46, buf);
 
-  // The PVT rate stays meaningful without a fix - NAV-PVT keeps arriving at the
-  // configured rate regardless of solution status. Whole numbers, like the
-  // stats line: the tenth only ever carried pickup jitter.
+  // PVT rate, valid with or without a fix.
   snprintf(buf, sizeof(buf), "%.0fHz", telemetryGnssRateHz());
   strRight(126, 46, buf);
 
@@ -289,15 +214,12 @@ static void drawRunningBody() {
   drawUptime();
 }
 
-// GNSS is held off in CHARGE_ONLY, so there is deliberately no fix data here.
-// Percentage and charge state already live in the status bar, so the body
-// carries only the voltage - large and centred.
+// Cell voltage, large and centered.
 static void drawChargeOnlyBody(const BatteryStatus &bat) {
   char buf[16];
   snprintf(buf, sizeof(buf), "%.2f", bat.voltage);
 
-  // "_tn" is a numerals-only font subset (digits and punctuation, no letters),
-  // which keeps the flash cost down but means the unit needs a text font.
+  // The _tn font has no letters, so the unit uses a text font.
   oled.setFont(u8g2_font_logisoso24_tn);
   const int wNum = (int)oled.getStrWidth(buf);
   oled.setFont(u8g2_font_7x14B_tf);
@@ -305,7 +227,7 @@ static void drawChargeOnlyBody(const BatteryStatus &bat) {
 
   const int gap = 4;
   const int x = (DISPLAY_LAYOUT_W - (wNum + gap + wUnit)) / 2;
-  const int baseline = 48; // centres the block in the body area (rows 14..61)
+  const int baseline = 48; // centers within body rows 14-61
 
   oled.setFont(u8g2_font_logisoso24_tn);
   strAt(x, baseline, buf);
@@ -313,15 +235,11 @@ static void drawChargeOnlyBody(const BatteryStatus &bat) {
   strAt(x + wNum + gap, baseline, "V");
 }
 
-// Full-screen alert, no status bar: the slide switch has taken the cell out of
-// circuit, so a battery percentage would be meaningless. Wording is an
-// observation of state - an imperative ("SWITCH OFF") reads as an instruction
-// to switch something off, the opposite of the required action.
+// Full-screen switch-off alert, no status bar.
 static void drawBatteryWaitScreen() {
   oled.drawBox(ox(0), oy(0), DISPLAY_LAYOUT_W, 26);
-  oled.setDrawColor(0); // knock the text out of the filled block
-  // 9x18B rather than 10x20: "Switch is OFF" needs 130 px at 10x20 against a
-  // 126 px layout width. 9x18B fits it in 117 and stays bold.
+  oled.setDrawColor(0); // inverted text
+  // 9x18B fits "Switch is OFF" in the layout width; 10x20 doesn't.
   oled.setFont(u8g2_font_9x18B_tf);
   strCenter(20, "Switch is OFF");
   oled.setDrawColor(1);
@@ -330,9 +248,9 @@ static void drawBatteryWaitScreen() {
   strCenter(58, "to run or charge");
 }
 
-// --- Frame assembly ---------------------------------------------------------
-// Renders the whole screen into the RAM buffer. No I2C happens here, so this is
-// cheap and can run in one go; only the push is metered.
+// Frame assembly
+
+// Render the full screen into RAM. No I2C.
 static void renderFrame() {
   const BatteryStatus bat = batteryGetStatus();
   oled.clearBuffer();
@@ -343,7 +261,7 @@ static void renderFrame() {
     break;
 
   case STATE_CHARGE_ONLY:
-    // No BLE icon: bleStop() has run, so the radio is genuinely down.
+    // No BLE icon; BLE is stopped.
     drawStatusBar(bat.full ? "Full" : "Charging", false, false, bat);
     drawChargeOnlyBody(bat);
     break;
@@ -357,17 +275,14 @@ static void renderFrame() {
   }
 }
 
-// --- Public API -------------------------------------------------------------
+// Public API
 
 void displayBegin() {
   Wire.begin();
-  // u8g2 wants the 8-bit left-shifted address here. Passing the 7-bit value is
-  // the classic silent failure: begin() returns and nothing ever appears.
+  // u8g2 takes the 8-bit (shifted) address.
   oled.setI2CAddress(DISPLAY_I2C_ADDRESS << 1);
 
-  // Probe before committing. A missing or mis-wired panel disables this module
-  // rather than halting - the device's actual job is streaming telemetry, and
-  // it can do that perfectly well with a dead screen.
+  // Probe first; a missing panel disables the module.
   Wire.beginTransmission(DISPLAY_I2C_ADDRESS);
   if (Wire.endTransmission() != 0) {
     LOG_PRINTF("⚠️ No OLED at 0x%02X - display disabled\n", DISPLAY_I2C_ADDRESS);
@@ -381,8 +296,7 @@ void displayBegin() {
   asleep = false;
   lastShiftMs = lastRenderMs = millis();
 
-  // First frame goes out in one blocking write. Startup is the one moment the
-  // ~31 ms cost is free: the GNSS UART is not streaming yet.
+  // The first frame is sent in one blocking write, before GNSS is streaming.
   renderFrame();
   oled.sendBuffer();
   LOG_PRINTLN("✅ OLED display enabled.");
@@ -390,7 +304,7 @@ void displayBegin() {
 
 bool displayIsPresent() { return present; }
 
-// Push one slice of the frame in flight, retiring the cursor on the last one.
+// Push the next slice; clear the cursor after the last.
 static void pushSlice() {
   const uint8_t tx = (pushCursor % SLICES_PER_ROW) * DISPLAY_CHUNK_TILES_W;
   const uint8_t ty = pushCursor / SLICES_PER_ROW;
@@ -401,26 +315,15 @@ static void pushSlice() {
 }
 
 void displayUpdate() {
-  setupDone = true; // see its declaration - first call means setup() is over
+  setupDone = true;
   if (!present || asleep) {
     return;
   }
 
   const unsigned long now = millis();
 
-  // Did a navigation epoch land during this loop iteration?
-  //
-  // iTOW is the receiver's label for the epoch, not the moment it reached us,
-  // so it cannot say how far into the gap we are - and it does not need to.
-  // This runs directly after gnssPoll() in loop(), so a changed iTOW means the
-  // message was parsed moments ago and the clear air is just beginning. We act
-  // at that instant instead of measuring a position within it.
-  //
-  // gnssLatestPvt() is the non-consuming reader: g_telemetry owns the
-  // consuming one, and taking an epoch from it here would cost a BLE packet.
-  // Only inequality is tested, so the end-of-week iTOW wrap is harmless, and
-  // iTOW advances every epoch with or without a fix, so this keeps working
-  // while the receiver is still searching.
+  // A changed iTOW means gnssPoll() just parsed an epoch, so the UART is idle
+  // until the next one. Uses the non-consuming reader.
   bool epochJustLanded = false;
   const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
   if (pvt != nullptr && pvt->iTOW != lastSeenITOW) {
@@ -429,18 +332,15 @@ void displayUpdate() {
     epochJustLanded = true;
   }
 
-  // Epochs stop entirely when the receiver is off or not answering, and
-  // CHARGE_ONLY and BATTERY_WAIT both have a screen to draw with no NAV-PVT to
-  // key off. Fall back to the old metered spacing there rather than
-  // waiting forever on an epoch that is not coming.
+  // Without epochs (GNSS off or silent), fall back to timed slices.
   const bool epochsFlowing = (lastSeenITOW != ITOW_NONE) &&
                              ((now - lastEpochSeenMs) < DISPLAY_EPOCH_STALE_MS);
 
-  // Finish any frame already in flight before starting another.
+  // Finish the frame in flight first.
   if (pushCursor >= 0) {
     if (epochsFlowing) {
       if (!epochJustLanded) {
-        return; // mid-period - the UART may be receiving, so stay off the CPU
+        return; // wait for the next epoch
       }
       for (int i = 0; i < DISPLAY_SLICES_PER_EPOCH && pushCursor >= 0; i++) {
         pushSlice();
@@ -448,7 +348,7 @@ void displayUpdate() {
       lastSliceMs = now;
     } else {
       if ((now - lastSliceMs) < DISPLAY_SLICE_INTERVAL_MS) {
-        return; // not yet - let the UART breathe
+        return;
       }
       lastSliceMs = now;
       pushSlice();
@@ -460,43 +360,37 @@ void displayUpdate() {
     return;
   }
 
-  // renderFrame() is CPU rather than I2C, but it blocks the loop just the same
-  // and so belongs in the clear air alongside the pushes.
+  // Rendering also blocks the loop, so it waits for an epoch too.
   if (epochsFlowing && !epochJustLanded) {
     return;
   }
   lastRenderMs = now;
 
-  // Advance the burn-in offset on its own much slower schedule. It only ever
-  // changes between frames, so a shift can never tear a frame in flight.
+  // Shift only between frames.
   if ((now - lastShiftMs) >= DISPLAY_SHIFT_INTERVAL_MS) {
     lastShiftMs = now;
     shiftIdx = (shiftIdx + 1) % 8;
   }
 
   renderFrame();
-  pushCursor = 0;    // hand the frame to the push paths above
-  lastSliceMs = now; // fallback path waits one full interval, like the rest
+  pushCursor = 0;
+  lastSliceMs = now;
 }
 
 void displaySleep() {
   if (!present || asleep) {
     return;
   }
-  pushCursor = -1;      // abandon any frame mid-push; it is about to be blanked
+  pushCursor = -1;      // abandon any frame in flight
   oled.setPowerSave(1); // SSD1306 DISPLAYOFF
   asleep = true;
 }
-
 
 #else // !DISPLAY_ENABLED
 
 #include "g_log.h"
 
-// Stubs matching g_display.h exactly. displayIsPresent() returns false, so
-// LED_ENABLED's fallback (g_led lights up when no display is present) engages
-// automatically - a side effect of reusing that mechanism, not the point of
-// this flag.
+// Stubs. displayIsPresent() is false, so g_led falls back to the LED.
 void displayBegin() {
   LOG_PRINTLN("⏸️ Display disabled at compile time (DISPLAY_ENABLED=0).");
 }

@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,48 +17,31 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// Battery module - VBAT voltage sense, state-of-charge fuel gauge, and the
-// voltage-only side of the low-voltage cutoff (batteryCutoffRequested()).
-// Pure measurement, contains no policy. The state machine (g_state) decides
-// when to act on the cutoff request; the rail actions (System OFF etc.) live
-// in g_power.
-//
-// The ADC configuration (resolution + reference + TACQ) is shared with the
-// switch-sense read in g_power. It is applied by powerBegin() and must be
-// called before batteryBegin().
-// ============================================================================
+// Battery: VBAT sensing, state of charge, and the low-voltage cutoff request.
+// Measurement only; g_state acts on it and g_power switches the rails.
+// powerBegin() configures the shared ADC and must run first.
 
-// A snapshot of the battery state, refreshed when a sampler run completes in
-// batteryPoll(). `charging` and `full` are composed from powerUsbPresent() +
-// powerSwitchOn() so there is one canonical definition here for all display
-// consumers (LED + telemetry).
+// Snapshot refreshed at the end of each sampler run.
 struct BatteryStatus {
-  float voltage;   // cell voltage in volts (EMA-smoothed peak)
+  float voltage;   // smoothed cell voltage, V
   uint8_t percent; // state of charge, 0-100
-  bool charging;   // USB present AND switch on (cell can actually charge)
-  bool warn;       // voltage <= BATTERY_WARN_V (amber-blink LED)
-  bool critical;   // voltage <= BATTERY_CRITICAL_V (red-blink LED)
-  bool full;       // charging AND voltage >= BATTERY_FULL_V (steady green LED)
+  bool charging;   // USB present and switch on
+  bool warn;       // voltage <= BATTERY_WARN_V
+  bool critical;   // voltage <= BATTERY_CRITICAL_V
+  bool full;       // charging and voltage >= BATTERY_FULL_V
 };
 
-// Configure the VBAT-divider enable pin and the charge-current select pin
-// (fast charge when BATTERY_FAST_CHARGE is defined), then prime the sampler
-// with one blocking run (~50 ms) so the cached status is valid on return.
-// Call in setup() AFTER powerBegin() (which configures the shared ADC).
+// Configure the divider and charge-current pins, then run one blocking sample
+// (~50ms) so the status is valid on return. Call after powerBegin().
 void batteryBegin();
 
-// Advance the non-blocking VBAT sampler and refresh the cached status when a
-// run completes. Takes at most one analogRead() per call and never blocks
-// longer than a single ADC conversion, so it is safe to call every loop().
-// Also updates the debounce anchor read by batteryCutoffRequested().
+// Advance the non-blocking sampler (at most one analogRead() per call).
+// Call every loop().
 void batteryPoll();
 
-// The most recent battery snapshot from the last completed sampler run.
+// The latest battery snapshot.
 BatteryStatus batteryGetStatus();
 
-// True when the fresh sampler peak has been below BATTERY_CUTOFF_V for at
-// least BATTERY_CUTOFF_DEBOUNCE_MS. Voltage-only, no knowledge of USB.//
-// g_state applies the USB gate before entering DEEP_SLEEP.
+// True once the unsmoothed voltage has stayed below BATTERY_CUTOFF_V for
+// BATTERY_CUTOFF_DEBOUNCE_MS. Ignores USB; g_state applies that gate.
 bool batteryCutoffRequested();
-

@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,67 +17,36 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// Display module - drives the SSD1306 OLED that replaces this variant's RGB
-// status LED. Like g_led it owns no state of its own: it observes
-// stateCurrent() (g_state), batteryGetStatus(), bleIsConnected(),
-// gnssLatestPvt(), telemetryGnssRateHz() and the g_imu_trim accessors, and
-// renders what it finds.
+// Display: the SSD1306 OLED that replaces the RGB LED on this board. Renders
+// state from g_state, g_battery, g_ble, g_gnss, g_telemetry, and g_imu_trim;
+// owns no state of its own.
 //
-// A persistent STATUS BAR sits over a per-state BODY, so each screen shows only
-// what that state can actually know:
+// A status bar sits above a per-state body:
 //
-//   RUNNING       "Connected"/"Advertising", runtime  | SV count and fix type
-//                 trim state + battery                  large, with pDOP, PVT
-//                                                       rate, hAcc and runtime
-//                                                       below
-//   CHARGE_ONLY   "Charging"/"Full" + battery         | cell voltage only - the
-//                 GNSS is held off in this state, so there is no fix data and
-//                 showing stale numbers would be actively misleading
-//   BATTERY_WAIT  (no status bar - the cell is switched out of circuit, so its
-//                 charge state is meaningless)        | full-screen alert
+//   RUNNING       bar: connection, trim, battery
+//                 body: SV count and fix type, pDOP, PVT rate, hAcc, runtime
+//   CHARGE_ONLY   bar: charging/full, battery
+//                 body: cell voltage (GNSS is off)
+//   BATTERY_WAIT  no bar; full-screen alert
 //   DEEP_SLEEP    display off
 //
-// UPDATE COST is the constraint that shapes this module, and it is a matter of
-// DENSITY rather than volume. A full 1024-byte frame costs ~31 ms at 400 kHz -
-// affordable in total, spread across a second. What is not affordable is
-// pushing it back to back: the GNSS UART's RX buffer fills in ~5.5 ms, and a
-// burst of consecutive transfers never leaves it a clear stretch in which to be
-// drained, so NAV-PVT bytes are lost and the 25 Hz rate sags.
-//
-// So rendering (into a RAM buffer, free) is separated from pushing (over I2C,
-// expensive), and the pushes are SPACED: each frame goes out as slices of
-// DISPLAY_CHUNK_TILES_W tiles, at most one every DISPLAY_SLICE_INTERVAL_MS.
-// Bench-validated 2026-08-05 - smaller slices alone were not enough.
-// ============================================================================
+// A full frame push is ~31ms of I2C at 400kHz, longer than the GNSS UART can
+// wait to receive a portion of a PVT (~5.5ms). Frames render to RAM, then go
+// out in DISPLAY_CHUNK_TILES_W-tile slices at most every
+// DISPLAY_SLICE_INTERVAL_MS.
 
-// Bring up the panel and paint the first frame. Call once in setup(), after
-// the modules it observes are up. Safe to call when no panel is attached: it
-// logs and disables itself rather than halting, since a missing display should
-// not stop the device streaming telemetry.
+// Bring up the panel and draw the first frame. Call once in setup(). With no
+// panel it logs and disables itself.
 void displayBegin();
 
-// Reflect the current state on the panel, advancing the render/push state
-// machine by one step. Safe to call every loop() - named to match ledUpdate(),
-// its counterpart: both are pure observers that recompute an output from state
-// rather than pumping a data source the way the *Poll() modules do.
+// Advance the render/push state machine one step. Call every loop().
 void displayUpdate();
 
-// True if a panel answered at displayBegin(). False means the module has
-// disabled itself and nothing is being shown - which is why g_led uses this to
-// decide whether to act as a fallback indicator. See LED_ENABLED in config.h.
+// True if a panel answered at displayBegin(). g_led falls back to the LED when
+// false.
 bool displayIsPresent();
 
-// Blank the panel (SSD1306 DISPLAYOFF, ~10 uA) without cutting power.
-//
-// TERMINAL, and that asymmetry is deliberate - there is no displayWake().
-// Both callers (enterDeepSleepFrom() and the boot classifier's low-voltage
-// path) run powerEnterDeepSleep() immediately afterwards, and System OFF does
-// not return. The panel is blanked rather than left alone because its 3V3 rail
-// SURVIVES System OFF: without this it would sit lit on a stale frame until the
-// battery ran down.
-//
-// Nothing wakes the panel because nothing needs to: every state that blanks it
-// ends in System OFF. A displayWake() existed here, was never reachable, and
-// was removed rather than left as unverified code in this header (ROB-3).
+// Turn the panel off (SSD1306 DISPLAYOFF). Called before System OFF, which
+// doesn't cut the panel's rail. There is no wake; the next boot reinitializes
+// it.
 void displaySleep();

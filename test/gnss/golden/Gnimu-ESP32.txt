@@ -3,7 +3,6 @@ S at-target
   port.setRxBufferSize 512 -> 512
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 1
-  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 1
@@ -38,6 +37,9 @@ S at-9600
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 0
   port.end
+  port.begin 4800 rx=16 tx=17
+  gnss.begin(port@4800) -> 0
+  port.end
   port.begin 9600 rx=16 tx=17
   gnss.begin(port@9600) -> 1
   setSerialRate 115200 layer=3 -> 1
@@ -45,7 +47,6 @@ S at-9600
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 1
   saveConfigSelective 0x01 -> 1
-  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 1
@@ -78,8 +79,14 @@ S absent
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 0
   port.end
+  port.begin 4800 rx=16 tx=17
+  gnss.begin(port@4800) -> 0
+  port.end
   port.begin 9600 rx=16 tx=17
   gnss.begin(port@9600) -> 0
+  port.end
+  port.begin 19200 rx=16 tx=17
+  gnss.begin(port@19200) -> 0
   port.end
   port.begin 38400 rx=16 tx=17
   gnss.begin(port@38400) -> 0
@@ -96,8 +103,11 @@ S absent
   port.begin 460800 rx=16 tx=17
   gnss.begin(port@460800) -> 0
   port.end
+  port.begin 921600 rx=16 tx=17
+  gnss.begin(port@921600) -> 0
+  port.end
 ✅ absent: returns false, not up (no halt)
-✅ absent: sweeps all seven rates, then stops
+✅ absent: sweeps all ten rates, then stops
 ✅ absent: every attempt closes its port before the next
 ✅ absent: the RX ring is sized once for the whole sweep, not per attempt
   epoch dropped: no callback registered
@@ -109,6 +119,9 @@ S verify-fails
   port.setRxBufferSize 512 -> 512
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 0
+  port.end
+  port.begin 4800 rx=16 tx=17
+  gnss.begin(port@4800) -> 0
   port.end
   port.begin 9600 rx=16 tx=17
   gnss.begin(port@9600) -> 1
@@ -122,7 +135,6 @@ S config-rejects (setVal8)
   port.setRxBufferSize 512 -> 512
   port.begin 115200 rx=16 tx=17
   gnss.begin(port@115200) -> 1
-  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 0

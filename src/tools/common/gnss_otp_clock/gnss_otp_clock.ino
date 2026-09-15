@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -145,8 +145,8 @@ static const char CONFIRM_WORD[] = "BURN";
 
 // Common u-blox baud rates. 115200 first (GNSS_BAUD in every variant's
 // config.h), then the factory default, then the rest.
-static const uint32_t BAUD_RATES[] = {115200, 38400,  9600,
-                                      57600,  230400, 460800};
+static const uint32_t BAUD_RATES[] = {115200, 38400,  4800,   9600,  19200,
+                                      57600,  230400, 460800, 921600};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
 
 // --- Byte strings from MAX-M10S Integration manual UBX-20053088 sec 2.1.7 ---

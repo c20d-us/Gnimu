@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,18 +17,13 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// Battery module (stub) - this build has no battery hardware; the USB rail
-// powers everything. The stub provides the same interface surface that the
-// shared telemetry module consumes on the nRF52840 variant, reporting a
-// constant full charge, so g_telemetry.cpp stays byte-identical across
-// variants. See BATTERY_HAS_GAUGE in config.h.
-// ============================================================================
+// Battery stub: this board is USB-powered with no battery sensing. Provides
+// the interface g_telemetry uses, reporting a constant percent. See
+// BATTERY_HAS_GAUGE.
 
-// Mirrors the nRF52840 variant's BatteryStatus so the shared telemetry code
-// sees one interface. Only `percent` carries real meaning on this build.
+// Same layout as the nRF52840 BatteryStatus.
 struct BatteryStatus {
-  float voltage;   // always 0.0f - no VBAT sense on this build
+  float voltage;   // always 0.0f
   uint8_t percent; // always BATTERY_REPORT_PERCENT
   bool charging;   // always false
   bool warn;       // always false
@@ -36,6 +31,5 @@ struct BatteryStatus {
   bool full;       // always false
 };
 
-// The (constant) battery snapshot.
+// Constant battery snapshot.
 BatteryStatus batteryGetStatus();
-

@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -20,4 +20,3 @@
 BatteryStatus batteryGetStatus() {
   return {0.0f, (uint8_t)BATTERY_REPORT_PERCENT, false, false, false, false};
 }
-

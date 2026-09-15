@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,45 +19,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// ============================================================================
-// The seam between the BLE DRIVER (g_ble.cpp - identical in every tree) and
-// the MCU's BLE STACK (g_ble_port_<mcu>.cpp - one per core).
+// BLE port: the interface between the shared driver (g_ble.cpp) and each core's
+// BLE stack.
 //
-// The driver owns every decision: what the device advertises as, whether a
-// frame may be sent and what a refusal means, the counters and one-shot log
-// lines, the inbound write queue, and the connection-session lifecycle. The
-// port owns the stack's mechanism: bring-up, TX power, the GATT it builds from
-// the descriptor, advertising, the stack callbacks, and the few primitives
-// below that answer "is it connected / subscribed / how big a frame fits /
-// send this".
+//   g_ble_port_esp32.cpp  Bluedroid: a discrete GATT built from the channel
+//                         table
+//   g_ble_port_nrf52.cpp  Bluefruit: BLEUart for TRANSPORT_NORDIC_UART
 //
-//   g_ble_port_esp32.cpp  - Bluedroid (esp32 Arduino core): a discrete GATT
-//                           built from the channel table for every transport
-//   g_ble_port_nrf52.cpp  - Bluefruit (Adafruit nRF52 core): BLEUart for
-//                           TRANSPORT_NORDIC_UART
+// The driver makes all decisions (identity, send policy, counters, logging,
+// write queue, sessions). The port provides the stack mechanism.
 //
-// Ports are named after the CORE, like g_gnss_port: what varies is the stack.
+// One central at a time; g_ble.cpp assumes it.
 //
-// SINGLE CENTRAL is a contract, not an accident. Both ports serve one
-// connection at a time (the ESP32's getConnId(), Bluefruit's Connection(0)),
-// and the session logic in g_ble.cpp assumes it. The README's privacy note
-// describes the consequence: the first client to connect holds the device.
+// All functions are called from the loop except bleRxFromCallback(). Port
+// callbacks may only set the port's own flags (std::atomic where needed): no
+// logging, no calls into the driver. See docs/architecture-runtime.md.
 //
-// CONCURRENCY. Everything below is called from the loop, EXCEPT
-// bleRxFromCallback(), which is the one entry from a stack callback. A port's
-// callbacks may otherwise only set its own flags (std::atomic where a flag
-// publishes other data, or where the callback runs on another core) - never
-// log, never call into the driver's state. See docs/architecture-runtime.md.
-//
-// Arduino-free, like g_imu_sensor.h, so the driver compiles on a host against a
-// fake port (test/ble).
-// ============================================================================
+// No Arduino dependency, so the driver builds on a host against test/ble.
 
-// What the device presents itself as, built once by the driver from the active
-// descriptor and DEVICE_ID so every stack advertises exactly the same identity.
-// manufacturer == nullptr means "no Device Information Service".
+// Device identity, built by the driver from the descriptor and DEVICE_ID.
+// manufacturer == nullptr omits the Device Information Service.
 struct BleIdentity {
-  const char *name; // advertised: "<modelName> <DEVICE_ID>"
+  const char *name; // "<modelName> <DEVICE_ID>"
   const char *model;
   const char *serial;
   const char *manufacturer;
@@ -65,59 +48,51 @@ struct BleIdentity {
   const char *hwRev;
 };
 
-// --- Implemented by the port ------------------------------------------------
+// Implemented by the port
 
-// Bring the stack up: TX power (reporting it), the service and characteristics
-// from `proto`, the Device Information Service when id.manufacturer is set, and
-// advertising. Returns false if the stack could not be brought up; the driver
-// then leaves BLE off for the session.
+// Bring up the stack: TX power, the service and characteristics from `proto`,
+// the Device Information Service if id.manufacturer is set, and advertising.
+// Returns false on failure; BLE then stays off.
 bool blePortBegin(const BleIdentity &id, const ProtocolDescriptor *proto);
 
 // True while a central is connected.
 bool blePortConnected();
 
-// Incremented once per connection, in the connect callback. The driver treats
-// any change as "a new session began", which is what lets it see a disconnect
-// and reconnect that both fall between two loop passes.
+// Incremented in the connect callback. Any change means a new session, even if
+// a disconnect and reconnect both happened between loop passes.
 uint32_t blePortSessionCount();
 
-// The stack's reason code for the most recent disconnect.
+// The stack's reason code for the last disconnect.
 uint8_t blePortDisconnectReason();
 
-// Whether the central has enabled notifications on `channel`. Only asked about
-// channels with PROP_NOTIFY.
+// Whether notifications are enabled on `channel` (a PROP_NOTIFY channel).
 bool blePortSubscribed(uint8_t channel);
 
-// The largest frame `channel` can carry in one notify right now: the ATT MTU
-// minus the 3-byte header, or SIZE_MAX where the stack fragments on its own.
+// Largest frame one notify on `channel` can carry: ATT MTU - 3, or SIZE_MAX if
+// the stack fragments.
 size_t blePortMaxFrame(uint8_t channel);
 
-// The current ATT MTU, for logging.
+// Current ATT MTU, for logging.
 uint16_t blePortMtu();
 
-// Hand one frame to the stack. Returns the bytes it ACCEPTED - not a delivery
-// receipt, and on a stack whose notify returns void, simply `len`. See
-// TelemetryEmit in g_protocol.h.
+// Hand one frame to the stack. Returns bytes accepted (`len` if the stack's
+// notify returns void), not bytes delivered.
 size_t blePortSend(uint8_t channel, const uint8_t *data, size_t len);
 
-// Stack housekeeping, every loop: whatever this stack needs that the driver
-// does not decide (re-advertising, the Battery Service).
+// Stack housekeeping (re-advertising, Battery Service). Called every loop.
 void blePortUpdate();
 
-// Disconnect any central and stop advertising, for a power state that wants
-// BLE silent. The driver only calls this after a successful blePortBegin().
+// Disconnect any central and stop advertising. Only called after a successful
+// blePortBegin().
 void blePortStop();
 
-// --- Implemented by the driver ----------------------------------------------
+// Implemented by the driver
 
-// Queue bytes a central wrote on `channel`, for dispatch to the protocol's
-// onWrite on the loop. THE ONLY DRIVER FUNCTION A CALLBACK MAY CALL.
+// Queue bytes written on `channel` for the protocol's onWrite. The only driver
+// function a callback may call.
 //
-// `wholeMessage` says what one call represents. true: exactly one client
-// write, so an oversized one is dropped whole - truncating would hand the
-// protocol part of a message that looks complete. false: a slice of a byte
-// stream, which is split across queue slots, since the stream never promised
-// boundaries. Either way a byte that cannot be queued is counted in
-// bleDroppedWrites().
+// wholeMessage true: one client write; an oversized one is dropped whole.
+// wholeMessage false: a byte-stream slice, split across queue slots as needed.
+// Bytes that cannot be queued count in bleDroppedWrites().
 void bleRxFromCallback(uint8_t channel, const uint8_t *data, size_t len,
                        bool wholeMessage);

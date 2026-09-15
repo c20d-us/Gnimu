@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,12 +17,8 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// IMU Axis module - accelerometer + gyroscope data with integrated filtering
-// ============================================================================
-
-// The IMU Axis class represents a single axis of an IMU sensor, providing
-// low-pass filtering and transient peak detection for telemetry payloads.
+// IMU axis: one sensor axis with low-pass filtering and transient peak
+// detection.
 class ImuAxis {
 private:
   float smoothedValue_;
@@ -32,28 +28,18 @@ private:
   float transientThreshold_;
 
 public:
-  // IMU Axis object constructor.
-  // alpha: Low-pass filter weight (0.0 to 1.0).Lower values mean more
-  //    smoothing.
-  // transientThreshold: The deviation delta from baseline required to
-  //    trigger raw peak transmission.
+  // alpha: low-pass weight, 0.0-1.0 (lower is smoother).
+  // transientThreshold: deviation from baseline at which the raw peak blends in.
   ImuAxis(float alpha, float transientThreshold);
 
-  // Update the filter. Called at the fast sampling rate.
-  // rawValue: The raw sensor reading from the IMU.
+  // Fold in one raw sample. Called at the sample rate.
   void update(float rawValue);
 
-  // Read the downsampled value for this window. Called at your transmission
-  // rate.
-  //
-  // Returns the smoothed baseline blended toward the window's raw peak in
-  // proportion to how far the largest deviation exceeded the transient
-  // threshold: pure baseline at/below the threshold, full raw peak at or beyond
-  // 2x the threshold, and a proportional mix in between.
+  // Return this window's value and start a new window. Called at the send rate.
+  // The result is the baseline blended toward the window's raw peak: pure
+  // baseline at or below the threshold, full peak at 2x or beyond.
   float read();
 
-  // Resets the internal filters and peak trackers to a baseline value.
-  //
-  // baselineValue: The value to reset the filters and peak trackers to.
+  // Reset the filter and peak tracker to baselineValue.
   void reset(float baselineValue = 0.0f);
 };

@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,23 +18,12 @@
 #include "config.h"
 #include "g_protocol.h"
 
-// ============================================================================
-// Resolves TELEMETRY_PROTOCOL (config.h) to the descriptor the firmware runs.
+// Active protocol: maps TELEMETRY_PROTOCOL (config.h) to its descriptor.
 //
-// THIS IS THE ONE PLACE A NEW PROTOCOL IS WIRED IN. Adding one is: write
-// g_proto_<name>.*, give it an ID in g_protocol.h, add a branch below. Nothing
-// in g_telemetry or g_ble changes - they consume ACTIVE_PROTOCOL and never
-// name a concrete protocol.
-//
-// Selection is COMPILE-TIME, so the unselected protocols' encoders are not
-// linked and cost no flash. That is the reason it is a #if rather than a
-// runtime table; see docs/multiprotocol-design.md section 8.1 for why runtime
-// switching was rejected.
-//
-// Kept out of g_protocol.h on purpose: this header includes config.h, and
-// g_protocol.h must not, or the encoders stop being host-compilable. The
-// harness includes g_protocol.h and g_proto_<name>.h but never this file.
-// ============================================================================
+// To add a protocol: write g_proto_<name>.*, give it an ID in g_protocol.h, and
+// add a branch below. Selection is compile-time, so unselected encoders are not
+// linked. Kept out of g_protocol.h so encoders stay free of config.h and build
+// on a host.
 
 #ifndef TELEMETRY_PROTOCOL
 #error "TELEMETRY_PROTOCOL is not defined. It belongs in config.h, Section 1."
@@ -49,15 +38,8 @@ static const ProtocolDescriptor *const ACTIVE_PROTOCOL = &RACEBOX_PROTOCOL;
 Valid values are the PROTO_* ids in g_protocol.h that have a branch here."
 #endif
 
-// Confirms the selected protocol defined PROTOCOL_MAX_FRAME_LEN, and that the
-// value is sane.
-//
-// NOT #ifndef: that constant is a constexpr, and the preprocessor cannot see
-// C++ declarations - an #ifndef on it is always true and would reject every
-// build. (It did. TELEMETRY_PROTOCOL above is a real macro, so its guard is
-// fine.) Referencing the constant here instead puts the "not declared" error in
-// this file, which is where the requirement is documented, rather than leaving
-// it to surface in whichever transport happens to use it first.
+// PROTOCOL_MAX_FRAME_LEN is constexpr, so it is checked here rather than with
+// #ifndef.
 static_assert(PROTOCOL_MAX_FRAME_LEN > 0,
               "The selected protocol header must define a positive "
               "PROTOCOL_MAX_FRAME_LEN - see g_protocol.h.");

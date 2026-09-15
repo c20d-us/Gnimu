@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -16,14 +16,8 @@
 
 #pragma once
 
-// ============================================================================
-// Status LED module - drives the board's status LED from the observable system
-// state (connection, and on battery boards the cell and power state).
-//
-// The interface is the same on every board; what the LED shows is not, because
-// the hardware is not - a single onboard LED on the ESP32, an RGB LED on the
-// XIAO. Each board's g_led.cpp documents its own priority table.
-// ============================================================================
+// Status LED: shows connection state and, on battery boards, battery and power
+// state. Each board's g_led.cpp defines its own patterns.
 
 // Configure the LED pin(s) and turn the LED off. Call once in setup().
 void ledBegin();

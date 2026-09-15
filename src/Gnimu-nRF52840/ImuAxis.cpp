@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -15,47 +15,31 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "ImuAxis.h"
-#include <math.h> // For fabs()
+#include <math.h>
 
-// Constructor for the IMU Axis object.
 ImuAxis::ImuAxis(float alpha, float transientThreshold) {
   alpha_ = alpha;
   transientThreshold_ = transientThreshold;
   reset(0.0f);
 }
 
-// Update the filter.
 void ImuAxis::update(float rawValue) {
-  // Check deviation against the current baseline before folding in this
-  // sample.
+  // Measure deviation against the baseline before folding the sample in.
   float currentDeviation = fabs(rawValue - smoothedValue_);
   if (currentDeviation > maxDeviation_) {
     maxDeviation_ = currentDeviation;
-    peakDeviationValue_ = rawValue; // Capture the true raw peak
+    peakDeviationValue_ = rawValue;
   }
 
-  // Advance the Exponential Moving Average baseline.
+  // EMA baseline.
   smoothedValue_ = (alpha_ * rawValue) + ((1.0f - alpha_) * smoothedValue_);
 }
 
 float ImuAxis::read() {
-  // Default to the smoothed baseline.
   float valueToSend = smoothedValue_;
 
-  // Blend the captured raw peak into the baseline in proportion to how far the
-  // largest in-window deviation exceeded the transient threshold, rather than
-  // hard-switching between the two. Blend weight w:
-  //   w = 0          at maxDeviation == threshold        -> pure smoothed
-  //   w ramps 0 -> 1 between threshold and 2*threshold   -> partial peak
-  //   w = 1          at maxDeviation >= 2*threshold       -> full raw peak
-  // The proportional ramp removes the threshold-boundary flicker of a hard
-  // switch (a marginal event no longer snaps the output between baseline and
-  // full peak frame to frame) while still surfacing genuine transients that a
-  // low-alpha EMA would otherwise wash out. Strong events (>= 2x threshold)
-  // still yield the full raw peak.
-  //
-  // The threshold guard also protects the division from a zero/negative
-  // (misconfigured) threshold, in which case no blending is applied.
+  // Blend weight w ramps 0 -> 1 as the peak deviation goes from 1x to 2x the
+  // threshold. A threshold <= 0 disables blending.
   if (transientThreshold_ > 0.0f && maxDeviation_ > transientThreshold_) {
     float w = (maxDeviation_ / transientThreshold_) - 1.0f;
     if (w > 1.0f) {
@@ -64,7 +48,7 @@ float ImuAxis::read() {
     valueToSend = smoothedValue_ + (w * (peakDeviationValue_ - smoothedValue_));
   }
 
-  // Reset window metrics for the next transmit window
+  // Start the next window.
   maxDeviation_ = 0.0f;
   peakDeviationValue_ = smoothedValue_;
 

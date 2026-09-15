@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,39 +17,21 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// Telemetry module
-//
-// Owns CADENCE, not wire format. On each new GNSS epoch it assembles the
-// canonical TelemetrySample (see g_protocol.h), hands it to the active
-// protocol encoder, forwards the emitted frames to the BLE module, and prints
-// periodic serial stats. Consumes the imu / gnss / ble / battery / protocol
-// module interfaces; owns no hardware itself.
-//
-// The packet layout itself lives in g_proto_racebox - nothing here knows what
-// a RaceBox packet looks like.
-// ============================================================================
+// Telemetry: on each GNSS epoch, builds a TelemetrySample (g_protocol.h),
+// passes it to the active encoder, sends the frames over BLE, and prints serial
+// stats. Knows nothing about the wire format.
 
 // Call once in setup() after the other modules are up.
 void telemetryBegin();
 
-// When a new GNSS epoch is available, retrieve it and count it.
-// When a BLE client is connected, build a TelemetrySample from it and pass it
-// to the active protocol encoder, whose emitted frames go to the BLE module.
-// Always print Serial stats on the frequency defined in config.h.
-// Call every loop() iteration.
+// Consume a new GNSS epoch if one arrived; encode and send it when a client is
+// connected. Prints stats every LOG_STATS_INTERVAL_MS. Call every loop().
 void telemetrySendIfReady();
 
-// Observed GNSS epoch rate in Hz for the most recently completed stats window.
-// Windows close every LOG_STATS_INTERVAL_MS on the clock, but the rate is
-// measured epoch to epoch - from the last epoch of the previous window to the
-// last of this one - so it does not alias against the receiver's clock: a
-// steady stream reads its true rate (to within a tenth), and a lost epoch
-// lowers exactly one window's reading. Returns 0.0f until the first window
-// closes, and for any window in which no epoch arrived.
+// GNSS epoch rate (Hz) over the last stats window, measured epoch to epoch.
+// 0.0f before the first window closes or if no epoch arrived.
 float telemetryGnssRateHz();
 
-// Observed BLE packet send rate in Hz: counted on the same epochs over the
-// same span as telemetryGnssRateHz(), so the two differ only when frames were
-// actually dropped in that window.
+// BLE send rate (Hz) over the same span as telemetryGnssRateHz(). The two differ
+// only when frames were dropped.
 float telemetryBleRateHz();

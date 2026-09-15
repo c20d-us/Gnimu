@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,43 +17,24 @@
 #pragma once
 #include <Arduino.h>
 
-// ============================================================================
-// Gnimu state machine
-//
-// Owns the SystemState enum + the transition table. Consumes:
-//   - powerUsbPresent()                (g_power)
-//   - powerSwitchOn()                  (g_power)
-//   - batteryCutoffRequested()         (g_battery)
-//   - bleIsSubscribed()                (g_ble)
-// Actuates:
-//   - gnssEnd()                        (g_gnss)
-//   - powerHoldPeripheralsOff()        (g_power)
-//   - powerEnterDeepSleep()            (g_power)
-//   - NVIC_SystemReset()
-// ============================================================================
+// State machine. Reads USB, switch, battery cutoff, and BLE subscription;
+// drives gnssEnd(), the power holds, deep sleep, and reset.
 
-// The State Machine Definition
 enum SystemState {
-  STATE_RUNNING,      // Normal operation
-  STATE_CHARGE_ONLY,  // USB in + switch on + STATE_CHARGE_ONLY_ON_USB=1:
-                      // peripherals held off so the charge IC gets max current
-                      // to the cell. Exit is unplug or switch off.
-  STATE_BATTERY_WAIT, // USB in but switch off; waits for switch on or unplug
-  STATE_DEEP_SLEEP,   // Entry action only; MCU halts in System OFF. Reached
-                      // on low voltage, or STATE_IDLE_TIMEOUT_MIN idle.
+  STATE_RUNNING,      // normal operation
+  STATE_CHARGE_ONLY,  // USB in, switch on, STATE_CHARGE_ONLY_ON_USB 1:
+                      // peripherals off for full charge current
+  STATE_BATTERY_WAIT, // USB in, switch off
+  STATE_DEEP_SLEEP,   // System OFF, on low voltage or idle timeout
 };
 
-// Classify + record the initial state (RUNNING / BATTERY_WAIT / DEEP_SLEEP).
-// If the classification lands in DEEP_SLEEP, calls powerEnterDeepSleep()
-// directly and does NOT return. Otherwise records the state and returns it,
-// so setup() can decide whether to bring up GNSS/IMU/BLE (RUNNING only).
-//
-// Call after powerBegin() + batteryBegin() + ledBegin() have run. Reads
-// powerSwitchOn(), powerUsbPresent(), and batteryGetStatus().voltage.
+// Classify and record the initial state. Enters deep sleep directly (no return)
+// if that is the result; otherwise returns RUNNING or BATTERY_WAIT. Call after
+// powerBegin(), batteryBegin(), and ledBegin().
 SystemState stateBegin();
 
 // Advance the state machine. Call every loop().
 void stateUpdate();
 
-// The current live state (for g_led + diagnostics to observe).
+// The current state.
 SystemState stateCurrent();

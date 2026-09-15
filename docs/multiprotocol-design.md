@@ -440,6 +440,13 @@ become compile errors and leave the table.
   produced no MTU refusal and no dropped frame. The connect-time refusals it once
   guarded appear only with the MTU request forced to 23.
 
+  That is also how to exercise the refusal path: set `kRequestedMtu` to 23 in
+  `g_ble_port_esp32.cpp`, and a client that subscribes before the exchange
+  completes (Gnimu Monitor's reconnects) sees g_ble's refusal and recovery lines.
+  It does not simulate a central that declines the raise — the central drives
+  the exchange, and an iOS central negotiated 517 regardless. That path is
+  untested.
+
 #### Verification
 
 - **`test/ble/`**: the shared `g_ble.cpp` against a scripted fake port, built

@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -75,8 +75,8 @@ static Uart &gnssSerial = Serial1;
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 
 // Common u-blox baud rates.
-static const uint32_t BAUD_RATES[] = {9600,   19200,  38400, 57600,
-                                      115200, 230400, 460800};
+static const uint32_t BAUD_RATES[] = {4800,   9600,   19200,  38400, 57600,
+                                      115200, 230400, 460800, 921600};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
 
 // Sweep common baud rates until the receiver responds. Returns true and

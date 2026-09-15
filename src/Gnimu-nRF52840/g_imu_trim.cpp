@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,57 +17,31 @@
 #include "g_imu_trim.h"
 #include <math.h>
 
-// ============================================================================
-// Internal state. All of it is reset by imuTrimBegin() and none of it is
-// persisted - see the header for why there is no stored seed.
-// ============================================================================
+// State, all reset by imuTrimBegin().
 
 static ImuTrimConfig cfg_;
 
-// The locked unit gravity estimate, in the vehicle frame. This - not the
-// rotation matrix - is what the averaging happens on.
-//
-// Averaging rotation matrices element-wise does not produce a rotation (the
-// result is not orthonormal), and doing it properly would mean carrying
-// quaternions and a slerp. Averaging the gravity VECTOR and rebuilding the
-// matrix from it sidesteps that entirely, and it is the more natural space to
-// work in anyway: what is being measured is where gravity appears to point,
-// not some abstract rotation.
+// Locked unit gravity vector in the vehicle frame. Averaging is done on this
+// vector, not on rotation matrices.
 static float gRef_[3];
 
-// Orientation capture, accumulated across cfg_.lockBlocks blocks and then
-// frozen. An equal-weight mean rather than a running blend: there is exactly
-// one measurement event per power cycle, so there is nothing to weight against.
+// Orientation capture: equal-weight sum over cfg_.lockBlocks blocks.
 static float lockSum_[3];
 static uint32_t lockBlocksSeen_;
 
-// Accelerometer correction, derived from gRef_ whenever it changes. Cached so
-// that imuTrimApply() is a plain matrix-vector product on the hot path.
+// Accel rotation, rebuilt from gRef_.
 static float R_[3][3];
 
 static float gyroBias_[3];
 
-// Residual along the CORRECTED vertical, subtracted after the rotation so the
-// resting reading comes out at exactly 1 g.
-//
-// A rotation preserves length. It can straighten a tilted gravity vector but
-// can never lengthen a short one, so on its own it leaves a chip with a real
-// zero-g bias reading permanently low - an MPU-6050 with -69 mg on Z sits at
-// 0.925 g forever. The removed IMU_*_OFFSET_* defines used to cover this;
-// this is what replaces them.
+// Residual along the corrected vertical, so a resting reading is exactly 1g.
 static float accelZBias_;
 
 static float tiltDeg_;
 static bool converged_;
 
-// --- Gate: rolling gyro variance -------------------------------------------
-// The gate needs a variance estimate BEFORE a block exists to compute one
-// from, so this runs continuously and independently of block accumulation.
-//
-// An EMA rather than a ring buffer: O(1) memory instead of 3*N floats, it
-// matches the EMA idiom already used in ImuAxis, and a gate does not need an
-// exact variance. varSamples_ exists because an unsettled EMA starts near zero
-// and would otherwise PASS the stillness test on no information at all.
+// Gate: rolling variance (EMA). varSamples_ keeps an unsettled estimate from
+// passing.
 static const float GYRO_VAR_WINDOW_MS = 500.0f;
 static float varMean_[3];
 static float varSq_[3];
@@ -77,21 +51,13 @@ static float varAlpha_;
 static uint32_t varSamples_;
 static uint32_t varSamplesNeeded_;
 
-// Squared gate bounds, precomputed in imuTrimBegin().
-//
-// Every stillness test is naturally written against a magnitude, which would
-// put sqrtf() calls on the per-sample path. Comparing squares instead is
-// exactly equivalent - all quantities involved are non-negative and
-// accelSanityTol is constrained below 1.0, so squaring is monotonic - and
-// leaves the hot path with no transcendentals at all. The remaining
-// sqrtf/acosf live in consumeBlock(), which runs at 1 Hz and only while
-// stationary.
+// Squared gate bounds, so the per-sample path needs no sqrtf().
 static float gyroVarMaxSq_;
 static float accelVarMaxSq_;
 static float accelMagLoSq_;
 static float accelMagHiSq_;
 
-// --- Gate: qualification and block accumulation ----------------------------
+// Gate: qualification and block accumulation
 static uint32_t qualifySamples_;
 static uint32_t qualifyNeeded_;
 static float accelSum_[3];
@@ -99,11 +65,7 @@ static float gyroSum_[3];
 static uint32_t blockSamples_;
 static uint32_t blockNeeded_;
 
-// ============================================================================
-// Small vector helpers. Written out in general form rather than folded into
-// the specialised expressions they feed, because the whole rotation derivation
-// below has to be auditable by eye - there is no host test standing behind it.
-// ============================================================================
+// Vector helpers
 
 static float dot3(const float a[3], const float b[3]) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -131,40 +93,12 @@ static void setIdentity(float m[3][3]) {
       m[r][c] = (r == c) ? 1.0f : 0.0f;
 }
 
-// ============================================================================
-// Rebuild R_ from gRef_.
+// Rebuild R_ so that R_ * gRef_ = (0, 0, 1). Rodrigues' rotation of unit vector
+// a onto b, with v = a x b and c = a . b:
 //
-// We want the rotation R that carries the measured gravity direction u onto
-// vehicle-up, z = (0, 0, 1) - that is, R * u = z. Applying that same R to
-// every subsequent sample expresses it in the level vehicle frame.
+//     R = I + [v]x + [v]x^2 / (1 + c)
 //
-// Rodrigues, in the trig-free form for "rotate unit vector a onto unit vector
-// b". With v = a x b and c = a . b:
-//
-//     R = I + [v]x + [v]x^2 * 1/(1+c)
-//
-// where [v]x is the skew-symmetric cross-product matrix of v.
-//
-// SIGN CONVENTION - worked by hand, since nothing else checks it. Take a
-// device pitched by theta so gravity acquires a +X component:
-//
-//     u = (sin0, 0, cos0)
-//     v = u x z = (u_y, -u_x, 0) = (0, -sin0, 0)
-//     c = u . z = cos0
-//
-// which expands to
-//
-//     R = [  cos0  0  -sin0 ]
-//         [   0    1    0   ]
-//         [  sin0  0   cos0 ]
-//
-// and R * u = (cos0*sin0 - sin0*cos0, 0, sin0*sin0 + cos0*cos0) = (0, 0, 1).
-// Correct: the tilt is removed rather than doubled.
-//
-// The 1/(1+c) term is singular at c = -1 (device fully inverted). It cannot be
-// reached here: callers reject any block whose tilt exceeds cfg_.maxTiltDeg,
-// which is validated well under 90 degrees, so c stays close to +1.
-// ============================================================================
+// Singular at c = -1 (inverted), which the max-tilt limit rules out.
 static void rebuildRotation() {
   static const float kUp[3] = {0.0f, 0.0f, 1.0f};
 
@@ -172,7 +106,6 @@ static void rebuildRotation() {
   cross3(gRef_, kUp, v);
   const float c = dot3(gRef_, kUp);
 
-  // Perfectly level (or numerically indistinguishable from it): no rotation.
   const float denom = 1.0f + c;
   if (denom < 1e-6f) {
     setIdentity(R_);
@@ -203,9 +136,8 @@ static void rebuildRotation() {
   }
 }
 
-// Discard any part-accumulated block and the stillness credit earned so far.
-// Called on every gate failure: a window has to be continuous to mean
-// anything, so a single moving sample invalidates everything before it.
+// Drop the qualification credit, the partial block, and any partial capture.
+// Called on every gate failure, since a window must be one unbroken stop.
 static void resetWindow() {
   qualifySamples_ = 0;
   blockSamples_ = 0;
@@ -213,8 +145,6 @@ static void resetWindow() {
     accelSum_[i] = 0.0f;
     gyroSum_[i] = 0.0f;
   }
-  // Discard a part-finished orientation capture too. The capture has to come
-  // from one unbroken stop or it averages across two different attitudes.
   lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
   lockBlocksSeen_ = 0;
 }
@@ -222,9 +152,7 @@ static void resetWindow() {
 void imuTrimBegin(const ImuTrimConfig &cfg) {
   cfg_ = cfg;
 
-  // Start from a level assumption with no correction applied. imuTrimApply()
-  // is a no-op in this state, so pre-convergence data passes through
-  // untouched rather than being silently altered by a guess.
+  // Level, uncorrected start.
   gRef_[0] = 0.0f;
   gRef_[1] = 0.0f;
   gRef_[2] = 1.0f;
@@ -242,9 +170,7 @@ void imuTrimBegin(const ImuTrimConfig &cfg) {
   tiltDeg_ = 0.0f;
   converged_ = false;
 
-  // Sample counts derived from the configured pacing. Guard the division:
-  // a zero interval would be a config error, and every window collapsing to
-  // one sample would let the gate pass on a single still reading.
+  // Convert durations to sample counts, each at least 1.
   const float interval =
       (cfg_.sampleIntervalMs > 0.0f) ? cfg_.sampleIntervalMs : 1.0f;
   qualifyNeeded_ = (uint32_t)(cfg_.qualifyMs / interval);
@@ -257,7 +183,7 @@ void imuTrimBegin(const ImuTrimConfig &cfg) {
   if (varSamplesNeeded_ < 1)
     varSamplesNeeded_ = 1;
 
-  // Standard EMA-to-window-length equivalence.
+  // EMA alpha equivalent to an N-sample window.
   varAlpha_ = 2.0f / ((float)varSamplesNeeded_ + 1.0f);
   varSamples_ = 0;
 
@@ -271,19 +197,14 @@ void imuTrimBegin(const ImuTrimConfig &cfg) {
   resetWindow();
 }
 
-// Advance the rolling gyro variance, then report whether every stillness
-// criterion currently holds.
-//
-// The gyro test is on VARIANCE, not magnitude. Gating on |gyro| would be
-// circular: a chip whose resting bias exceeds the threshold would hold the
-// gate shut against the very measurement that would correct it (the OLED
-// board's Y axis sits at -4 deg/s). The mean is what we are trying to
-// measure; the spread is what says whether we are actually rotating.
+// Update the rolling variances and return whether every stillness test passes.
+// Gyro and accel are gated on variance, not magnitude, so a large bias can't
+// block its own correction.
 static bool gatePasses(const float accel[3], const float gyro[3],
                        float speedMps, bool speedValid) {
   for (int i = 0; i < 3; i++) {
     if (varSamples_ == 0) {
-      // Seed, else the first sample reads as a spike against a zero mean.
+      // Seed the mean so the first sample isn't a spike.
       varMean_[i] = gyro[i];
       varSq_[i] = 0.0f;
       aVarMean_[i] = accel[i];
@@ -300,11 +221,7 @@ static bool gatePasses(const float accel[3], const float gyro[3],
   if (varSamples_ < varSamplesNeeded_)
     varSamples_++;
 
-  // GNSS speed. Requiring a fix closes the one real hole in the rest of the
-  // gate: constant-velocity cruise on smooth pavement reads ~1 g magnitude
-  // with near-zero gyro variance, and is otherwise indistinguishable from
-  // parked. The escape hatch exists because bench testing indoors never gets
-  // a fix - see IMU_TRIM_REQUIRE_FIX.
+  // GNSS speed. Without a fix, pass only if requireFix is off.
   if (speedValid) {
     if (speedMps > cfg_.speedMaxMps)
       return false;
@@ -312,22 +229,11 @@ static bool gatePasses(const float accel[3], const float gyro[3],
     return false;
   }
 
-  // Accelerometer PLAUSIBILITY, not equality. A wide band around 1 g, only
-  // meant to catch something gross: a misconfigured gravityNative (which would
-  // be wrong by ~9.8x), a dead axis, a failed read.
-  //
-  // Deliberately NOT a tight "is |a| exactly 1 g" test. That has the same
-  // circularity as gating the gyro on magnitude would: |a| at rest is
-  // contaminated by the chip's own zero-g bias, which is precisely what the
-  // trim exists to remove, so a tight band holds the gate shut against the
-  // very measurement that would fix it. An MPU-6050 reading 0.925 g failed a
-  // 4% band on every sample and could never converge. Motion is caught by the
-  // variance test below and by the GNSS speed gate, not by this.
+  // Wide |a| plausibility band; catches gross faults only.
   const float magSq = dot3(accel, accel);
   if (magSq < accelMagLoSq_ || magSq > accelMagHiSq_)
     return false;
 
-  // An unsettled variance estimate is not evidence of stillness.
   if (varSamples_ < varSamplesNeeded_)
     return false;
   for (int i = 0; i < 3; i++) {
@@ -340,39 +246,28 @@ static bool gatePasses(const float accel[3], const float gyro[3],
   return true;
 }
 
-// Fold one completed stationary block into the estimates.
+// Fold a completed stationary block into the estimates.
 static void consumeBlock() {
   const float n = (float)blockSamples_;
 
-  // --- Gyro: take the block mean outright, every time. --------------------
-  // At rest the true rate is exactly zero in every orientation, so every block
-  // is a clean direct measurement and there is nothing to average away. This
-  // runs for the life of the session - unlike the orientation below, the gyro
-  // is NOT locked. Ground slope does not appear on a rate gyro, so the reason
-  // for locking simply does not apply, and gyro bias drifts with temperature
-  // in a way that mount tilt does not.
-  //
-  // Accepted regardless of what the accelerometer half decides: gyro bias is
-  // independent of mounting tilt, so even a steeply mounted device yields a
-  // perfectly valid gyro zero.
+  // Gyro: the block mean is the bias. Updated every block, never locked, and
+  // independent of the accel result.
   for (int i = 0; i < 3; i++)
     gyroBias_[i] = gyroSum_[i] / n;
 
-  // --- Accel: measured once per power cycle, then locked. ------------------
+  // Accel: captured once, then locked.
   if (converged_)
     return;
 
-  // Accumulate the block mean UNNORMALISED. The direction gives the rotation
-  // and the length gives the residual, and both are needed - see accelZBias_.
+  // Unnormalized mean: direction gives the rotation, length gives the residual.
   float m[3];
   for (int i = 0; i < 3; i++)
     m[i] = accelSum_[i] / n;
   const float mag = sqrtf(dot3(m, m));
   if (mag < 1e-6f)
-    return; // degenerate; nothing usable in this block
+    return;
 
-  // Report this block's tilt while the capture is still filling, so the
-  // console shows a live angle rather than a flat 0 during the wait.
+  // Live tilt while the capture fills.
   const float u[3] = {m[0] / mag, m[1] / mag, m[2] / mag};
   tiltDeg_ = tiltOf(u);
 
@@ -382,7 +277,7 @@ static void consumeBlock() {
   if (lockBlocksSeen_ < cfg_.lockBlocks)
     return;
 
-  // Capture complete. Split the mean into a direction and a length.
+  // Capture complete.
   float mean[3];
   for (int i = 0; i < 3; i++)
     mean[i] = lockSum_[i] / (float)lockBlocksSeen_;
@@ -394,16 +289,11 @@ static void consumeBlock() {
   }
   const float dir[3] = {mean[0] / mn, mean[1] / mn, mean[2] / mn};
 
-  // Measured tilt, recorded BEFORE the range test and kept even when that test
-  // fails: an out-of-range mount is precisely what a guard exists to report, so
-  // the number has to survive the refusal.
+  // Recorded before the range check so an out-of-range tilt is still reported.
   tiltDeg_ = tiltOf(dir);
 
   if (tiltDeg_ > cfg_.maxTiltDeg) {
-    // Out of scope. Refuse the rotation rather than applying a clamped, partly
-    // corrected one, and stay unconverged so the console keeps saying so. Drop
-    // the capture and let a later stop try again - the mount may yet be fixed
-    // without a reboot.
+    // Refuse, stay unconverged, and let a later stop retry.
     lockSum_[0] = lockSum_[1] = lockSum_[2] = 0.0f;
     lockBlocksSeen_ = 0;
     return;
@@ -413,13 +303,10 @@ static void consumeBlock() {
     gRef_[i] = dir[i];
   rebuildRotation();
 
-  // R carries the resting vector onto the vertical, giving (0, 0, mn) - the
-  // right direction but still the measured length. Subtracting the shortfall
-  // along that vertical makes a resting device read exactly (0, 0, 1 g), which
-  // is what the removed IMU_*_OFFSET_* defines used to guarantee.
+  // The rotated resting vector is (0, 0, mn); remove the difference from 1g.
   accelZBias_ = mn - cfg_.gravityNative;
 
-  converged_ = true; // locked for the rest of this power cycle
+  converged_ = true; // locked until the next imuTrimBegin()
 }
 
 void imuTrimUpdate(const float accel[3], const float gyro[3], float speedMps,
@@ -429,9 +316,7 @@ void imuTrimUpdate(const float accel[3], const float gyro[3], float speedMps,
     return;
   }
 
-  // Serve out the stillness qualification before accumulating anything. The
-  // window has to be continuous to mean anything, so this counter only ever
-  // advances on an unbroken run of passing samples.
+  // Serve the qualification period before accumulating.
   if (qualifySamples_ < qualifyNeeded_) {
     qualifySamples_++;
     return;
@@ -445,9 +330,7 @@ void imuTrimUpdate(const float accel[3], const float gyro[3], float speedMps,
 
   if (blockSamples_ >= blockNeeded_) {
     consumeBlock();
-    // Stay qualified - we are still stationary. Only the block accumulators
-    // roll over, so a long stop yields a steady run of blocks rather than
-    // re-serving the qualification delay between each.
+    // Still qualified: start the next block immediately.
     blockSamples_ = 0;
     for (int i = 0; i < 3; i++) {
       accelSum_[i] = 0.0f;
@@ -457,14 +340,12 @@ void imuTrimUpdate(const float accel[3], const float gyro[3], float speedMps,
 }
 
 void imuTrimApply(float accel[3], float gyro[3]) {
-  // A general rotation cannot be done in place - writing accel[0] would
-  // clobber a value the later rows still need - so work from a copy. Same
-  // reasoning as remapAxes() in g_imu.cpp.
+  // Rotate from a copy; can't be done in place.
   const float in[3] = {accel[0], accel[1], accel[2]};
   for (int r = 0; r < 3; r++)
     accel[r] = R_[r][0] * in[0] + R_[r][1] * in[1] + R_[r][2] * in[2];
 
-  // After the rotation, in the vehicle frame. Zero until the first lock.
+  // Zero until the orientation locks.
   accel[2] -= accelZBias_;
 
   for (int i = 0; i < 3; i++)

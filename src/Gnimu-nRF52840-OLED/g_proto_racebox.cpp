@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,14 +18,11 @@
 #include "g_ubx_helpers.h"
 
 void raceboxEncode(const TelemetrySample &s, TelemetryEmit emit) {
-  // The 80-byte payload is built in place inside the packet buffer (it
-  // occupies bytes 6..85), so no separate staging buffer or copy is needed.
+  // The payload is built in place at bytes 6-85.
   uint8_t packet[RACEBOX_PACKET_LEN] = {0};
   uint8_t *payload = packet + 6;
 
-  // Casts pin each field to its RaceBox protocol wire width (U1/U2/U4/I4),
-  // so the writeLittleEndian overload is correct regardless of the source
-  // field types.
+  // Casts set each field's wire width.
   writeLittleEndian(payload, 0, (uint32_t)s.iTOW); // U4
   writeLittleEndian(payload, 4, (uint16_t)s.year); // U2
   writeLittleEndian(payload, 6, (uint8_t)s.month); // U1
@@ -34,67 +31,56 @@ void raceboxEncode(const TelemetrySample &s, TelemetryEmit emit) {
   writeLittleEndian(payload, 9, (uint8_t)s.min);   // U1
   writeLittleEndian(payload, 10, (uint8_t)s.sec);  // U1
 
-  // Offset 11: Validity Flags
+  // Offset 11: validity flags
   uint8_t validityFlags = 0;
   if (s.validDate)
-    validityFlags |= (1 << 0); // Bit 0: valid date
+    validityFlags |= (1 << 0); // valid date
   if (s.validTime)
-    validityFlags |= (1 << 1); // Bit 1: valid time
+    validityFlags |= (1 << 1); // valid time
   if (s.fullyResolved)
-    validityFlags |= (1 << 2); // Bit 2: fully resolved
+    validityFlags |= (1 << 2); // fully resolved
   if (s.validMag)
-    validityFlags |= (1 << 3); // Bit 3: valid magnetic declination
+    validityFlags |= (1 << 3); // valid magnetic declination
   writeLittleEndian(payload, 11, validityFlags);
 
-  // Offset 12: Time Accuracy
+  // Offset 12: time accuracy
   writeLittleEndian(payload, 12, (uint32_t)s.tAcc); // U4
 
-  // Offset 16: Nanoseconds
+  // Offset 16: nanoseconds
   writeLittleEndian(payload, 16, (int32_t)s.nano); // I4
 
-  // Offset 20: Fix Status
-  // Protocol only defines 0 (no fix), 2 (2D fix), 3 (3D fix).
-  // Clamp any other u-blox fix types (e.g. 1=DR only, 4=GNSS+DR) to 0 (no fix).
-  //
-  // PROTOCOL POLICY, not data - which is exactly why TelemetrySample carries
-  // the raw fixType and this clamp lives here. RaceChrono's fix field uses
-  // NMEA GGA semantics and needs a different derivation from the same input.
+  // Offset 20: fix status. RaceBox defines only 0, 2, and 3; anything else is
+  // sent as 0.
   uint8_t safeFixType = (s.fixType == 2 || s.fixType == 3) ? s.fixType : 0;
   writeLittleEndian(payload, 20, safeFixType);
 
-  // Offset 21: Fix Status Flags
+  // Offset 21: fix status flags
   uint8_t fixStatusFlags = 0;
 
-  // Bit 0: valid fix - a 3D fix that the receiver also reports as within its
-  // DOP/accuracy masks (gnssFixOK), the strictest read of "valid".
+  // Bit 0: valid fix, a 3D fix with gnssFixOK.
   if (s.fixType == 3 && s.gnssFixOK) {
     fixStatusFlags |= (1 << 0);
   }
 
-  // Bit 5: valid heading. Read from the SAME sample being transmitted, so it
-  // can neither block nor describe a different epoch than the rest of this
-  // packet. Measured to be permanently zero on M10 hardware - see
-  // docs/multiprotocol-design.md section 14.1. Preserved as-is regardless:
-  // phase B changes no behavior.
+  // Bit 5: valid heading. Always 0 on M10 receivers.
   if (s.headVehValid) {
     fixStatusFlags |= (1 << 5);
   }
   writeLittleEndian(payload, 21, fixStatusFlags);
 
-  // Offset 22: Date/Time Flags
+  // Offset 22: date/time flags
   uint8_t dateTimeFlags = 0;
   if (s.validTime)
-    dateTimeFlags |= (1 << 5); // Available confirmation of Date/Time Validity
+    dateTimeFlags |= (1 << 5); // date/time validity confirmation available
   if (s.validDate)
-    dateTimeFlags |= (1 << 6); // Confirmed UTC Date Validity
+    dateTimeFlags |= (1 << 6); // UTC date confirmed
   if (s.validTime && s.fullyResolved)
-    dateTimeFlags |= (1 << 7); // Confirmed UTC Time Validity
+    dateTimeFlags |= (1 << 7); // UTC time confirmed
   writeLittleEndian(payload, 22, dateTimeFlags);
 
-  // Offset 23: Number of SVs
+  // Offset 23: satellites used
   writeLittleEndian(payload, 23, (uint8_t)s.numSV); // U1
 
-  // Remaining fields, mostly direct mappings from u-blox data
   writeLittleEndian(payload, 24, (int32_t)s.lon);      // I4
   writeLittleEndian(payload, 28, (int32_t)s.lat);      // I4
   writeLittleEndian(payload, 32, (int32_t)s.height);   // I4
@@ -107,33 +93,21 @@ void raceboxEncode(const TelemetrySample &s, TelemetryEmit emit) {
   writeLittleEndian(payload, 60, (uint32_t)s.headAcc); // U4
   writeLittleEndian(payload, 64, (uint16_t)s.pDOP);    // U2
 
-  // Offset 66: Lat/Lon Flags
-  //
-  // NOTE the asymmetry with offset 20: this tests the RAW fixType while the
-  // fix-status byte above reports the CLAMPED one. For a raw fixType of 4 or
-  // 5 the packet therefore says "no fix" and "coordinates valid" at the same
-  // time. That is pre-existing behavior, preserved deliberately - see
-  // docs/multiprotocol-design.md section 14.2. Changing it is a separate,
-  // visible commit, not something to smuggle into a refactor.
+  // Offset 66: lat/lon flags. Tests the raw fixType, so fixType 4 or 5 reports
+  // "no fix" at offset 20 but valid coordinates here.
   uint8_t latLonFlags = 0;
-  if (s.fixType < 2) {       // If no 2D/3D fix, coordinates are invalid
-    latLonFlags |= (1 << 0); // Bit 0: Invalid Latitude, Longitude, WGS
-                             // Altitude, and MSL Altitude
+  if (s.fixType < 2) {
+    latLonFlags |= (1 << 0); // lat/lon and altitudes invalid
   }
   writeLittleEndian(payload, 66, latLonFlags);
 
-  // Offset 67: Battery status (1 byte) - bit 7 = charging, bits 0-6 = percent.
-  //
-  // PROTOCOL POLICY. This packing used to live in batteryProtocolByte() in
-  // g_battery, which put a RaceBox wire format inside a hardware module. The
-  // > 100 clamp is defensive (voltageToPercent already caps at 100) and is
-  // kept verbatim so the output stays byte-identical.
+  // Offset 67: battery. Bit 7 = charging, bits 0-6 = percent.
   const uint8_t percent = s.batteryPercent > 100 ? 100 : s.batteryPercent;
   const uint8_t batteryByte =
       (uint8_t)((s.batteryCharging ? 0x80 : 0x00) | (percent & 0x7F));
   writeLittleEndian(payload, 67, batteryByte);
 
-  // Offset 68-78: IMU data
+  // Offsets 68-79: IMU
   writeLittleEndian(payload, 68, s.accelX);
   writeLittleEndian(payload, 70, s.accelY);
   writeLittleEndian(payload, 72, s.accelZ);
@@ -141,15 +115,14 @@ void raceboxEncode(const TelemetrySample &s, TelemetryEmit emit) {
   writeLittleEndian(payload, 76, s.gyroY);
   writeLittleEndian(payload, 78, s.gyroZ);
 
-  // Add RaceBox protocol header
+  // UBX header
   packet[0] = 0xB5;
   packet[1] = 0x62;
-  packet[2] = 0xFF; // Message Class: RaceBox Data Message
-  packet[3] = 0x01; // Message ID: RaceBox Data Message
-  packet[4] = 80;   // Payload size
+  packet[2] = 0xFF; // class: RaceBox Data Message
+  packet[3] = 0x01; // id: RaceBox Data Message
+  packet[4] = 80;   // payload length
   packet[5] = 0;
 
-  // Calculate payload checksum and add to packet
   UbxChecksum checksum = calculateChecksum(payload, 80, 0xFF, 0x01);
   packet[86] = checksum.ckA;
   packet[87] = checksum.ckB;
@@ -157,46 +130,30 @@ void raceboxEncode(const TelemetrySample &s, TelemetryEmit emit) {
   emit(TELEMETRY_CHANNEL_PRIMARY, packet, RACEBOX_PACKET_LEN);
 }
 
-// ----------------------------------------------------------------------------
 // Descriptor
-// ----------------------------------------------------------------------------
 
-// Channel table. Order defines the channel indices (RACEBOX_CHANNEL_TX / _RX),
-// and encode() emits on TELEMETRY_CHANNEL_PRIMARY, which is index 0 - the Tx
-// characteristic.
-//
-// On the nRF build these UUIDs are not read: TRANSPORT_NORDIC_UART hands the
-// job to Bluefruit's BLEUart, whose UUIDs ARE these values. On ESP32, which has
-// no BLEUart, this table is what the characteristics are built from. Both paths
-// must therefore produce the same GATT - which they do only because the Nordic
-// UART UUIDs and the RaceBox UUIDs are the same three values.
+// Order sets RACEBOX_CHANNEL_TX / _RX. The nRF port ignores this table (BLEUart
+// uses the same UUIDs); the ESP32 port builds its GATT from it.
 static constexpr ProtocolChannel raceboxChannels[] = {
     {0, RACEBOX_CHARACTERISTIC_TX_UUID, PROP_NOTIFY},
     {0, RACEBOX_CHARACTERISTIC_RX_UUID, PROP_WRITE | PROP_WRITE_NR},
 };
 
-// Client writes on the Rx characteristic. RaceBox's command set is not
-// implemented - the previous transport-level handler only logged the bytes, and
-// preserving that exactly is the point of this phase. It lives here rather than
-// in g_ble so that a protocol which DOES need command parsing (RaceChrono's CAN
-// filter characteristic, for one) has somewhere protocol-specific to put it.
+// RaceBox commands are not currently implemented.
+// g_ble logs each write before calling this.
 static void raceboxOnWrite(uint8_t channel, const uint8_t *data, size_t len) {
   (void)channel;
   (void)data;
   (void)len;
-  // Deliberately empty. g_ble logs the bytes it received before calling this,
-  // which is all the old rxCallback did.
 }
 
-// constexpr, not just const, so the assert below can read the descriptor
-// itself rather than a copy of its fields. The extern declaration in
-// g_proto_racebox.h still gives it external linkage.
+// constexpr so the asserts below can read it.
 constexpr ProtocolDescriptor RACEBOX_PROTOCOL = {
     RACEBOX_MODEL,
     RACEBOX_MANUFACTURER,
     RACEBOX_HARDWARE_VERSION,
     RACEBOX_FIRMWARE_VERSION,
-    0, // no 16-bit service UUID; RaceBox uses the 128-bit Nordic one
+    0, // no 16-bit service UUID
     RACEBOX_SERVICE_UUID,
     TRANSPORT_NORDIC_UART,
     raceboxChannels,
@@ -205,17 +162,12 @@ constexpr ProtocolDescriptor RACEBOX_PROTOCOL = {
     raceboxOnWrite,
 };
 
-// The compile-time shape the transports rely on (g_protocol.h), against the
-// descriptor it describes.
 static_assert(RACEBOX_PROTOCOL.channelCount == PROTOCOL_CHANNEL_COUNT &&
                   RACEBOX_PROTOCOL.transport == PROTOCOL_TRANSPORT,
               "ERROR: PROTOCOL_CHANNEL_COUNT / PROTOCOL_TRANSPORT in "
               "g_proto_racebox.h disagree with RACEBOX_PROTOCOL.");
 
-// The descriptor against the transport it declares (API-4). On nRF the Nordic
-// UART transport is BLEUart, which ignores the table above; on ESP32 the table
-// IS the GATT. This is what keeps the two identical - see nordicUartShapeOk()
-// in g_protocol.h.
+// Keeps the ESP32 GATT identical to BLEUart's.
 static_assert(RACEBOX_PROTOCOL.transport != TRANSPORT_NORDIC_UART ||
                   nordicUartShapeOk(RACEBOX_PROTOCOL),
               "ERROR: RACEBOX_PROTOCOL declares TRANSPORT_NORDIC_UART, but its "

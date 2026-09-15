@@ -136,6 +136,118 @@ interrupt-attach, task-creation, semaphore, queue or critical-section call
 appears in any firmware tree — so the first line of this section is a checked
 fact rather than a claim.
 
+## Timing measurements
+
+The measurements behind the loop-latency constants. The source comments state
+the constraint; this section records how the numbers were arrived at.
+
+### GNSS UART rings
+
+**nRF52840.** `Serial1` feeds a software ring one ENDRX interrupt at a time
+(core `Uart.cpp`, `RingBuffer.cpp`). The ring is `SERIAL_BUFFER_SIZE` (64) bytes
+with one slot reserved to tell full from empty, so 63 are usable — 5.47 ms at
+115200 8N1. A NAV-PVT is 100 bytes (92 payload + 8 frame), 8.68 ms on the wire,
+so the ring cannot hold one message; outside that window a 20 Hz stream leaves
+~41 ms of clear air. Overflow is silent: `RingBuffer::store_char()` drops the
+byte with no flag or counter.
+
+`SERIAL_BUFFER_SIZE` is `#ifndef`-guarded in `RingBuffer.h`, but raising it with
+`-D` is unsafe: it sizes a class member (`RingBuffer::_aucBuffer`, hence
+`sizeof(Uart)`), so a flag that reached the sketch but not the prebuilt core
+archive would leave the two disagreeing about object layout. The
+`static_assert(SERIAL_BUFFER_SIZE < 100)` in `g_gnss_port_nrf52.cpp` flags a core
+upgrade that changes it.
+
+**ESP32.** The driver RX ring is set to 512 bytes (`kGnssRxRingBytes`; stock
+256). It holds 2.5 messages, so phase stops mattering and the constraint is a
+duration budget: at 2000 bytes/s, ~256 ms of stall (~128 ms stock). Wire time per
+byte is the wrong frame here — bytes arrive as an 8.68 ms burst every 50 ms, not
+back to back. `setRxBufferSize()` must precede the first `begin()`; afterwards it
+only `log_e()`s and returns 0, which is why the result is checked. `end()` leaves
+the size in place, so one call covers the baud sweep. More room is available the
+same way (`tools/common/gnss_otp_clock` uses 1024).
+
+### GNSS stall recovery
+
+`gnssBegin()` writes the runtime configuration to RAM/BBR only, and the module's
+backup supply holds BBR. Tested on the nRF52840-OLED (2026-09-13): the GNSS
+connector unplugged for a few seconds and reseated came back at 20 Hz with a 3D
+fix a second later, with no power cycle. An outage long enough to drain the
+backup supply would leave the receiver at the right baud but with PVT output
+off, silent until a power cycle re-runs bring-up — expected, but untested.
+
+### Stats-line rate
+
+The window closes on the MCU clock; the rate is measured epoch to epoch.
+Dividing by the clock window made an epoch near a boundary count in whichever
+window jitter chose: a perfect 20 Hz stream read as balanced 21/19 pairs, in
+clusters, as the clocks drifted — the same signature as UART loss. A closing
+edge on an epoch was also tried; it fixed the rate but moved the aliasing into
+the RT counter. Full analysis: NEW-3 in
+[`code-review-remediation.md`](code-review-remediation.md).
+
+What remains is loop pickup jitter at each edge: about 1 window in 25 reads 19.9
+or 20.1, while a lost epoch reads 19.0 or lower. `telemetryGnssRateHz()` keeps
+the tenth (the harness asserts on it); the stats line and the OLED round to
+whole numbers.
+
+The stats line has a hard 255-byte ceiling on nRF. All fields at their type
+maxima total 216 bytes; `test/telemetry`'s stats mode measures 210 at the
+widest real values.
+
+### ESP32 serial console
+
+`HardwareSerial` constructs with no TX ring, so `uart_write_bytes()` blocks the
+loop until the 128-byte hardware FIFO drains — about 20 ms for the stats line at
+115200. That is 20 ms of not calling `gnssPoll()`; survivable against the stock
+128 ms budget, but not headroom worth spending. `setTxBufferSize(512)` makes the
+write queue instead. It must precede `Serial.begin()` and otherwise only
+`log_e()`s and returns 0, so the result is checked and logged.
+
+The boot wait is a flat `delay(700)`, not `while (!Serial)`. On a UART bridge
+`operator bool()` is `uartIsDriverInstalled()`, true as soon as `begin()`
+returns, so the poll waits zero while the bridge discards output until the host
+opens the port. Measured loss window: ~200–400 ms with the module already at
+`GNSS_BAUD`. Bytes sent while the host is still configuring the port arrive with
+framing errors, which explained a block of garbage that used to precede the
+banner (not the ROM bootloader's baud, as first assumed). The delay does not
+cover the Arduino IDE's post-upload monitor reconnect.
+
+On nRF, `Serial` is USB CDC: `write()` returns immediately with no host attached,
+the 256-byte FIFO (`CFG_TUD_CDC_TX_BUFSIZE`, not overridable) takes a whole
+line, and `operator bool()` tracks real host attachment, so the poll works there.
+
+### BLE inbound write ring
+
+Sized from the nRF `BLEUart` receive FIFO, 256 bytes
+(`BLE_UART_DEFAULT_FIFO_DEPTH`): one drain can yield four 64-byte chunks. An
+early, smaller ring lost the tail of a large drain, dropping 8 of 200 bytes.
+Eight slots (seven usable) hold 448 bytes, past one full FIFO with slack for a
+second drain; 512 bytes of RAM. `rxDispatchOne()` dispatches one write per loop
+because the loop runs above 1000 Hz against one write per 15–30 ms connection
+interval, so a burst still clears in microseconds while per-loop work stays
+bounded.
+
+### OLED push cost
+
+The display bus runs at 400 kHz; u8g2 takes that from the SSD1306 descriptor and
+calls `Wire.setClock()` before every transfer, which is why only the IMU's
+`Wire1` needs `IMU_I2C_CLOCK_HZ`. A 1024-byte frame is ~23 ms of pure bus time;
+`tools/nRF52840-OLED/oled_bench` measures ~31 ms, the difference being
+addressing, command bytes, and the per-transfer `setClock()`.
+`DISPLAY_FRAME_PUSH_MS` uses the measured figure; re-run the bench if the panel
+or bus changes.
+
+Total cost was never the problem — density was. Pushes on consecutive loop
+passes leave the UART no clear stretch, and the GNSS rate sagged to a wandering
+15–25 Hz with wider slices. Spacing slices `DISPLAY_SLICE_INTERVAL_MS` apart
+(bench-validated 2026-08-05) helped, but evenly spaced pushes still landed on
+the arriving message as often as not, more so as the SV count rose and the
+receiver's emission point drifted later in the period. What fixed it was
+phase-locking: pushing right after a NAV-PVT is parsed. Two slices is ~2 ms
+against ~42 ms of clear air at 20 Hz (~32 ms at 25 Hz) and completes a frame in
+16 epochs.
+
 ## See also
 
 - [`architecture-modules.md`](architecture-modules.md) — what includes what, and the two forbidden edges

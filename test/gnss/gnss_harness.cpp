@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -294,7 +294,7 @@ static int runAbsent() {
   const bool up = gnssBegin();
   fakeGnssLogPrint();
   check(!up && !gnssIsUp(), "absent: returns false, not up (no halt)");
-  check(logCount("gnss.begin") == 7, "absent: sweeps all seven rates, then stops");
+  check(logCount("gnss.begin") == 10, "absent: sweeps all ten rates, then stops");
   check(portsBalanced(), "absent: every attempt closes its port before the next");
   check(logCount("port.setRxBufferSize") <= 1,
         "absent: the RX ring is sized once for the whole sweep, not per attempt");

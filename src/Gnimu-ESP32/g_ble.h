@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,73 +18,44 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// ============================================================================
-// BLE module - the Bluetooth Low Energy peripheral, identical on every board.
-//
-// Knows nothing about any particular protocol: identity, service topology and
-// characteristic UUIDs all come from the active ProtocolDescriptor
-// (g_protocol.h). The decisions live in g_ble.cpp; the stack's mechanism lives
-// in a per-core port behind g_ble_port.h. Callers see only this interface.
-// ============================================================================
+// BLE: the protocol-agnostic peripheral. Identity, services, and UUIDs come
+// from the active ProtocolDescriptor (g_protocol.h); the stack is behind
+// g_ble_port.h.
 
-// Bring up the peripheral: identity, TX power, the protocol's service, the
-// Device Information Service, advertising. Call once in setup().
+// Bring up the peripheral: identity, TX power, the protocol's service, Device
+// Information Service, and advertising. Call once in setup().
 void bleBegin();
 
 // True while a central is connected.
 bool bleIsConnected();
 
-// True while a central is connected AND subscribed to notifications on at
-// least one of the protocol's notify channels - that is, actually receiving
-// the stream. The nRF state machine keys its idle cutoff on this rather than
-// bleIsConnected(): a client that connects and never subscribes gets nothing,
-// and must not hold the device at full power until the battery cutoff.
+// True while a central is connected and subscribed to at least one of the
+// protocol's notify channels. The nRF idle timeout keys on this.
 bool bleIsSubscribed();
 
-// Send one encoded frame to the connected central. Signature matches
-// TelemetryEmit (g_protocol.h), so it is handed straight to an encoder as its
-// frame sink.
-//
-// `channel` indexes the active protocol's channel table and must be a notify
-// channel. Returns whether the transport accepted the frame - see
-// TelemetryEmit for what that does and does not guarantee. Never a delivery
-// receipt.
-//
-// Caller is responsible for checking bleIsConnected() first if it cares.
+// Send one frame on a notify channel. Matches TelemetryEmit (g_protocol.h).
+// Returns whether the transport accepted it, not whether it was delivered.
+// Does not check bleIsConnected().
 bool bleEmitFrame(uint8_t channel, const uint8_t *data, size_t len);
 
-// Frames the transport accepted, cumulative since boot.
+// Frames accepted by the transport since boot.
 uint32_t bleSentFrames();
 
-// Frames the transport did not send, for any reason, cumulative since boot.
-//
-// Counts FRAMES, not epochs - a protocol emitting several frames per sample can
-// lose one and keep the rest.
+// Frames not sent, for any reason, since boot.
 uint32_t bleDroppedFrames();
 
-// The part of bleDroppedFrames() refused because the central had not enabled
-// notifications on that channel - always <= it, cumulative since boot.
-//
-// That refusal is BLE working as specified (NEW-1), not a fault: nRF Connect
-// connects without subscribing, and apps take a moment to subscribe. So a
-// failure is bleDroppedFrames() - bleUnsubscribedFrames(), and that is what
-// g_telemetry reports and what decides whether an epoch counts as sent: at
-// least one frame accepted (bleSentFrames() moved) and none failed.
+// The subset of bleDroppedFrames() refused because the channel was not
+// subscribed. This is normal, not a fault: real failures are
+// ( bleDroppedFrames() - bleUnsubscribedFrames() ).
 uint32_t bleUnsubscribedFrames();
 
-// Inbound writes this transport could not deliver, cumulative since boot.
-//
-// A write is dropped when the queue is full (the loop has not drained a burst
-// yet) or, on a discrete transport, when it exceeds TELEMETRY_MAX_WRITE_LEN.
-// A dropped write means a command the protocol never saw, so this is reported
-// alongside the outbound drop count rather than left to accumulate quietly.
+// Inbound writes dropped since boot: queue full, or on a discrete transport
+// longer than TELEMETRY_MAX_WRITE_LEN.
 uint32_t bleDroppedWrites();
 
-// Service the connection: dispatch one queued inbound write, follow session
-// changes and the MTU, and run the stack's own housekeeping. Call every loop().
+// Dispatch one queued inbound write, track session and MTU changes, and run
+// stack housekeeping. Call every loop().
 void bleUpdate();
 
-// Disconnect any central and stop advertising. A no-op if bleBegin() never
-// brought the stack up. Every board has it so the interface does not fork; the
-// nRF state machine is what calls it.
+// Disconnect any central and stop advertising. No-op if bleBegin() failed.
 void bleStop();

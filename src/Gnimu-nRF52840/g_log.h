@@ -1,4 +1,4 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,68 +17,19 @@
 #pragma once
 #include "config.h"
 #include <Arduino.h>
-#include <stdio.h> // snprintf - LOG_PRINTF formats into its own buffer
+#include <stdio.h>
 
-// ============================================================================
-// Logging shim. One-for-one macro replacements for Serial.print/println/
-// printf/flush, gated by the single LOG_ENABLED flag (config.h).
+// Logging: Serial.print/println/printf/flush replacements. With LOG_ENABLED 0
+// each macro and its arguments compile away. At runtime every macro first
+// checks Serial, so an unattached console skips formatting as well as writing.
 //
-// Preprocessor-level, not function calls: with logging disabled, each macro
-// expands to nothing at all - the call AND its arguments vanish before the
-// compiler ever sees them.
+// LOG_PRINTF formats into its own LOG_LINE_MAX buffer and clips long lines. The
+// nRF core's Print::printf can transmit stack memory past 255 bytes.
 //
-// RUNTIME guard, layered on top of the compile-time one: every macro also
-// checks `Serial` (its bool conversion - the same check setup()'s boot wait
-// already uses) before doing anything, so a LOG_ENABLED=1 build that happens
-// to be running with nothing attached pays no cost either, not just a build
-// with logging compiled out entirely.
-//
-// This matters specifically for LOG_PRINTF. On the nRF52 boards (native USB
-// CDC via TinyUSB), Serial's own write() already no-ops instantly when
-// nothing is connected - confirmed in Adafruit_USBD_CDC.cpp, its transmit
-// loop is itself gated on tud_cdc_n_connected(). But that only covers the
-// WRITE. The printf-style FORMATTING (vsnprintf building the string, real
-// cost for something like the once-a-second stats line with several %f
-// fields) happens before write() is ever reached, unconditionally - exactly
-// the class of cost LOG_ENABLED exists to strip at compile time.
-// Checking `Serial` here skips the formatting too, not just the write.
-//
-// LOG_FLUSH() needed this even more directly: unlike write(), the library's
-// flush() has no internal connected-check of its own (only confirms the CDC
-// interface itself is valid) - so this guard is closing a real gap, not just
-// adding a redundant one.
-//
-// On ESP32, Serial's bool conversion just reflects whether the UART driver
-// has been installed (true from Serial.begin() onward, forever) - so this
-// guard always takes the "connected" branch there and is a no-op, identical
-// to today's behavior. Safe to share verbatim across all three variants: real
-// benefit on the nRF52 boards, neutral elsewhere.
-//
-// LOG_PRINTF DOES NOT CALL Serial.printf(), deliberately (SEC-1). On the nRF52
-// core, Print::printf() formats into a 256-byte STACK buffer and then calls
-// write(buf, len) with vsnprintf's return - the length it WOULD have written.
-// Past 255 bytes that reads beyond the buffer and transmits adjacent stack
-// memory to the console; a negative return (an encoding error) becomes an
-// enormous size_t. LAT-3 found this on the stats line and bounded that one
-// line; this closes it for every line. LOG_PRINTF formats into its own
-// LOG_LINE_MAX buffer with snprintf and writes only what fits, so an over-long
-// line comes out CLIPPED, never as stack contents.
-//
-// Stack cost is unchanged on nRF, where Print::printf's own 256-byte buffer is
-// what this replaces. On ESP32 the buffer is bigger than Print::vprintf's
-// 64-byte local, but the ESP32's BLE callbacks log only with LOG_PRINTLN, so it
-// is only ever taken on the loop task's stack.
-//
-// A side effect worth knowing: snprintf carries a printf format attribute and
-// the nRF core's Print::printf does not, so nRF builds now check every
-// LOG_PRINTF's arguments against its format string - they never did before.
-// Remember that uint32_t is `long unsigned int` on BOTH toolchains (arm-none-
-// eabi and xtensa alike): pass it to %u only through an (unsigned int) cast.
-// ============================================================================
+// snprintf's format attribute checks LOG_PRINTF arguments. uint32_t is
+// `long unsigned int` on both toolchains: cast to (unsigned int) for %u.
 
-// The longest line LOG_PRINTF will emit, including the terminating NUL.
-// Matches the nRF core's own printf buffer, which the 1Hz stats line - the
-// longest in the firmware - was already budgeted against (see g_telemetry.cpp).
+// Longest LOG_PRINTF line, including the NUL.
 #define LOG_LINE_MAX 256
 
 #if LOG_ENABLED
@@ -93,14 +44,13 @@
     if (Serial)                                                                \
       Serial.println(__VA_ARGS__);                                             \
   } while (0)
-// ##__VA_ARGS__ swallows the preceding comma when fmt is the only argument.
-// Bounded: see "LOG_PRINTF DOES NOT CALL Serial.printf()" above.
+// ##__VA_ARGS__ drops the comma when fmt is the only argument.
 #define LOG_PRINTF(fmt, ...)                                                   \
   do {                                                                         \
     if (Serial) {                                                              \
       char logLine_[LOG_LINE_MAX];                                             \
-      const int logLen_ = snprintf(logLine_, sizeof(logLine_), fmt,            \
-                                   ##__VA_ARGS__);                             \
+      const int logLen_ =                                                      \
+          snprintf(logLine_, sizeof(logLine_), fmt, ##__VA_ARGS__);            \
       if (logLen_ > 0)                                                         \
         Serial.write((const uint8_t *)logLine_,                                \
                      logLen_ < (int)sizeof(logLine_) ? (size_t)logLen_         \
