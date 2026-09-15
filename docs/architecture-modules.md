@@ -101,6 +101,41 @@ the only guard for that. (The telemetry, IMU, GNSS and BLE harnesses build
 every variant, because what they test also depends on each variant's
 `config.h` and headers.)
 
+## Source file conventions
+
+Every firmware file follows the same layout, so the three trees read alike and
+a copied file drops into place.
+
+**Order within a file:**
+
+1. License header.
+2. Includes. The file's own header first. A port or driver whose interface has a
+   different name (`g_ble_port.h`, `g_gnss_port.h`, `g_imu_sensor.h`) puts that
+   header alone, followed by a blank line. The rest form one block: quoted
+   headers, then `<system>` headers, each alphabetical. That is the order the
+   editor's include sort produces, and the blank line keeps the interface header
+   out of the sort.
+3. Overview comment. Headers carry the module overview; a `.cpp` has one only
+   when it adds something, as ports and drivers do.
+4. File-scope state: constants before variables, except where related constants
+   and variables share one comment.
+5. Private helpers, each defined before its first caller.
+6. Public functions, in the order the header declares them.
+
+**Topic sections.** A file that groups its code by topic (`g_ble.cpp`,
+`g_telemetry.cpp`, `g_display.cpp`, `g_proto_racebox.cpp`) keeps its sections
+and applies steps 4-6 within each.
+
+**File-local names** use `static`, not unnamed namespaces.
+
+**Comments** state what the code does and what a value means, concisely, in full
+sentences. Trailing comments are short lowercase fragments. Section headings are
+single-line comments with no banner rules; the exception is the top-level
+sections in each `config.h`. Comments carry no review IDs, dates, or history of
+what was tried: design reasons and measurements belong in `docs/`, where
+[`imu-trim-design.md`](imu-trim-design.md) and
+[`architecture-runtime.md`](architecture-runtime.md) record them.
+
 ## Adding a protocol
 
 Three edits, and none of them touch `g_telemetry` or `g_ble`:
@@ -112,7 +147,8 @@ Three edits, and none of them touch `g_telemetry` or `g_ble`:
 2. Give it a `PROTO_*` id in `g_protocol.h`.
 3. Add a branch in `g_protocol_active.h`.
 
-Then triplicate the new files and register them in `check_common.sh`.
+Then triplicate the new files and register them in `check_common.sh`. Lay them
+out as described in [Source file conventions](#source-file-conventions).
 
 ## See also
 
