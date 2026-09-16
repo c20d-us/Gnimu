@@ -37,6 +37,27 @@ static const uint32_t NMEA_MSGOUT_KEYS[] = {
     UBLOX_CFG_MSGOUT_NMEA_ID_VTG_UART1, UBLOX_CFG_MSGOUT_NMEA_ID_ZDA_UART1,
 };
 
+// Every rate the receiver could be saved at, in the order the sweep tries them.
+// GNSS_BAUD is tried first and then skipped here.
+static constexpr uint32_t kBaudRates[] = {4800,   9600,   19200,  38400, 57600,
+                                          115200, 230400, 460800, 921600};
+
+// Recursive rather than a loop: the nRF core compiles as C++11.
+static constexpr bool baudSweepIncludes(uint32_t baud, size_t i = 0) {
+  return i < (sizeof(kBaudRates) / sizeof(kBaudRates[0])) &&
+         (kBaudRates[i] == baud || baudSweepIncludes(baud, i + 1));
+}
+
+static_assert(baudSweepIncludes(GNSS_BAUD),
+              "ERROR: GNSS_BAUD must be one of the rates the sweep knows how to "
+              "detect and switch between, or the receiver could be saved at a "
+              "rate the firmware can't find.");
+
+// maxWait for a sweep attempt after the first. begin() polls three times, so a
+// rate with no receiver costs three times this; the library's 1100ms default is
+// sized for SerialUSB.
+static constexpr uint16_t kSweepMaxWaitMs = 250;
+
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static Stream *gnssStream = nullptr;
 
@@ -51,49 +72,62 @@ static unsigned long lastEpochMs = 0;
 
 static bool gnssUp = false;
 
-// Find the receiver, trying GNSS_BAUD first and then common u-blox rates. If
+// Open the port at `baud` and look for the receiver. Leaves the port open on
+// success, closed on failure.
+static bool tryBaud(uint32_t baud, uint16_t maxWait) {
+  LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)baud);
+
+  gnssStream = gnssPortBegin(baud);
+  delay(100); // let the port settle
+
+  if (gnssStream != nullptr && myGNSS.begin(*gnssStream, maxWait)) {
+    LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)baud);
+    return true;
+  }
+
+  gnssPortEnd();
+  delay(100);
+  return false;
+}
+
+// Switch a receiver found at another rate to GNSS_BAUD and save it to flash.
+static bool switchToTargetBaud() {
+  LOG_PRINTF("🔀 Switching GNSS to target %u baud...\n",
+             (unsigned int)GNSS_BAUD);
+  myGNSS.setSerialRate(GNSS_BAUD);
+  delay(100);
+
+  // Reopen the UART at the new rate.
+  gnssPortEnd();
+  delay(100);
+  gnssStream = gnssPortBegin(GNSS_BAUD);
+  delay(100);
+
+  if (gnssStream == nullptr || !myGNSS.begin(*gnssStream)) {
+    LOG_PRINTLN("❌ Failed to verify new baud rate.");
+    return false;
+  }
+  LOG_PRINTLN("⚡ Baud rate switched. Saving to flash...");
+  myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
+  return true;
+}
+
+// Find the receiver, trying GNSS_BAUD first and then the rest of the sweep. If
 // found at another rate, switch it to GNSS_BAUD and save that to flash.
+//
+// The first attempt keeps the library's default maxWait, which covers a
+// receiver still booting after power-on; the rest use kSweepMaxWaitMs.
 static bool connectAndConfigureBaud() {
-  const uint32_t baudRates[] = {GNSS_BAUD, 4800,   9600,   19200,  38400,
-                                57600,     115200, 230400, 460800, 921600};
-  const int numRates = sizeof(baudRates) / sizeof(baudRates[0]);
-
-  for (int i = 0; i < numRates; i++) {
-    uint32_t testBaud = baudRates[i];
-    LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)testBaud);
-
-    gnssStream = gnssPortBegin(testBaud);
-    delay(100); // let the port settle
-
-    if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
-      LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)testBaud);
-
-      if (testBaud != GNSS_BAUD) {
-        LOG_PRINTF("🔀 Switching GNSS to target %u baud...\n",
-                   (unsigned int)GNSS_BAUD);
-        myGNSS.setSerialRate(GNSS_BAUD);
-        delay(100);
-
-        // Reopen the UART at the new rate.
-        gnssPortEnd();
-        delay(100);
-        gnssStream = gnssPortBegin(GNSS_BAUD);
-        delay(100);
-
-        if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
-          LOG_PRINTLN("⚡ Baud rate switched. Saving to flash...");
-          myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
-          return true;
-        } else {
-          LOG_PRINTLN("❌ Failed to verify new baud rate.");
-          return false;
-        }
-      }
-      return true;
+  if (tryBaud(GNSS_BAUD, kUBLOXGNSSDefaultMaxWait)) {
+    return true;
+  }
+  for (uint32_t rate : kBaudRates) {
+    if (rate == GNSS_BAUD) {
+      continue; // tried first
     }
-
-    gnssPortEnd();
-    delay(100);
+    if (tryBaud(rate, kSweepMaxWaitMs)) {
+      return switchToTargetBaud();
+    }
   }
   return false;
 }
@@ -162,11 +196,11 @@ bool gnssBegin() {
   // All settings go to RAM/BBR and are reapplied every boot. The only flash
   // write is the baud rate, saved by connectAndConfigureBaud() after a switch.
 
-  // if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
-  //   LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
-  // } else {
-  //   LOG_PRINTLN("❌ Failed to disable AssistNow Autonomous.");
-  // }
+  if (myGNSS.setAopCfg(0, 0, VAL_LAYER_RAM_BBR)) {
+    LOG_PRINTLN("🚫 AssistNow Autonomous disabled.");
+  } else {
+    LOG_PRINTLN("❌ Failed to disable AssistNow Autonomous.");
+  }
 
   if (myGNSS.setDynamicModel(GNSS_DYNAMIC_MODEL, VAL_LAYER_RAM_BBR)) {
     LOG_PRINTF("✅ GNSS dynamic model set to %d.\n", GNSS_DYNAMIC_MODEL);

@@ -56,6 +56,7 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   if ! c++ -std=gnu++11 -Wall -Wextra -Werror $SAN $BOARD \
        -I"$ROOT/test/gnss/fakes" -I"$ROOT/src/$V" -I"$SPARKFUN" \
        "$ROOT/test/gnss/gnss_harness.cpp" "$ROOT/src/$V/g_gnss.cpp" "$PORT" \
+       "$ROOT/src/$V/g_log.cpp" \
        -o "$B/harness" 2>"$B/build.txt"; then
     echo "❌ $V: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
     status=1; rm -rf "$B"; continue

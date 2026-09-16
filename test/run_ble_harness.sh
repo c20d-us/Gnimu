@@ -56,7 +56,7 @@ status=0
 
 for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   B="$(mktemp -d)"
-  for F in g_ble.cpp g_ble.h g_ble_port.h g_protocol.h g_log.h config.h g_imu_tuning.h; do
+  for F in g_ble.cpp g_ble.h g_ble_port.h g_protocol.h g_log.cpp g_log.h config.h g_imu_tuning.h; do
     cp "$ROOT/src/$V/$F" "$B/"
   done
   cp "$ROOT/test/ble/g_protocol_active.h" "$B/"
@@ -64,7 +64,7 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
   case "$V" in *nRF*) BOARD="-DARDUINO_Seeed_XIAO_nRF52840_Sense" ;; esac
   if ! c++ -std=gnu++11 -Wall -Wextra -Werror $SAN $BOARD \
        -I"$B" -I"$ROOT/test/telemetry/fakes" \
-       "$B/g_ble.cpp" "$ROOT/test/ble/ble_harness.cpp" \
+       "$B/g_ble.cpp" "$B/g_log.cpp" "$ROOT/test/ble/ble_harness.cpp" \
        -o "$B/harness" 2>"$B/build.txt"; then
     echo "❌ $V: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
     status=1; rm -rf "$B"; continue

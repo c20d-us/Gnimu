@@ -95,8 +95,17 @@ void powerEnterDeepSleep() {
   LOG_FLUSH();
   // GPIO state persists through System OFF.
   powerHoldPeripheralsOff();
-  // Must go through the SoftDevice while Bluefruit is enabled.
-  sd_power_system_off();
+  // Reached both before bleBegin() (a low-voltage boot) and after. With the
+  // SoftDevice enabled, System OFF must go through it; without it, that call
+  // returns an error and the register is written directly, as the core's
+  // systemOff() does.
+  uint8_t sdEnabled = 0;
+  (void)sd_softdevice_is_enabled(&sdEnabled);
+  if (sdEnabled) {
+    sd_power_system_off();
+  } else {
+    NRF_POWER->SYSTEMOFF = 1;
+  }
   while (1) {
     delay(100); // only reached under a debugger
   }

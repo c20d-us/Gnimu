@@ -37,13 +37,11 @@ static bool voltagePrimed = false;
 static unsigned long belowCutoffSinceMs = 0;
 
 // Non-blocking sampler. A run starts every BATTERY_POLL_INTERVAL_MS and takes
-// BATTERY_SAMPLE_COUNT paced reads. The max feeds ingestPeak(); the min is
-// unused.
+// BATTERY_SAMPLE_COUNT paced reads, the max feeding ingestPeak().
 enum SamplerState { S_IDLE, S_SAMPLING };
 static SamplerState sState = S_IDLE;
 static unsigned long sRunStartMs = 0;
 static unsigned long sLastSampleUs = 0;
-static int sMinAdc = 0;
 static int sMaxAdc = 0;
 static int sSampleCount = 0;
 
@@ -106,7 +104,6 @@ static void ingestPeak(float freshVoltage, unsigned long nowMs) {
 
 static void samplerBeginRun(unsigned long nowMs) {
   sRunStartMs = nowMs;
-  sMinAdc = (int)((1UL << SAADC_RESOLUTION_BITS) - 1);
   sMaxAdc = 0;
   sSampleCount = 0;
   dividerEnable(true);
@@ -130,8 +127,6 @@ static void samplerBlockingPrime(unsigned long nowMs) {
     }
     sLastSampleUs = micros();
     const int v = analogRead(BATTERY_ADC_PIN);
-    if (v < sMinAdc)
-      sMinAdc = v;
     if (v > sMaxAdc)
       sMaxAdc = v;
     sSampleCount++;
@@ -167,8 +162,6 @@ void batteryPoll() {
     return;
   sLastSampleUs = nowUs;
   const int v = analogRead(BATTERY_ADC_PIN);
-  if (v < sMinAdc)
-    sMinAdc = v;
   if (v > sMaxAdc)
     sMaxAdc = v;
   sSampleCount++;

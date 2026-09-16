@@ -98,11 +98,12 @@ constexpr size_t TELEMETRY_MAX_WRITE_LEN = 64;
 //
 //   constexpr size_t PROTOCOL_MAX_FRAME_LEN        largest frame emitted
 //   constexpr uint8_t PROTOCOL_CHANNEL_COUNT       descriptor's channelCount
-//   constexpr TransportKind PROTOCOL_TRANSPORT     descriptor's transport
+//   constexpr TransportKind PROTOCOL_TRANSPORT     how frames reach the client
 //
 // Transports use these at compile time to size the MTU request and reject a
-// protocol they cannot serve. The protocol's .cpp asserts the last two match
-// its descriptor.
+// protocol they cannot serve. The protocol's .cpp asserts the channel count
+// matches its descriptor; the transport has no descriptor field, so that the
+// ports read one value rather than two kept equal.
 
 // Transport description
 //
@@ -143,7 +144,6 @@ struct ProtocolDescriptor {
   uint16_t serviceUuid16;
   const char *serviceUuid128;
 
-  TransportKind transport;
   const ProtocolChannel *channels;
   uint8_t channelCount;
 
@@ -173,10 +173,11 @@ struct ProtocolDescriptor {
 // TRANSPORT_NORDIC_UART shape check
 //
 // On nRF, BLEUart hard-codes this GATT and ignores the channel table; the ESP32
-// builds its GATT from the table. A descriptor using this transport asserts the
-// two match in its own .cpp:
+// builds its GATT from the table. A protocol declaring this transport asserts
+// the two match in its own .cpp:
 //
-//   static_assert(D.transport != TRANSPORT_NORDIC_UART || nordicUartShapeOk(D),
+//   static_assert(PROTOCOL_TRANSPORT != TRANSPORT_NORDIC_UART ||
+//                     nordicUartShapeOk(D),
 //                 "...");
 //
 // Single-return constexpr functions: the nRF core builds C++11.

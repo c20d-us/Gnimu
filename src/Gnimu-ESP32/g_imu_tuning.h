@@ -80,8 +80,6 @@
 // parked. Set 0 for indoor bench testing.
 #define IMU_TRIM_REQUIRE_FIX 1
 
-// Age after which a PVT's speed no longer counts as valid.
-#define IMU_TRIM_PVT_STALE_MS 1000
 
 // Compile-time validation
 
@@ -118,5 +116,3 @@ static_assert(IMU_TRIM_GYRO_VAR_MAX > 0.0f,
 // The rotation is small-angle by design and singular at 180 degrees.
 static_assert(IMU_TRIM_MAX_TILT_DEG > 0.0f && IMU_TRIM_MAX_TILT_DEG < 60.0f,
               "ERROR: IMU_TRIM_MAX_TILT_DEG must be in the range (0, 60).");
-static_assert(IMU_TRIM_PVT_STALE_MS > 0,
-              "ERROR: IMU_TRIM_PVT_STALE_MS must be greater than 0.");

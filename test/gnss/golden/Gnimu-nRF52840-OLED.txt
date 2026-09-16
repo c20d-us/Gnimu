@@ -1,6 +1,7 @@
 S at-target
   port.begin 115200
-  gnss.begin(port@115200) -> 1
+  gnss.begin(port@115200 maxWait=1100) -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 1
@@ -27,22 +28,23 @@ S at-target
   setNavigationFrequency 20 layer=3 -> 1
   setAutoPVTcallbackPtr layer=3 -> 1
 ✅ at-target: bring-up succeeded
-✅ at-target: the sweep tries GNSS_BAUD first
+✅ at-target: the sweep tries GNSS_BAUD first, at the default maxWait
 ✅ at-target: RX ring sized at most once, before the first begin()
 S at-9600
   port.begin 115200
-  gnss.begin(port@115200) -> 0
+  gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800
-  gnss.begin(port@4800) -> 0
+  gnss.begin(port@4800 maxWait=250) -> 0
   port.end
   port.begin 9600
-  gnss.begin(port@9600) -> 1
+  gnss.begin(port@9600 maxWait=250) -> 1
   setSerialRate 115200 layer=3 -> 1
   port.end
   port.begin 115200
-  gnss.begin(port@115200) -> 1
+  gnss.begin(port@115200 maxWait=1100) -> 1
   saveConfigSelective 0x01 -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 1
@@ -69,39 +71,40 @@ S at-9600
   setNavigationFrequency 20 layer=3 -> 1
   setAutoPVTcallbackPtr layer=3 -> 1
 ✅ at-9600: found, switched and verified
+✅ at-9600: the rate after the first is tried at the short maxWait
+✅ at-9600: GNSS_BAUD keeps the default maxWait, on both attempt and verify
 S absent
   port.begin 115200
-  gnss.begin(port@115200) -> 0
+  gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800
-  gnss.begin(port@4800) -> 0
+  gnss.begin(port@4800 maxWait=250) -> 0
   port.end
   port.begin 9600
-  gnss.begin(port@9600) -> 0
+  gnss.begin(port@9600 maxWait=250) -> 0
   port.end
   port.begin 19200
-  gnss.begin(port@19200) -> 0
+  gnss.begin(port@19200 maxWait=250) -> 0
   port.end
   port.begin 38400
-  gnss.begin(port@38400) -> 0
+  gnss.begin(port@38400 maxWait=250) -> 0
   port.end
   port.begin 57600
-  gnss.begin(port@57600) -> 0
-  port.end
-  port.begin 115200
-  gnss.begin(port@115200) -> 0
+  gnss.begin(port@57600 maxWait=250) -> 0
   port.end
   port.begin 230400
-  gnss.begin(port@230400) -> 0
+  gnss.begin(port@230400 maxWait=250) -> 0
   port.end
   port.begin 460800
-  gnss.begin(port@460800) -> 0
+  gnss.begin(port@460800 maxWait=250) -> 0
   port.end
   port.begin 921600
-  gnss.begin(port@921600) -> 0
+  gnss.begin(port@921600 maxWait=250) -> 0
   port.end
 ✅ absent: returns false, not up (no halt)
-✅ absent: sweeps all ten rates, then stops
+✅ absent: sweeps all nine rates, then stops
+✅ absent: GNSS_BAUD is not tried twice
+✅ absent: only the first attempt waits the default
 ✅ absent: every attempt closes its port before the next
 ✅ absent: the RX ring is sized once for the whole sweep, not per attempt
   epoch dropped: no callback registered
@@ -110,21 +113,22 @@ S absent
 ✅ absent: never up, so never 'stalled' - that is gnssIsUp()'s case
 S verify-fails
   port.begin 115200
-  gnss.begin(port@115200) -> 0
+  gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800
-  gnss.begin(port@4800) -> 0
+  gnss.begin(port@4800 maxWait=250) -> 0
   port.end
   port.begin 9600
-  gnss.begin(port@9600) -> 1
+  gnss.begin(port@9600 maxWait=250) -> 1
   setSerialRate 115200 layer=3 -> 1
   port.end
   port.begin 115200
-  gnss.begin(port@115200) -> 0
+  gnss.begin(port@115200 maxWait=1100) -> 0
 ✅ verify-fails: bring-up abandoned, not up
 S config-rejects (setVal8)
   port.begin 115200
-  gnss.begin(port@115200) -> 1
+  gnss.begin(port@115200 maxWait=1100) -> 1
+  setAopCfg 0 maxWait=0 layer=3 -> 1
   setDynamicModel 4 layer=3 -> 1
   setUART1Output 0x01 layer=3 -> 1
   setVal8 key=0x2091A087 val=0 layer=3 -> 0

@@ -49,6 +49,10 @@ uint32_t bleDroppedFrames();
 // ( bleDroppedFrames() - bleUnsubscribedFrames() ).
 uint32_t bleUnsubscribedFrames();
 
+// Inbound writes handed to the protocol since boot. Counted rather than logged
+// per write: a central sets that rate.
+uint32_t bleDispatchedWrites();
+
 // Inbound writes dropped since boot: queue full, or on a discrete transport
 // longer than TELEMETRY_MAX_WRITE_LEN.
 uint32_t bleDroppedWrites();

@@ -303,8 +303,8 @@ static void runInbound() {
 
   bleRxFromCallback(1, buf, 5, true);
   bleUpdate();
-  check(g_writes == 1 && bleDroppedWrites() == 0,
-        "inbound: one write, dispatched on the next update");
+  check(g_writes == 1 && bleDroppedWrites() == 0 && bleDispatchedWrites() == 1,
+        "inbound: one write, dispatched on the next update and counted");
 
   bleRxFromCallback(1, buf, TELEMETRY_MAX_WRITE_LEN + 1, true);
   check(bleDroppedWrites() == 1, "inbound: an oversized discrete write is "
@@ -329,6 +329,8 @@ static void runInbound() {
     bleUpdate();
   }
   check(g_writes == 12, "inbound: the queue drains in order, then is empty");
+  check(bleDispatchedWrites() == (uint32_t)g_writes,
+        "inbound: every dispatch is counted, and nothing else is");
 }
 
 int main(int argc, char **argv) {

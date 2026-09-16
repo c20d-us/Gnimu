@@ -73,6 +73,8 @@ static std::atomic<uint8_t> rxHead{0}; // consumer index, loop only
 static std::atomic<uint8_t> rxTail{0}; // producer index, callback only
 // Producer writes, loop reads. An aligned 32-bit read is atomic on both parts.
 static uint32_t droppedWrites = 0;
+// Loop only: incremented where the writes are dispatched.
+static uint32_t dispatchedWrites = 0;
 
 // Producer. Returns false when the ring is full.
 static bool rxPush(uint8_t channel, const uint8_t *data, size_t len) {
@@ -96,8 +98,7 @@ static void rxDispatchOne() {
   if (head == rxTail.load(std::memory_order_acquire)) {
     return; // empty
   }
-  LOG_PRINTF("📨 BLE write: %u byte(s) on channel %u\n",
-             (unsigned int)rxLen[head], (unsigned int)rxChannel[head]);
+  dispatchedWrites++;
   if (proto->onWrite != nullptr) {
     proto->onWrite(rxChannel[head], rxBuf[head], rxLen[head]);
   }
@@ -272,6 +273,8 @@ uint32_t bleSentFrames() { return sentFrames; }
 uint32_t bleDroppedFrames() { return droppedFrames; }
 
 uint32_t bleUnsubscribedFrames() { return unsubscribedFrames; }
+
+uint32_t bleDispatchedWrites() { return dispatchedWrites; }
 
 uint32_t bleDroppedWrites() { return droppedWrites; }
 

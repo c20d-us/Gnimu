@@ -85,25 +85,12 @@ static int16_t toProtocolInt16(float value) {
 }
 
 // GNSS ground speed (m/s) for the trim gate. Returns false without a 3D fix
-// with gnssFixOK, or if the PVT hasn't advanced for IMU_TRIM_PVT_STALE_MS. Uses
-// gnssLatestPvt() because gnssConsumePvt() belongs to g_telemetry.
+// with gnssFixOK, or while the receiver is stalled - gnssLatestPvt() returns
+// the last epoch however old. Used because gnssConsumePvt() belongs to
+// g_telemetry.
 static bool trimSpeedMps(float *speedMps) {
-  static uint32_t lastITOW = 0;
-  static uint16_t staleSamples = 0;
-  static const uint16_t kStaleMax =
-      (uint16_t)(IMU_TRIM_PVT_STALE_MS / IMU_SAMPLE_INTERVAL_MS);
-
   const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
-  if (pvt == nullptr)
-    return false;
-
-  if (pvt->iTOW != lastITOW) {
-    lastITOW = pvt->iTOW;
-    staleSamples = 0;
-  } else if (staleSamples < kStaleMax) {
-    staleSamples++;
-  }
-  if (staleSamples >= kStaleMax)
+  if (pvt == nullptr || gnssStalled())
     return false;
 
   // Also pauses gyro refinement under a poor fix.

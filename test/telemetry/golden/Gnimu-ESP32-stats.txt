@@ -20,31 +20,42 @@ RT: 6s|BLE: 17Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456
 ## no new drops: no drop lines
 RT: 7s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ✅ drop lines only when the count moves
+## 7 inbound writes dispatched this window
+RT: 8s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+📨 BLE: 7 inbound write(s) this window (7 total)
+✅ dispatched writes are reported once per window, not per write
+## no new writes: no write line
+RT: 9s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+✅ the write line only prints when the count moves
+## 3 more inbound writes: delta and total differ
+RT: 10s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+📨 BLE: 3 inbound write(s) this window (10 total)
+✅ the write line reports the window's delta beside the total
 ## connected, not subscribed: no drop line
 ❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.
-RT: 8s|BLE: 0Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+RT: 11s|BLE: 0Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ✅ pre-subscription refusals print no drop line
 ## subscribed again, 3 frames lost with a listener
 ✅ BLE: notifications enabled - sending resumed (20 frame(s) refused while unsubscribed).
-RT: 9s|BLE: 17Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+RT: 12s|BLE: 17Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ⚠️  BLE dropped 3 frame(s) this window (6 total)
 ✅ only frames lost with a listener count, in the delta and the total
 ## 7 failed IMU reads this window (IMU still up)
-RT: 10s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+RT: 13s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ⚠️  IMU: 7 failed read(s) this window (7 total)
 ✅ failed IMU reads get their own line
 ## 2 more failed IMU reads: the delta, and the running total
-RT: 11s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+RT: 14s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ⚠️  IMU: 2 failed read(s) this window (9 total)
 ✅ the line reports the window's delta and the total
 ## no new failed reads: no line
-RT: 12s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
+RT: 15s|BLE: 20Hz|GNSS: 20Hz|SV: 0|Fix: 0|tA: -|hA: -|Lat: 1.2345678|Lon: -2.3456789|mG: X=12 Y=-34 Z=998|c°/s: X=5 Y=-7 Z=120|Trim: 20.0° ❌
 ✅ the line only appears when it moves
 ## GNSS not responding
-RT: 13s | ❌ GNSS not responding
+RT: 16s | ❌ GNSS not responding
 ✅ no receiver says so
 ## GNSS stalled (up, no epochs)
-RT: 14s | ❌ GNSS stalled - no data from receiver
+RT: 17s | ❌ GNSS stalled - no data from receiver
 ✅ a stalled receiver says so
 ✅ and prints none of the frozen GNSS fields
 ## clock jumps to the millis() ceiling: the jump closes an empty window

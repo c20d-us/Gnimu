@@ -69,7 +69,7 @@ g_battery.*             Cell voltage, state of charge, charge detection
 
 g_ubx_helpers.*         UBX framing/checksum helpers
 
-g_log.h                 Serial logging macros
+g_log.*                 Serial logging macros and the one-copy logPrintf()
 
 g_led.* / g_display.*   Status readout (LED on two variants, OLED on the third)
 

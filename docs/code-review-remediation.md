@@ -87,7 +87,7 @@ does not reach.
    cycle (runtime config is RAM/BBR only), unless the module's backup capacitor
    held BBR. Either result belongs in the NEW-5 entry.
 4. ✅ **Done 2026-09-13 (nRF52840-OLED): seven-rate sweep, the three ❌ lines, `❌ GNSS not responding` once a second with the battery field live, "No GNSS" on the panel; BLE advertised and accepted a connection. With no receiver no RaceBox packet is sent, so a connected app shows no data at all, battery included (the battery byte travels in that packet). Decided 2026-09-13 to keep it that way: a dead receiver is a hardware fault needing a power cycle, the panel and serial already say so, and a fallback packet would have to invent time and position fields an app might record as a session.** **Boot with the receiver absent (R2-1, ROB-1)** - the OLED shows its normal
-   searching screen through the ~20 s baud sweep, then **No GNSS**; serial
+   searching screen through the baud sweep (~20 s then, ~11 s since R3-7), then **No GNSS**; serial
    says `❌ GNSS not responding`; BLE and battery carry on. A normal boot must
    never flash "No GNSS".
 5. ✅ **Done 2026-09-13 - baud switch worked as expected.** **Boot with the receiver NOT at `GNSS_BAUD` (g_gnss.cpp split)** - so the
@@ -109,6 +109,35 @@ does not reach.
 8. **Declined 2026-09-13 - not run.** **ESP32 SDA to GND (IMU-3 option 2)** - a jumper, safe on open-drain I2C:
    within ~100 ms the stats line reads `mG: -|c°/s: -|Trim: -` and stays so
    until reboot.
+
+**Power (nRF), from the third review**
+
+9. **Low-voltage boot reaches System OFF (R3-1)** - temporarily raise
+   `BATTERY_CUTOFF_V` above the cell voltage and boot on battery without USB.
+   Serial is not available off USB, so check the device instead: LED or panel
+   dark, and absent from an nRF Connect scan. Plug in USB: it wakes and reboots
+   (serial then shows the next boot). Restore `BATTERY_CUTOFF_V`.
+
+**BLE (ESP32), from the third review**
+
+10. ✅ **Done 2026-09-15 - see the R3-2 entry.** **Connect-time MTU (R3-2)** - flash, then connect Gnimu Monitor and
+    disconnect/reconnect it quickly four or five times. Each connect logs
+    `✅ BLE client connected (MTU 23).` then `🔧 BLE MTU changed: 23 -> 517`. A
+    reconnect that subscribes before the exchange adds one `❌ BLE: peer MTU 23
+    too small …`, a small `⚠️  BLE dropped N frame(s)` line and `✅ BLE: peer
+    MTU now 517 - sending resumed.`; none is also acceptable. Streaming then
+    runs at 20 Hz.
+
+**GNSS and boot timing (nRF), from the third review**
+
+11. **Boot timings (R3-6, R3-7)** - one nRF. On USB, boot normally: serial still
+    catches the first line, and the receiver is found at `GNSS_BAUD` on the
+    first try. With the receiver unplugged, time from power-on to the first
+    `❌ GNSS not responding`: about 11 s, was about 35 s. Then on battery with
+    no USB, confirm the device reaches RUNNING (LED, or the panel on the OLED)
+    about 3 s sooner than before. While connected, send one write to the Nordic
+    UART Rx characteristic from nRF Connect (R3-8): the next 1 Hz window prints
+    `📨 BLE: 1 inbound write(s) this window (1 total)`, not a line per write.
 
 **No longer outstanding:** the whole-build warnings pass (batch 4) was run
 2026-09-12 with the IDE's bundled `arduino-cli --warnings all` on all three
@@ -502,7 +531,7 @@ drop counting, and a clean 20.00 Hz afterwards — the recovery path in
 particular being the half hardest to reach deliberately.
 
 **With the derived value there is no refusal at connect** — verified on the
-same hardware immediately afterwards. The check costs nothing in normal
+same hardware immediately afterwards. *(Corrected by R3-2: the check could not fire.)* The check costs nothing in normal
 operation and needs no grace-period handling. Worth settling with a second run
 rather than redesigning on a reading of a test that turned out to measure
 something else.
@@ -3303,8 +3332,8 @@ warnings); `check_common.sh` clean (`g_display.cpp` is OLED-only). No host
 harness covers `g_display.cpp` (u8g2), so the rest is on hardware.
 
 **Needs:** a normal boot never shows "No GNSS"; with the GNSS JST unplugged
-before power-on, the searching body through the ~20 s baud sweep, then "No
-GNSS" with a live status bar and uptime.
+before power-on, the searching body through the baud sweep (~20 s then, ~11 s
+since R3-7), then "No GNSS" with a live status bar and uptime.
 
 **Hardware (2026-09-12): built, flashed and booted on all three, working as expected.** Edge conditions are in "Hardware checks outstanding" at the top.
 
@@ -3698,7 +3727,7 @@ so steps 6, 7 and 8 were captured in separate runs. **Baseline complete 2026-09-
 | 5 Reconnect | connect line, ❌, `… (23 frame(s) …)`. **Two later reconnects printed no ❌ at all** - the client subscribed inside the 100 ms settle window, so no frame was ever refused | connect, ❌, MTU 23 -> 247, then `… (25 frame(s) …)` / `(24 …)` / `(24 …)` - the ❌ fires on every reconnect |
 | 6 MTU knob 23 | connect line, ❌ not subscribed, `… (18 frame(s) …)` after ~1 s, 12 Hz then 20; disconnect and re-advertise as normal. **No MTU refusal** - the refusal check runs only after the subscription check, and by the time the client (Gnimu Monitor, first connect) subscribed (~0.9 s) the central had already raised the MTU. Step 7 is combined with a repeat of 6: one rebuild with the MTU at 23 and the settle window at 0, then Gnimu Monitor's fast reconnects | n/a - no knob; BLEUart fragments |
 | 6+7 combined: MTU 23 **and** settle 0 | First Monitor connect: ❌ not subscribed, `… (25 frame(s) …)`, no MTU refusal. **Each of three fast reconnects**: no not-subscribed line, then `❌ BLE: peer MTU 23 too small for a 88-byte frame (need 91). …`, `⚠️  BLE dropped 7 / 6 / 2+2 frame(s)`, `✅ BLE: peer MTU now 517 - sending resumed.` - so 100-350 ms of refused frames per reconnect. **Inconclusive for 7**: two variables changed, and the 2026-09-10 note says the derived MTU request alone removes the connect-time refusal. Needs one more run: settle 0 with the MTU request restored | n/a |
-| 7 Settle 0, MTU request normal | First Monitor connect: ❌ not subscribed, `… (23 frame(s) …)`. **Five fast reconnects: no MTU refusal, no not-subscribed line, no drop lines** - straight to streaming. **Decided: `BLE_CONNECT_SETTLE_MS` is not needed** with the derived MTU request; the split deletes it rather than carrying it into the ESP32 port. The refusals in the combined run came from the MTU-23 knob | n/a |
+| 7 Settle 0, MTU request normal | First Monitor connect: ❌ not subscribed, `… (23 frame(s) …)`. **Five fast reconnects: no MTU refusal, no not-subscribed line, no drop lines** - straight to streaming. **Decided: `BLE_CONNECT_SETTLE_MS` is not needed** with the derived MTU request; the split deletes it rather than carrying it into the ESP32 port. The refusals in the combined run came from the MTU-23 knob. *(Corrected by R3-2: the check could not fire.)* | n/a |
 | 8 `bleStop()` | n/a | `🪫 -> BATTERY_WAIT (switch off).` · `📴 BLE stopped (disconnected + advertising off).` - the step as specified; no client was connected at switch-off, so the after-split gate repeats it the same way |
 
 **Reconnect difference, explained by step 7:** Gnimu Monitor's reconnects print
@@ -3737,8 +3766,8 @@ READMEs for the power names. **The nRF trees do not build until step 2**:
   constant expression outside its `.cpp`).
 - **The TX-power and re-advertise lines are printed by the port**, in the
   converged wording, because only the stack knows them.
-- **The ESP32 port caches the MTU** from `onMtuChanged()` (and records the
-  requested MTU at connect, as `getPeerMTU()` would report it), so the
+- **The ESP32 port caches the MTU** from `onMtuChanged()` (and, until R3-2,
+  recorded the requested MTU at connect; it now starts at 23), so the
   per-frame check and the driver's MTU logging no longer take the stack's
   peer-map semaphore on every call.
 
@@ -3786,7 +3815,7 @@ dBm, connected -12 dBm.`, `✅ BLE client connected (MTU 91).`, `🔧 BLE MTU
 changed: 91 -> 517`, `❌ BLE client disconnected (reason 0x13).`. First
 connect: not-subscribed ❌, then `… (19 frame(s) …)` and 10 Hz -> 20 Hz. Gnimu
 Monitor's fast reconnect: no ❌, straight to 20 Hz, no MTU refusal - the settle
-window's deletion holds on the new driver. Re-advertising after each
+window's deletion holds on the new driver. *(Corrected by R3-2: the check could not fire.)* Re-advertising after each
 disconnect; no drop lines anywhere. **Second run, same day:** step 4 -
 `📨 BLE write: 1 byte(s) on channel 1` from a connected, unsubscribed client -
 and the LED blinking while advertising and solid when connected, both confirmed.
@@ -3918,3 +3947,386 @@ own best evidence: `rxPush()` and `rxDispatchOne()` are not merely "two copies",
 they are **byte-identical** today in two files no script compares - the IMU-3
 category, still alive, and uncheckable without extraction. The timing argument
 (before phase G writes the builder twice) stands. Scope before agreeing.
+
+---
+
+## Third review — 2026-09-15 (`R3-*`)
+
+[`code-review-2026-09-15.md`](code-review-2026-09-15.md): a source-only scan for
+suboptimal structures, vulnerabilities and convoluted code. Assessed against
+source 2026-09-15.
+
+### Index
+
+| ID | Disposition |
+|---|---|
+| R3-1 | Implemented 2026-09-15 — needs the bench check below |
+| R3-2 | ✅ Resolved 2026-09-15 — verified on ESP32 hardware |
+| R3-3 | ✅ Resolved 2026-09-15 — the AssistNow Autonomous disable restored in all three trees (by Chris); GNSS goldens re-saved, the only diff the three `setAopCfg` lines per variant. The same commit's 7 -> 10 rate baud sweep was intended |
+| R3-4 | ✅ Resolved 2026-09-15 — implemented; severity Low rather than Medium |
+| R3-5 | Declined 2026-09-15 |
+| R3-6, R3-7 | Implemented 2026-09-15 — need hardware check 11 |
+| R3-8 | Implemented 2026-09-15 — needs hardware check 11 |
+| R3-9 | Items 1-5 implemented 2026-09-15; item 6 declined |
+
+### R3-1 — as implemented
+
+A switch-on boot with the cell below `BATTERY_CUTOFF_V` and no USB reaches
+`powerEnterDeepSleep()` from `stateBegin()`, before `bleBegin()` - and only
+Bluefruit's `begin()` enables the SoftDevice (checked: nothing else in the core
+does). `sd_power_system_off()` is in the SVC range unavailable while the
+SoftDevice is disabled, so it returned an error and the device sat in the
+`while (1) delay(100)` it followed: awake on a flat cell, and not woken by USB,
+since VBUS wake is a property of real System OFF. This was the README's "it will
+power down again" case. The runtime cutoff and idle cutoff run after
+`bleBegin()` and were unaffected.
+
+**Change** (`g_power.cpp`, both nRF trees): check `sd_softdevice_is_enabled()`
+and write `NRF_POWER->SYSTEMOFF = 1` directly when it is not, as the core's own
+`systemOff()` does.
+
+**Verified:** both nRF trees build clean with warnings "All" (192,348 and
+214,164 bytes); `check_common.sh` clean. No host harness covers `g_power.cpp`.
+
+**Needs (bench, one nRF):** item 9 of "Hardware checks outstanding".
+
+### R3-2 — as implemented
+
+The ESP32 port's `onConnect()` called `updatePeerMTU(conn, 91)` then
+`getPeerMTU()`. In core 3.3.11 `updatePeerMTU()` only writes the server's own
+peer map; nothing goes on air, and a peripheral cannot start an MTU exchange. So
+`peerMtu` read 91 from connect while the link was at 23 until the central's
+exchange fired `onMtuChanged()`. The driver's check passed, and 88-byte notifies
+went to the stack in that window - most likely sent truncated to 20 bytes
+(Bluedroid's source is not in the core to confirm).
+
+**Pre-change capture (2026-09-15, BLE lines only):** five Gnimu Monitor connects,
+each `✅ BLE client connected (MTU 91).` then `🔧 BLE MTU changed: 91 -> 517`;
+the four fast reconnects subscribed before the first frame and logged no
+refusal. That confirms the seeded value; the serial side cannot show on-air
+truncation.
+
+**This invalidates three earlier results**, all of which read "no refusal" from
+a check that could not fire:
+
+- BLE-2's hardware note (2026-09-10), "with the derived value there is no
+  refusal at connect".
+- Baseline step 7 (2026-09-13), which decided `BLE_CONNECT_SETTLE_MS` was not
+  needed. The MTU-23 knob run (6+7 combined) was the truthful one: 2-7 frames
+  per fast reconnect were sent before the exchange.
+- The split's step 1 hardware note, "no MTU refusal - the settle window's
+  deletion holds".
+
+The deletion itself stands: those frames are now refused and counted, which is
+what the check is for, and a fixed delay would only hide the window.
+
+**Change** (`g_ble_port_esp32.cpp`): `kRequestedMtu` replaced by `kDefaultMtu =
+23`; `onConnect()` stores it before publishing the connection, with no
+`updatePeerMTU()`/`getPeerMTU()`, and uses the one-argument overload (the
+library calls both). `onMtuChanged()` unchanged. There is no longer an MTU knob:
+the refusal path is exercised by any client that subscribes before the exchange.
+Docs corrected: design §6.3 (settle-window bullet) and architecture-runtime.
+
+**Verified:** ESP32 builds with warnings "All", no sketch warnings, 1,183,899
+bytes (90%); `check_common.sh` clean. The port is not host-tested.
+
+**Hardware (2026-09-15, BLE lines only):** three Gnimu Monitor connects, each
+`✅ BLE client connected (MTU 23).` then `🔧 BLE MTU changed: 23 -> 517`.
+
+- First connect: subscribed after the exchange - not-subscribed ❌, `… (20
+  frame(s) refused while unsubscribed).`, no MTU refusal, 10 Hz -> 20 Hz.
+- Both fast reconnects: `❌ BLE: peer MTU 23 too small for a 88-byte frame (need
+  91). …`, `⚠️  BLE dropped 5 frame(s) this window` (5, then 10 total), `✅ BLE:
+  peer MTU now 517 - sending resumed.`, then steady 20 Hz.
+
+Those 5 frames per fast reconnect are the ones the old code handed to a 23-byte
+link as 88-byte notifies. Disconnect (0x13) and re-advertising unchanged.
+
+### R3-6, R3-7 — as implemented
+
+Two boot-time delays, one on each nRF sketch and one shared by all three trees.
+
+**R3-6** - `while (!Serial && millis() - t0 < 3000)` ran before `stateBegin()`
+on every boot. On battery no host can attach, so it always spent the full 3 s,
+spinning: `Adafruit_USBD_CDC::operator bool()` yields only to equal or
+higher-priority tasks. It delayed RUNNING by 3 s and, with R3-1, the
+low-voltage decision on the boot that most needs it.
+
+**Change** (both nRF `.ino` files): the wait is gated on `powerUsbPresent()`, a
+direct `NRF_POWER->USBREGSTATUS` read valid before `Serial.begin()` and before
+the SoftDevice is enabled. On a charger rather than a host, VBUS is present and
+`Serial` never goes true, so the 3 s still elapses - unchanged from before, and
+not worth detecting. The ESP32 uses a fixed 700 ms delay and is USB-only.
+
+**R3-7** - the sweep array began with `GNSS_BAUD`, so 115200 was tried twice,
+and `myGNSS.begin()` took the library's 1,100 ms default `maxWait` at every
+rate. `init()` polls three times, so a rate with no receiver cost about 3.3 s
+plus the sweep's 200 ms of delays: roughly 35 s across ten entries, all inside
+`setup()`, with the battery cutoff not yet running.
+
+**Change** (`g_gnss.cpp`, all three trees):
+
+- `kBaudRates` holds all nine rates and nothing else. `GNSS_BAUD` is tried
+  first, then the sweep skips the matching entry - nine attempts whatever
+  `GNSS_BAUD` is set to. **Deleting the duplicate entry instead, as the review
+  proposed, would be a bug** (caught by Chris): the list after the first
+  attempt must stay complete, or a receiver still saved at the old rate could
+  never be found after `GNSS_BAUD` changed.
+- The first attempt keeps the default `maxWait`, which covers a receiver still
+  booting after power-on; the rest use `kSweepMaxWaitMs` (250 ms), the value
+  the library's own header says is enough off SerialUSB.
+- `tryBaud()` and `switchToTargetBaud()` split out of the loop body.
+- The `GNSS_BAUD` static_assert moves out of all three `config.h` files into
+  `g_gnss.cpp` beside the array, checking membership with a `constexpr`
+  function rather than a hand-copied list of the same nine numbers in three
+  places. The lookup recurses instead of looping: the nRF core compiles as
+  C++11. Verified it still fires - `GNSS_BAUD 111111` fails the build with the
+  message.
+
+A no-receiver boot drops from about 35 s to about 11 s (3.5 s for the first
+rate, then eight at about 0.95 s). A receiver at `GNSS_BAUD` is unaffected; one
+at another rate is found up to 3 s sooner.
+
+**Verified (host):** the GNSS harness fake's `begin()` now takes `maxWait` and
+logs it, so the shorter wait is asserted rather than assumed. New checks: the
+first attempt is `GNSS_BAUD` at the default wait; at-9600 is tried at 250 ms
+while `GNSS_BAUD` keeps the default on both attempt and verify; absent sweeps
+nine rates, never tries `GNSS_BAUD` twice, and waits the default only once.
+Four mutations, each caught: the duplicate not skipped, the first attempt
+shortened, the sweep lengthened to 1,100 ms, and 250 changed to 300. Goldens
+re-saved - the diff is the `maxWait=` annotations plus the duplicate 115200
+attempt gone from the absent sweep.
+
+**Verified (build):** all three with warnings "All", no sketch warnings -
+ESP32 1,183,975 bytes (90%), nRF52840 192,420, OLED 214,244;
+`check_common.sh` clean.
+
+**Needs (bench, one nRF):** item 11 of "Hardware checks outstanding".
+
+### R3-8 — as implemented
+
+`rxDispatchOne()` logged `📨 BLE write: N byte(s) on channel M` per dispatched
+write. The GATT is open, so a central set that rate: a write-without-response
+flood made it print once per loop pass, and with a console attached on ESP32
+that paces the loop to UART drain speed. It was the last per-event log in the
+firmware; every other event became a counter reported once per stats window.
+
+**Change** (`g_ble.cpp`, `g_ble.h`, `g_telemetry.cpp`, all three trees): the
+dispatch increments `dispatchedWrites` (loop-only, no atomics) instead of
+logging, `bleDispatchedWrites()` exposes it, and the 1 Hz report prints
+`📨 BLE: %u inbound write(s) this window (%u total)` beside the dropped-write
+line, only when the count moves. The per-write byte count and channel are gone
+from the log - the deliberate trade, and a per-channel breakdown belongs to
+phase G, where a second write channel first exists.
+
+**Verified (host):** the BLE harness asserts the counter tracks dispatches
+exactly (and its golden no longer carries the per-write lines); the telemetry
+harness adds three windows - seven writes reported as one line, a quiet window
+printing nothing, then three more so the delta and the total differ. Four
+mutations, each caught: the per-write log restored (golden), the counter never
+incremented, the line printed unconditionally, and the delta printed as the
+total.
+
+**Verified (build):** all three with warnings "All", no sketch warnings -
+ESP32 1,183,995 bytes (90%), nRF52840 192,468, OLED 214,292;
+`check_common.sh` clean.
+
+**Needs (bench):** folded into item 11 of "Hardware checks outstanding".
+
+### R3-9 item 1 — duplicate staleness check, as implemented
+
+`trimSpeedMps()` kept its own idea of a stale PVT: a static `lastITOW`, a
+sample counter, `kStaleMax` derived from `IMU_TRIM_PVT_STALE_MS`, and an assert
+on that constant. `gnssStalled()` answers the same question from the epoch
+timestamp.
+
+**Change** (`g_imu.cpp`, `g_imu_tuning.h`, all three trees): the block and the
+three statics are gone; the gate refuses while `gnssStalled()` is true.
+`IMU_TRIM_PVT_STALE_MS` and its assert are deleted. Two behaviour differences,
+both accepted: the wait is now wall-clock rather than 100 IMU samples (a stalled
+IMU loop no longer stretches it), and a receiver repeating an `iTOW` would no
+longer read as stale - an M10 does not, and the stall screen covers a dead one.
+
+**The old check turned out to be untested.** Removing it entirely left all 15
+harness runs identical: the scenario's stale phase ran at 8 m/s, where the speed
+gate already refused, and lasted 5 s against a 30 s `IMU_TRIM_QUALIFY_MS`. The
+phase now models the hazard the design doc names - the receiver dies mid-drive,
+its last epoch said 0 m/s, and a smooth cruise looks stationary to the sensors -
+and runs 35 s, long enough that a gate ignoring staleness would qualify and
+refine the gyro bias on a moving car. The mutation that deletes the check now
+shows up as changed gyro output through that window; inverting it is caught too.
+`trim_locked_at` is unchanged at 36,991 ms, in the parked phase as before.
+
+**Verified:** IMU harness 15/15 (goldens re-saved: the timeline grows 110 s ->
+140 s and the stale phase's samples change); `gnssStalled()` added to the
+harness's GNSS fake, deriving the stall from epoch arrival as the driver does.
+All three build with warnings "All", no sketch warnings - ESP32 1,183,939 bytes
+(90%), nRF52840 192,436, OLED 214,260; `check_common.sh` clean. No new hardware
+check: trim convergence shows in the `Trim:` field on a normal drive.
+
+### R3-9 item 3 — unused `sMinAdc`, as implemented
+
+`sMinAdc` was reset per run and updated in both the blocking and polled
+samplers, and never read - the state block's own comment said so. Only
+`sMaxAdc` reaches `ingestPeak()`, deliberately: the cutoff keys on the
+unsmoothed peak so a momentary sag cannot trip a shutdown.
+
+**Change** (`g_battery.cpp`, both nRF trees - the ESP32 has no battery module):
+the declaration, the reset and the two comparison pairs are gone, and the
+comment now just says the run's max feeds `ingestPeak()`. No behaviour change;
+two comparisons per ADC read saved. A sag measurement, if it is ever wanted,
+needs a load-aware design rather than this variable.
+
+**Verified:** both nRF trees build with warnings "All", no sketch warnings -
+192,388 and 214,212 bytes; `check_common.sh` clean. No harness covers
+`g_battery.cpp`; the battery field in the stats line is exercised by every bench
+run.
+
+### R3-9 item 5 — out-of-line `logPrintf`, as implemented
+
+`LOG_PRINTF` expanded a 256-byte buffer, an `snprintf`, a length clip and a
+`Serial.write()` at every call site: 28 in the ESP32 tree, 31 and 32 in the nRF
+ones.
+
+**Change** (`g_log.h` plus a new `g_log.cpp`, all three trees): one
+`logPrintf(const char *fmt, ...)` holds the buffer and the clip;
+`__attribute__((format(printf, 1, 2)))` keeps the compile-time argument
+checking that `snprintf` used to provide. The macro remains as
+`#define LOG_PRINTF(...) logPrintf(__VA_ARGS__)`, so no call site changed and
+`LOG_ENABLED 0` still compiles everything away.
+
+**Measured**, warnings "All", no sketch warnings:
+
+| Tree | Before | After | Saved |
+|---|---|---|---|
+| ESP32 | 1,183,939 | 1,183,015 | 924 B (90% either way) |
+| nRF52840 | 192,388 | 191,636 | 752 B |
+| OLED | 214,212 | 213,428 | 784 B |
+
+RAM +8 bytes global on ESP32. Kept on that evidence: the tree under flash
+pressure gains the most, and the clip logic exists once instead of 28 times.
+
+**A rule this introduces:** the macro evaluated its arguments only when `Serial`
+was attached; the function always evaluates them. Every existing call site was
+checked - the only calls in argument lists are `blePortMtu()`,
+`blePortDisconnectReason()`, `getTxPower()` and `sizeof`, all pure reads. **No
+side effects in `LOG_PRINTF` arguments.**
+
+**Verified:** all four harnesses pass unchanged. `g_log.cpp` joins the checked
+set (24 -> 25 files), and the GNSS, telemetry and BLE runners compile it - all
+three build against the real `g_log.h`. The IMU harness keeps its own fake.
+
+### R3-9 item 4 — redundant `pvt` static, as implemented
+
+`g_telemetry.cpp` held `static const UBX_NAV_PVT_data_t *pvt`, assigned from
+what `gnssConsumePvt()` had just returned and read by the stats line and by the
+encode call in the same block. Both `gnssConsumePvt()` and `gnssLatestPvt()`
+return `&latestPVT`, so the static was a second name for the driver's own
+object, never fresher.
+
+**Change** (all three trees): the static is gone; the encode call uses `newPvt`,
+already in scope and non-null, and the stats report takes `gnssLatestPvt()` into
+a local, keeping its null check. Equivalent in both directions - null before the
+first epoch either way, and telemetry consumes every epoch, so the static was
+always the latest. With `LOG_ENABLED 0` the variable now disappears entirely
+rather than being carried unread.
+
+**Verified:** telemetry harness goldens byte-identical, which is the bar for a
+substitution. Its fake gained `gnssLatestPvt()`, null until the first epoch as
+the driver's is. Two mutations confirm the scenarios can see a wrong read: the
+report pointed at a stale copy, and the null check inverted - both fail. All
+three build with warnings "All", no sketch warnings - ESP32 1,183,007 bytes
+(90%), nRF52840 191,636, OLED 213,412; `check_common.sh` clean.
+
+### R3-9 item 2 — descriptor `transport` field, as implemented
+
+`ProtocolDescriptor::transport` had no runtime reader: the nRF port asserts on
+`PROTOCOL_TRANSPORT`, the ESP32 port builds its GATT from the channel table and
+reads neither, and the two static_asserts in `g_proto_racebox.cpp` existed to
+keep field and constexpr equal. The field's only job was to be checked against
+the value the ports actually use.
+
+**Change** (all three trees): the field is gone from the struct and both
+descriptor initialisers (`g_proto_racebox.cpp` and the harness protocol in
+`test/ble/`). The count assert keeps `channelCount == PROTOCOL_CHANNEL_COUNT`;
+the shape assert now reads `PROTOCOL_TRANSPORT != TRANSPORT_NORDIC_UART ||
+nordicUartShapeOk(RACEBOX_PROTOCOL)`, same guarantee anchored to the value the
+ports read. Its message and the two comment blocks in `g_protocol.h` follow.
+`TransportKind` stays - it types `PROTOCOL_TRANSPORT`.
+
+**What this assumes.** The active protocol stays a compile-time choice, which is
+what `ACTIVE_PROTOCOL` is today and what phase G keeps. A build that carried two
+descriptors and chose between them at runtime would need each to state its own
+transport, and the field would come back - mechanical if it ever happens.
+
+**Verified:** both checks still fire with the field gone - a non-Nordic service
+UUID trips the shape assert, `PROTOCOL_CHANNEL_COUNT 3` trips the count assert.
+BLE and telemetry harnesses pass (both compile a descriptor). All three build
+with warnings "All", no sketch warnings - ESP32 1,183,007 bytes (90%), nRF52840
+191,628, OLED 213,412; `check_common.sh` clean at 25 files.
+
+### R3-9 item 6 — near-identical LED files, declined
+
+Making the two `g_led.cpp` files match needs a `displayIsPresent()` stub in a
+tree that has no display, so that `check_common.sh` can compare them. That adds
+a fiction to the firmware to satisfy a comparison script; the checked set
+already excludes `config.h` and `g_state.cpp` for the same reason. The five-line
+difference is the real difference between the boards.
+
+### R3-4 — as implemented
+
+`imuSensorRead()` scaled all six axes through the Seeed library's
+`calcAccel()`/`calcGyro()`, whose literals are `double`: on the
+single-precision M4F that is a handful of libgcc soft-float calls per axis,
+about 3,000 a second, on the loop that must service `gnssPoll()` every 5.5 ms.
+They also scale from the library's copy of the settings rather than the chip the
+driver configures and verifies.
+
+**Change** (`g_imu_lsm6ds3.cpp`, both nRF trees): `accelGPerCount()` and
+`gyroDpsPerCount()` are `constexpr`, giving `kAccelGPerCount` and
+`kGyroDpsPerCount` with a `static_assert` that both are positive - the
+MPU-6050 driver's `kAccelCountsPerG` pattern. The reads are six multiplies.
+Deliberate difference from that driver: it stores counts-per-unit and divides,
+because the MPU datasheet quotes LSB/g, while the LSM quotes mg/LSB, so
+multiplying is both natural and cheaper. The 245 dps special case keeps the
+library's divisor of 2.
+
+**The goldens did not shift, contrary to the review's warning** - the harness's
+fake already hardcoded `0.000122f` and `0.0175f`, exactly the values these
+constants compute (both datasheet figures are related by powers of two, so the
+float results are bit-identical; checked). What that shows is that **the
+harness never exercised the library's double path**: the firmware now matches
+what has always been tested. On hardware the difference is at most 1 ulp before
+quantisation to int16 milli-g and centi-deg/s.
+
+**Verified:** IMU harness 15/15 unchanged. Two mutations caught by the goldens:
+the gyro divisor and the accel shift each wrong. The fake's now-unused
+`calcAccel()`/`calcGyro()` are deleted, so a driver that went back to the
+library's double math fails to build - the same tripwire the fake already used
+for `readRegisterRegion()`. Both nRF trees build with warnings "All", no sketch
+warnings - 191,500 and 213,284 bytes (128 bytes smaller); `check_common.sh`
+clean.
+
+### R3-5 — declined
+
+The OLED redraws and pushes the whole frame once a second. Declined 2026-09-15:
+the push is not on the GNSS path, the panel budget is met today, and a
+dirty-slice scheme trades a measured-good behaviour for bookkeeping about which
+rows changed.
+
+### Assessment notes
+
+**R3-2 is worse than a check that cannot fire** (implemented above). `updatePeerMTU()` only writes
+the server's own peer map, so `peerMtu` starts at 91 - but until the central's
+exchange completes the link really is at 23. Seeding 91 therefore likely sends
+88-byte notifies truncated to 20 bytes in that window on every fast reconnect.
+It also undermines the 2026-09-13 conclusion that `BLE_CONNECT_SETTLE_MS` could
+be deleted: that run showed no refusal because the refusal could not happen. The
+MTU-23 knob run is the truthful one - its 2-7 refused frames per fast reconnect
+were real protection. Recommended: start at 23, and confirm with a Gnimu Monitor
+capture across fast reconnects, before and after, looking for short frames.
+
+**R3-4's cost is small.** Five soft-float calls per axis is by estimate tens of
+µs per 100 Hz sample, far inside the 5.5 ms GNSS deadline. The fix is still worth
+doing: compile-time factors match the MPU-6050 driver and drop the dependency on
+the library's copy of the settings.

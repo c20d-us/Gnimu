@@ -136,7 +136,7 @@ void Uart::begin(unsigned long baud) {
 }
 Uart Serial1;
 
-bool SFE_UBLOX_GNSS_SERIAL::begin(Stream &stream) {
+bool SFE_UBLOX_GNSS_SERIAL::begin(Stream &stream, uint16_t maxWait) {
   // The driver hands us whatever the port returned; the fake receiver only
   // answers if that port is open at its baud.
   FakeSerialPort &port = static_cast<FakeSerialPort &>(stream);
@@ -147,7 +147,8 @@ bool SFE_UBLOX_GNSS_SERIAL::begin(Stream &stream) {
   if (ok) {
     g_verifySeen = true;
   }
-  logf("gnss.begin(port@%lu) -> %d", port.baud(), (int)ok);
+  logf("gnss.begin(port@%lu maxWait=%u) -> %d", port.baud(),
+       (unsigned int)maxWait, (int)ok);
   return ok;
 }
 bool SFE_UBLOX_GNSS_SERIAL::setSerialRate(unsigned long baud, uint8_t layer) {
@@ -225,6 +226,13 @@ static int logCount(const char *prefix) {
   }
   return n;
 }
+static int logContaining(const char *text) {
+  int n = 0;
+  for (const std::string &l : g_log) {
+    n += l.find(text) != std::string::npos;
+  }
+  return n;
+}
 static int logFirst(const char *prefix) { // index, or -1
   for (size_t i = 0; i < g_log.size(); i++) {
     if (g_log[i].compare(0, strlen(prefix), prefix) == 0) {
@@ -264,8 +272,9 @@ static int runAtTarget() {
   const bool up = gnssBegin();
   fakeGnssLogPrint();
   check(up && gnssIsUp(), "at-target: bring-up succeeded");
-  check(logFirst("gnss.begin") == logFirst("gnss.begin(port@" GNSS_BAUD_STR ")"),
-        "at-target: the sweep tries GNSS_BAUD first");
+  check(logFirst("gnss.begin") ==
+            logFirst("gnss.begin(port@" GNSS_BAUD_STR " maxWait=1100)"),
+        "at-target: the sweep tries GNSS_BAUD first, at the default maxWait");
   // LAT-5, where the call exists at all: sized ONCE, and before the first
   // begin() - the driver silently ignores it afterwards.
   check(logCount("port.setRxBufferSize") <= 1 &&
@@ -283,6 +292,11 @@ static int runAt9600() {
   const bool up = gnssBegin();
   fakeGnssLogPrint();
   check(up && gnssIsUp(), "at-9600: found, switched and verified");
+  check(logCount("gnss.begin(port@9600 maxWait=250)") == 1,
+        "at-9600: the rate after the first is tried at the short maxWait");
+  check(logCount("gnss.begin(port@" GNSS_BAUD_STR " maxWait=1100)") == 2,
+        "at-9600: GNSS_BAUD keeps the default maxWait, on both attempt and "
+        "verify");
   return 0;
 }
 
@@ -294,7 +308,13 @@ static int runAbsent() {
   const bool up = gnssBegin();
   fakeGnssLogPrint();
   check(!up && !gnssIsUp(), "absent: returns false, not up (no halt)");
-  check(logCount("gnss.begin") == 10, "absent: sweeps all ten rates, then stops");
+  check(logCount("gnss.begin") == 9,
+        "absent: sweeps all nine rates, then stops");
+  check(logCount("gnss.begin(port@" GNSS_BAUD_STR) == 1,
+        "absent: GNSS_BAUD is not tried twice");
+  check(logCount("gnss.begin(port@" GNSS_BAUD_STR " maxWait=1100)") == 1 &&
+            logContaining("maxWait=250") == 8,
+        "absent: only the first attempt waits the default");
   check(portsBalanced(), "absent: every attempt closes its port before the next");
   check(logCount("port.setRxBufferSize") <= 1,
         "absent: the RX ring is sized once for the whole sweep, not per attempt");

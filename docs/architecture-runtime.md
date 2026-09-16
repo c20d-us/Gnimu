@@ -52,9 +52,9 @@ signature as `TelemetryEmit`, so it is handed straight to the encoder with no
 adapter. Below it the two stacks genuinely differ: Bluefruit's `BLEUart` chunks
 an oversized notify and manages TX backpressure, which is why the RaceBox path
 was left on it rather than rebuilt. The ESP32 has no equivalent and does no
-chunking: it requests an MTU derived from the largest frame any protocol emits
-(`kRequestedMtu = PROTOCOL_MAX_FRAME_LEN + 3`) and refuses to send a frame that
-does not fit rather than truncating it — so there, one channel builder serves
+chunking: it starts each connection at MTU 23, follows the central's exchange
+(a peripheral cannot start one), and refuses to send a frame that does not fit
+rather than truncating it — so there, one channel builder serves
 every protocol and `TransportKind` is ignored.
 
 ## What is not on this path
@@ -126,8 +126,9 @@ An ESP32 row was wrong until 2026-09-10 (ARC-1): the flag was set *before* a
 connection timestamp, with an `updatePeerMTU()` call between them, so the loop
 on the other core could see "connected" beside the previous connection's
 timestamp and skip the `BLE_CONNECT_SETTLE_MS` window. (That window and its
-timestamp were deleted on 2026-09-13, on the baseline's evidence; the ordering
-rule stands, in the `disconnectReason` and `peerMtu` rows.) It went unnoticed because nothing listed
+timestamp were deleted on 2026-09-13; since R3-2 the frames it delayed are
+refused by the MTU check instead. The ordering rule stands, in the
+`disconnectReason` and `peerMtu` rows.) It went unnoticed because nothing listed
 what crosses — which is what this table is for. **Adding to a callback means
 adding a row here.**
 

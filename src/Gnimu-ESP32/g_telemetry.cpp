@@ -37,7 +37,6 @@ static float bleRateHz = 0.0f;
 static unsigned long lastEpochMs = 0; // millis() of the latest epoch
 static unsigned long spanStartMs = 0; // epoch that opens the current span
 static bool spanStarted = false;      // false until an epoch opens a span
-static const UBX_NAV_PVT_data_t *pvt = nullptr;
 
 static const ProtocolDescriptor *proto = ACTIVE_PROTOCOL;
 
@@ -158,6 +157,7 @@ static void telemetrySerialReport(unsigned long now) {
     uint8_t sats = 0, fix = 0;
     uint32_t hAcc = 0, tAcc = 0;
     double lat = 0.0, lon = 0.0;
+    const UBX_NAV_PVT_data_t *pvt = gnssLatestPvt();
     if (pvt != nullptr) {
       sats = pvt->numSV;
       fix = pvt->fixType;
@@ -246,6 +246,16 @@ static void telemetrySerialReport(unsigned long now) {
       lastDropTotal = drops;
     }
 
+    // Inbound writes handed to the protocol.
+    static uint32_t lastWriteTotal = 0;
+    const uint32_t writes = bleDispatchedWrites();
+    if (writes != lastWriteTotal) {
+      LOG_PRINTF("📨 BLE: %u inbound write(s) this window (%u total)\n",
+                 (unsigned int)(writes - lastWriteTotal),
+                 (unsigned int)writes);
+      lastWriteTotal = writes;
+    }
+
     // Dropped inbound writes.
     static uint32_t lastWriteDropTotal = 0;
     const uint32_t wdrops = bleDroppedWrites();
@@ -274,8 +284,6 @@ void telemetryBegin() { bootTimeMs = lastReportMs = millis(); }
 
 void telemetrySendIfReady() {
   if (const UBX_NAV_PVT_data_t *newPvt = gnssConsumePvt()) {
-    pvt = newPvt;
-
     // The epoch that opens a span is its edge and is not counted. It is still
     // sent.
     const unsigned long epochMs = millis();
@@ -298,7 +306,7 @@ void telemetrySendIfReady() {
       const uint32_t sentBefore = bleSentFrames();
       const uint32_t failedBefore =
           bleDroppedFrames() - bleUnsubscribedFrames();
-      proto->encode(buildSample(*pvt, imu), bleEmitFrame);
+      proto->encode(buildSample(*newPvt, imu), bleEmitFrame);
       if (counted && bleSentFrames() != sentBefore &&
           bleDroppedFrames() - bleUnsubscribedFrames() == failedBefore) {
         bleSentPacketCount++;

@@ -25,8 +25,14 @@ int fakeReadCount() { return g_reads; }
 #include "u-blox_structs.h"
 static UBX_NAV_PVT_data_t g_pvt;
 static bool g_pvtPresent = false;
+// When the last epoch arrived, so gnssStalled() answers the way the driver's
+// does: up, and nothing new for longer than the threshold.
+static unsigned long g_lastEpochMs = 0;
 void fakeSetPvt(bool present, uint8_t fixType, bool fixOK, int32_t gSpeedMmS,
                 uint32_t iTOW) {
+  if (present && (!g_pvtPresent || iTOW != g_pvt.iTOW)) {
+    g_lastEpochMs = fakeNowMs();
+  }
   g_pvtPresent = present;
   g_pvt.fixType = fixType;
   g_pvt.flags.bits.gnssFixOK = fixOK;
@@ -34,6 +40,10 @@ void fakeSetPvt(bool present, uint8_t fixType, bool fixOK, int32_t gSpeedMmS,
   g_pvt.iTOW = iTOW;
 }
 const UBX_NAV_PVT_data_t *gnssLatestPvt() { return g_pvtPresent ? &g_pvt : nullptr; }
+// GNSS_NAV_RATE_HZ is 20 in every variant, so the driver's threshold is 1s.
+bool gnssStalled() {
+  return g_pvtPresent && (fakeNowMs() - g_lastEpochMs) > 1000UL;
+}
 
 #include "Wire.h"
 #include <string.h>

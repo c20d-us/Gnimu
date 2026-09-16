@@ -181,17 +181,6 @@ static_assert(GNSS_RX_PIN != GNSS_TX_PIN && GNSS_RX_PIN != LED_ONBOARD_PIN &&
               "ERROR: GNSS_RX_PIN, GNSS_TX_PIN, and LED_ONBOARD_PIN must all "
               "be different pins.");
 
-// Must be a rate connectAndConfigureBaud() sweeps, or the receiver could be
-// saved at a rate the firmware can't find.
-static_assert(GNSS_BAUD == 4800 || GNSS_BAUD == 9600 || GNSS_BAUD == 19200 ||
-                  GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
-                  GNSS_BAUD == 115200 || GNSS_BAUD == 230400 ||
-                  GNSS_BAUD == 460800 || GNSS_BAUD == 921600,
-              "ERROR: GNSS_BAUD must be one of the baud rates "
-              "connectAndConfigureBaud() knows how to detect/switch between "
-              "(4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, "
-              "921600).");
-
 static_assert(GNSS_NAV_RATE_HZ > 0 && GNSS_NAV_RATE_HZ <= 25,
               "ERROR: GNSS_NAV_RATE_HZ must be between 1 and 25.");
 

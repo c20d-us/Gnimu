@@ -192,8 +192,7 @@ struct ProtocolDescriptor {
   const char *manufacturer, *hwRev, *fwRev;     // DIS; null = omit the service
   uint16_t    serviceUuid16;
   const char *serviceUuid128;
-  TransportKind transport;
-  const ProtocolChannel *channels;
+  const ProtocolChannel *channels;   // transport: PROTOCOL_TRANSPORT, R3-9
   uint8_t     channelCount;
   void (*encode)(const TelemetrySample &, TelemetryEmit);
   void (*onWrite)(uint8_t channel, const uint8_t *data, size_t len);  // nullable
@@ -418,7 +417,7 @@ Before the split, wording differed between stacks on the lines marked.
 | Disconnect | `❌ BLE client disconnected (reason 0x%02X).` *(differs today; the ESP32 port takes the reason from Bluedroid's `onDisconnect(server, param)` overload)* |
 | Not subscribed / resumed | `❌ BLE: client connected but has not subscribed to notifications - nothing is being sent.` / `✅ BLE: notifications enabled - sending resumed (%u frame(s) refused while unsubscribed).` |
 | MTU refusal / resumed | `❌ BLE: peer MTU %u too small for a %u-byte frame (need %u). Refusing to send - a truncated packet is worse than none.` / `✅ BLE: peer MTU now %u - sending resumed.` |
-| Inbound write | `📨 BLE write: %u byte(s) on channel %u` |
+| Inbound writes | `📨 BLE: %u inbound write(s) this window (%u total)` *(per window since R3-8)* |
 | Stopped | `📴 BLE stopped (disconnected + advertising off).` *(nRF only today)* |
 
 The two "cannot happen" lines - too many channels, unsupported transport -
@@ -435,14 +434,14 @@ become compile errors and leave the table.
   port maps dBm to the enum with `BLEDevice::setPower(level, type)` and a
   `static_assert` on the values the part accepts (-12 to +9 in steps of 3).
   Both at -12 preserves today's behaviour.
-- **`BLE_CONNECT_SETTLE_MS` is deleted.** Decided by the baseline (2026-09-13):
-  with it at 0 and the derived MTU request, five fast Gnimu Monitor reconnects
-  produced no MTU refusal and no dropped frame. The connect-time refusals it once
-  guarded appear only with the MTU request forced to 23.
-
-  That is also how to exercise the refusal path: set `kRequestedMtu` to 23 in
-  `g_ble_port_esp32.cpp`, and a client that subscribes before the exchange
-  completes (Gnimu Monitor's reconnects) sees g_ble's refusal and recovery lines.
+- **`BLE_CONNECT_SETTLE_MS` is deleted.** Decided by the baseline (2026-09-13),
+  on evidence corrected by R3-2 (2026-09-15): the "derived MTU request" was only
+  `updatePeerMTU()`, which writes the server's own peer map and sends nothing, so
+  the refusal could not fire and the clean reconnects proved nothing. The port
+  now starts every connection at MTU 23, and frames before the central's
+  exchange are refused and counted (2-7 per fast Gnimu Monitor reconnect in the
+  MTU-23 run). The deletion stands: refusing those frames is the intended
+  behaviour, and a fixed delay would only hide it.
   It does not simulate a central that declines the raise — the central drives
   the exchange, and an iOS central negotiated 517 regardless. That path is
   untested.

@@ -82,7 +82,7 @@ includes the contract and the encoder, never the selector.
 
 | Colour | Scope | Meaning when you edit it |
 |---|---|---|
-| blue | **all-variant** | Change one copy → copy to the other two sketch folders. `check_common.sh` fails until you do. 24 files. |
+| blue | **all-variant** | Change one copy → copy to the other two sketch folders. `check_common.sh` fails until you do. 25 files. |
 | green | **nRF-shared** | Same, but only the two nRF52840 trees. 8 files. |
 | amber | **per-variant** | Edit freely; the copies legitimately differ. |
 | purple | **host only** | Not compiled into any firmware. |

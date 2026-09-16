@@ -63,7 +63,8 @@ for V in Gnimu-ESP32 Gnimu-nRF52840 Gnimu-nRF52840-OLED; do
        -I"$ROOT/test/telemetry/fakes" -I"$ROOT/test" -I"$ROOT/src/$V" -I"$SPARKFUN" \
        "$ROOT/test/telemetry/telemetry_harness.cpp" "$ROOT/src/$V/g_ble.cpp" \
        "$ROOT/src/$V/g_telemetry.cpp" "$ROOT/src/$V/g_proto_racebox.cpp" \
-       "$ROOT/src/$V/g_ubx_helpers.cpp" -o "$B/harness" 2>"$B/build.txt"; then
+       "$ROOT/src/$V/g_ubx_helpers.cpp" "$ROOT/src/$V/g_log.cpp" \
+       -o "$B/harness" 2>"$B/build.txt"; then
     echo "❌ $V: build failed"; sed 's/^/     /' "$B/build.txt" | head -30
     status=1; rm -rf "$B"; continue
   fi

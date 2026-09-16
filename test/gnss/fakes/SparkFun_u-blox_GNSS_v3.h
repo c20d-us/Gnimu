@@ -32,6 +32,7 @@
 #include "fake_gnss.h"
 
 // --- Constants g_gnss.cpp names ---------------------------------------------
+#define kUBLOXGNSSDefaultMaxWait 1100
 #define COM_TYPE_UBX 0x01
 #define VAL_CFG_SUBSEC_IOPORT 0x01
 #define VAL_LAYER_RAM_BBR 0x03
@@ -71,7 +72,7 @@ class SFE_UBLOX_GNSS_SERIAL {
 public:
   // Answers only if the port is open at the receiver's baud - which is what
   // makes the baud sweep in connectAndConfigureBaud() a real test.
-  bool begin(Stream &port);
+  bool begin(Stream &port, uint16_t maxWait = kUBLOXGNSSDefaultMaxWait);
 
   bool setSerialRate(unsigned long baud, uint8_t layer = VAL_LAYER_RAM_BBR);
   bool saveConfigSelective(uint32_t subsection);

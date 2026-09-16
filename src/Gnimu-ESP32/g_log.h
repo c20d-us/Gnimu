@@ -44,19 +44,10 @@
     if (Serial)                                                                \
       Serial.println(__VA_ARGS__);                                             \
   } while (0)
-// ##__VA_ARGS__ drops the comma when fmt is the only argument.
-#define LOG_PRINTF(fmt, ...)                                                   \
-  do {                                                                         \
-    if (Serial) {                                                              \
-      char logLine_[LOG_LINE_MAX];                                             \
-      const int logLen_ =                                                      \
-          snprintf(logLine_, sizeof(logLine_), fmt, ##__VA_ARGS__);            \
-      if (logLen_ > 0)                                                         \
-        Serial.write((const uint8_t *)logLine_,                                \
-                     logLen_ < (int)sizeof(logLine_) ? (size_t)logLen_         \
-                                                     : sizeof(logLine_) - 1);  \
-    }                                                                          \
-  } while (0)
+// Formats into its own buffer and clips; the attribute keeps snprintf's
+// argument checking at every call site.
+void logPrintf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+#define LOG_PRINTF(...) logPrintf(__VA_ARGS__)
 #define LOG_FLUSH()                                                            \
   do {                                                                         \
     if (Serial)                                                                \

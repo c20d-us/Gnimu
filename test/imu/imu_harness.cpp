@@ -55,9 +55,13 @@ static const Phase kPhases[] = {
     {2000, false, 0, 0.0f, false, false},  // no PVT yet
     {45000, true, 3, 0.0f, false, false},  // parked, 3D fix: trim qualifies
     {70000, true, 3, 8.0f, true, false},   // driving
-    {75000, true, 3, 8.0f, true, true},    // iTOW stalls: speed goes stale
-    {80000, true, 2, 8.0f, true, false},   // 2D fix: trim gate closed
-    {110000, true, 3, 8.0f, true, false},  // driving again
+    // The receiver dies mid-drive: its last epoch said 0 m/s, and a smooth
+    // cruise looks stationary to the sensors. Long enough to out-last
+    // IMU_TRIM_QUALIFY_MS, so a gate that ignored staleness would qualify here
+    // and refine the gyro bias on a moving car.
+    {105000, true, 3, 0.0f, false, true},
+    {110000, true, 2, 8.0f, true, false},  // 2D fix: trim gate closed
+    {140000, true, 3, 8.0f, true, false},  // driving again
 };
 
 static const Phase &phaseAt(unsigned long t) {
@@ -96,7 +100,7 @@ static int runNormal() {
   uint32_t iTOW = 100000u;
   unsigned long lockedAt = 0;
 
-  for (unsigned long t = fakeNowMs(); t < 110000; t = fakeNowMs()) {
+  for (unsigned long t = fakeNowMs(); t < 140000; t = fakeNowMs()) {
     fakeAdvanceMs(1);
     t = fakeNowMs();
     const Phase &p = phaseAt(t);

@@ -155,23 +155,21 @@ constexpr ProtocolDescriptor RACEBOX_PROTOCOL = {
     RACEBOX_FIRMWARE_VERSION,
     0, // no 16-bit service UUID
     RACEBOX_SERVICE_UUID,
-    TRANSPORT_NORDIC_UART,
     raceboxChannels,
     (uint8_t)(sizeof(raceboxChannels) / sizeof(raceboxChannels[0])),
     raceboxEncode,
     raceboxOnWrite,
 };
 
-static_assert(RACEBOX_PROTOCOL.channelCount == PROTOCOL_CHANNEL_COUNT &&
-                  RACEBOX_PROTOCOL.transport == PROTOCOL_TRANSPORT,
-              "ERROR: PROTOCOL_CHANNEL_COUNT / PROTOCOL_TRANSPORT in "
-              "g_proto_racebox.h disagree with RACEBOX_PROTOCOL.");
+static_assert(RACEBOX_PROTOCOL.channelCount == PROTOCOL_CHANNEL_COUNT,
+              "ERROR: PROTOCOL_CHANNEL_COUNT in g_proto_racebox.h disagrees "
+              "with RACEBOX_PROTOCOL.");
 
 // Keeps the ESP32 GATT identical to BLEUart's.
-static_assert(RACEBOX_PROTOCOL.transport != TRANSPORT_NORDIC_UART ||
+static_assert(PROTOCOL_TRANSPORT != TRANSPORT_NORDIC_UART ||
                   nordicUartShapeOk(RACEBOX_PROTOCOL),
-              "ERROR: RACEBOX_PROTOCOL declares TRANSPORT_NORDIC_UART, but its "
-              "service UUID or channel table does not match the Nordic UART "
-              "service BLEUart serves on nRF (Tx notify at index 0, Rx write "
-              "at index 1, 6E40000x UUIDs) - the two families would present "
-              "different GATTs.");
+              "ERROR: g_proto_racebox.h declares TRANSPORT_NORDIC_UART, but "
+              "RACEBOX_PROTOCOL's service UUID or channel table does not "
+              "match the Nordic UART service BLEUart serves on nRF (Tx notify "
+              "at index 0, Rx write at index 1, 6E40000x UUIDs) - the two "
+              "families would present different GATTs.");

@@ -103,18 +103,22 @@ size_t FakeSerial::write(const uint8_t *data, size_t len) {
   return len;
 }
 
-// GNSS. The struct persists, as the library's does: telemetry keeps a pointer
-// to the latest epoch for the stats line.
+// GNSS. The struct persists, as the library's does: the stats line reads the
+// latest epoch back through gnssLatestPvt().
 static UBX_NAV_PVT_data_t pvt;
 static bool pvtPending = false;
+static bool everPvt = false;
 static bool gnssUp = true;
 const UBX_NAV_PVT_data_t *gnssConsumePvt() {
   if (!pvtPending) {
     return nullptr;
   }
   pvtPending = false;
+  everPvt = true;
   return &pvt;
 }
+// Null until the first epoch, as the driver's is.
+const UBX_NAV_PVT_data_t *gnssLatestPvt() { return everPvt ? &pvt : nullptr; }
 bool gnssIsUp() { return gnssUp; }
 static bool gnssStall = false;
 bool gnssStalled() { return gnssStall; }
@@ -509,6 +513,25 @@ static int runStats() {
               "drops get their own lines");
   window("no new drops: no drop lines");
   ok &= check(!printed("dropped"), "drop lines only when the count moves");
+
+  // R3-8. The queue's seven writes drain one per bleUpdate(), counted rather
+  // than logged per write - a central sets that rate.
+  for (int i = 0; i < 7; i++) {
+    bleUpdate();
+  }
+  window("7 inbound writes dispatched this window");
+  ok &= check(printed("📨 BLE: 7 inbound write(s) this window (7 total)"),
+              "dispatched writes are reported once per window, not per write");
+  window("no new writes: no write line");
+  ok &= check(!printed("📨"), "the write line only prints when the count moves");
+
+  for (uint8_t b = 0; b < 3; b++) {
+    bleRxFromCallback(TELEMETRY_CHANNEL_NORDIC_RX, &b, 1, true);
+    bleUpdate();
+  }
+  window("3 more inbound writes: delta and total differ");
+  ok &= check(printed("📨 BLE: 3 inbound write(s) this window (10 total)"),
+              "the write line reports the window's delta beside the total");
 
   // R2-4. A client connected but not subscribed: every frame refused, all of it
   // in the unsubscribed subset. Expected, and announced once by the driver - so

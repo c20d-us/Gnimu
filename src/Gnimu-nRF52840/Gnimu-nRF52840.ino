@@ -32,10 +32,14 @@ void setup() {
   powerHoldPeripheralsOff();
 
 #if LOG_ENABLED
-  // Wait up to 3s for USB CDC to enumerate so boot messages aren't lost.
+  // Wait up to 3s for USB CDC to enumerate so boot messages aren't lost. Only
+  // with VBUS: on battery no host can attach, and the wait would delay the
+  // low-voltage check in stateBegin() by its full length.
   Serial.begin(115200);
-  uint32_t t0 = millis();
-  while (!Serial && millis() - t0 < 3000) {
+  if (powerUsbPresent()) {
+    uint32_t t0 = millis();
+    while (!Serial && millis() - t0 < 3000) {
+    }
   }
 #endif
   LOG_PRINTF("🚀 Gnimu [%s] starting up...\n", GNIMU_VARIANT);

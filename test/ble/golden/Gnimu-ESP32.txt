@@ -73,33 +73,22 @@ S session
 ❌ BLE client disconnected (reason 0x3E).
 ✅ session: a session seen only by its count is still reported, and ends not connected
 S inbound
-📨 BLE write: 5 byte(s) on channel 1
 proto.onWrite ch=1 len=5 first=0x00
-✅ inbound: one write, dispatched on the next update
+✅ inbound: one write, dispatched on the next update and counted
 ✅ inbound: an oversized discrete write is dropped whole and counted
-📨 BLE write: 64 byte(s) on channel 1
 proto.onWrite ch=1 len=64 first=0x00
-📨 BLE write: 64 byte(s) on channel 1
 proto.onWrite ch=1 len=64 first=0x40
-📨 BLE write: 64 byte(s) on channel 1
 proto.onWrite ch=1 len=64 first=0x80
-📨 BLE write: 8 byte(s) on channel 1
 proto.onWrite ch=1 len=8 first=0xC0
 ✅ inbound: a 200-byte stream slice is split 64/64/64/8, one dispatch per update
 ✅ inbound: a burst of 9 fills the 7 usable slots and drops 2
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x00
 ✅ inbound: exactly one dispatch per update
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x01
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x02
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x03
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x04
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x05
-📨 BLE write: 1 byte(s) on channel 1
 proto.onWrite ch=1 len=1 first=0x06
 ✅ inbound: the queue drains in order, then is empty
+✅ inbound: every dispatch is counted, and nothing else is

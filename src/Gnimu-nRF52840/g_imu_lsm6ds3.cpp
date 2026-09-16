@@ -74,6 +74,26 @@ static_assert(accelFsCode(IMU_ACCEL_RANGE_G) != 0xFF &&
               "ERROR: IMU_ACCEL_RANGE_G / IMU_GYRO_RANGE_DPS is not a range "
               "this driver can encode - keep it in step with config.h's list.");
 
+// Datasheet sensitivity at the configured full scale, as float so the M4F's
+// single-precision FPU does the scaling. The library's calcAccel()/calcGyro()
+// use double literals, which become soft-float calls, and scale from its own
+// copy of the settings rather than the chip.
+static constexpr float accelGPerCount(int g) {
+  return g == 2 || g == 4 || g == 8 || g == 16 ? 0.061e-3f * (float)(g >> 1)
+                                               : 0.0f;
+}
+static constexpr float gyroDpsPerCount(int dps) {
+  return dps == 245 ? 4.375e-3f * 2.0f
+         : dps == 125 || dps == 500 || dps == 1000 || dps == 2000
+             ? 4.375e-3f * (float)(dps / 125)
+             : 0.0f;
+}
+static constexpr float kAccelGPerCount = accelGPerCount(IMU_ACCEL_RANGE_G);
+static constexpr float kGyroDpsPerCount = gyroDpsPerCount(IMU_GYRO_RANGE_DPS);
+static_assert(kAccelGPerCount > 0.0f && kGyroDpsPerCount > 0.0f,
+              "ERROR: IMU_ACCEL_RANGE_G / IMU_GYRO_RANGE_DPS has no datasheet "
+              "sensitivity here - keep it in step with config.h's list.");
+
 static LSM6DS3 myIMU(I2C_MODE, IMU_I2C_ADDRESS);
 
 // Read `len` registers, checking both the address write and the byte count.
@@ -156,12 +176,12 @@ bool imuSensorRead(ImuRawSample *out) {
     return false;
   }
 
-  out->gyro[0] = myIMU.calcGyro(rawPair(&raw[0]));
-  out->gyro[1] = myIMU.calcGyro(rawPair(&raw[2]));
-  out->gyro[2] = myIMU.calcGyro(rawPair(&raw[4]));
-  out->accel[0] = myIMU.calcAccel(rawPair(&raw[6]));
-  out->accel[1] = myIMU.calcAccel(rawPair(&raw[8]));
-  out->accel[2] = myIMU.calcAccel(rawPair(&raw[10]));
+  out->gyro[0] = (float)rawPair(&raw[0]) * kGyroDpsPerCount;
+  out->gyro[1] = (float)rawPair(&raw[2]) * kGyroDpsPerCount;
+  out->gyro[2] = (float)rawPair(&raw[4]) * kGyroDpsPerCount;
+  out->accel[0] = (float)rawPair(&raw[6]) * kAccelGPerCount;
+  out->accel[1] = (float)rawPair(&raw[8]) * kAccelGPerCount;
+  out->accel[2] = (float)rawPair(&raw[10]) * kAccelGPerCount;
   return true;
 }
 

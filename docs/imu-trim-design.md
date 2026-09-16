@@ -258,8 +258,10 @@ explanation. This design's value has been that it explains in a sentence.
 **A frozen fix is not a fix.** `gnssLatestPvt()` returns the last epoch however
 old, so a receiver that dies mid-drive would freeze its speed at whatever it last
 reported — possibly 0 m/s — and let the gate pass while moving. `trimSpeedMps()`
-watches `iTOW` and stops trusting the speed once it has not advanced for
-`IMU_TRIM_PVT_STALE_MS` (1 s).
+refuses the speed while `gnssStalled()` is true: no epoch for the larger of 1 s
+and three epoch periods. (It tracked `iTOW` against its own
+`IMU_TRIM_PVT_STALE_MS` until R3-9, before `g_gnss.cpp` answered the same
+question.)
 
 ### 5.6 Engine vibration: gate thresholds measured, not guessed
 

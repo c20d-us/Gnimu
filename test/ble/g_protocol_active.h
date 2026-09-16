@@ -41,10 +41,9 @@ constexpr ProtocolChannel harnessChannels[] = {
 };
 
 constexpr ProtocolDescriptor HARNESS_PROTOCOL = {
-    "Test Model",           "Test Maker", "HW2", "FW9", 0x1FF8, nullptr,
-    TRANSPORT_GATT_CHANNELS, harnessChannels,
+    "Test Model", "Test Maker", "HW2", "FW9", 0x1FF8, nullptr, harnessChannels,
     (uint8_t)(sizeof(harnessChannels) / sizeof(harnessChannels[0])),
-    harnessEncode,          harnessOnWrite,
+    harnessEncode, harnessOnWrite,
 };
 
 static const ProtocolDescriptor *const ACTIVE_PROTOCOL = &HARNESS_PROTOCOL;

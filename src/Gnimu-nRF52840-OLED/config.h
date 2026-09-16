@@ -352,17 +352,6 @@ static_assert(DEVICE_ID[0] >= '0' && DEVICE_ID[0] <= '3',
 static_assert(GNSS_RX_PIN != GNSS_TX_PIN,
               "ERROR: GNSS_RX_PIN and GNSS_TX_PIN must be different pins.");
 
-// Must be a rate connectAndConfigureBaud() sweeps, or the receiver could be
-// saved at a rate the firmware can't find.
-static_assert(GNSS_BAUD == 4800 || GNSS_BAUD == 9600 || GNSS_BAUD == 19200 ||
-                  GNSS_BAUD == 38400 || GNSS_BAUD == 57600 ||
-                  GNSS_BAUD == 115200 || GNSS_BAUD == 230400 ||
-                  GNSS_BAUD == 460800 || GNSS_BAUD == 921600,
-              "ERROR: GNSS_BAUD must be one of the baud rates "
-              "connectAndConfigureBaud() knows how to detect/switch between "
-              "(4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, "
-              "921600).");
-
 // Fallback path: a full frame of spaced slices must finish within the refresh
 // interval, or the display pushes continuously.
 static_assert(((DISPLAY_TILES_W / DISPLAY_CHUNK_TILES_W) * DISPLAY_TILES_H) *

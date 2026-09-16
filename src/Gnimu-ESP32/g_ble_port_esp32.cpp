@@ -28,10 +28,9 @@
 
 // BLE port for the ESP32 core (Bluedroid). See g_ble_port.h.
 
-// Requested ATT MTU: the largest frame plus the 3-byte notify header. Recorded
-// as the peer MTU on connect so frames aren't refused while the exchange is in
-// progress. Set to 23 to exercise the MTU refusal path.
-static constexpr uint16_t kRequestedMtu = PROTOCOL_MAX_FRAME_LEN + 3;
+// ATT MTU at connect. Only the central can start the exchange, so frames that
+// don't fit are refused until it raises the MTU.
+static constexpr uint16_t kDefaultMtu = 23;
 
 // Characteristics and CCCDs, indexed by channel.
 static constexpr uint8_t kMaxChannels = 8;
@@ -50,7 +49,7 @@ static BLEServer *pServer = nullptr;
 static std::atomic<bool> connected{false};
 static std::atomic<uint32_t> sessionCount{0};
 static std::atomic<uint8_t> disconnectReason{0};
-static std::atomic<uint16_t> peerMtu{23};
+static std::atomic<uint16_t> peerMtu{kDefaultMtu};
 
 // Set by blePortStop() to suppress re-advertising.
 static bool stopped = false;
@@ -69,11 +68,10 @@ static constexpr esp_power_level_t powerLevelFor(int dBm) {
 }
 
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *server, esp_ble_gatts_cb_param_t *param) override {
+  void onConnect(BLEServer *server) override {
+    (void)server;
     // Store the MTU before publishing the connection.
-    server->updatePeerMTU(param->connect.conn_id, kRequestedMtu);
-    peerMtu.store(server->getPeerMTU(param->connect.conn_id),
-                  std::memory_order_release);
+    peerMtu.store(kDefaultMtu, std::memory_order_release);
     connected.store(true, std::memory_order_release);
     sessionCount.fetch_add(1, std::memory_order_release);
   }

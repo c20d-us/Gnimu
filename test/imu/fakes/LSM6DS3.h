@@ -41,11 +41,13 @@ public:
                      settings.gyroRange);
     return IMU_SUCCESS;
   }
+  // No calcAccel()/calcGyro() either: the driver scales with its own
+  // compile-time factors (R3-4), so going back to the library's double math
+  // would fail to build here.
+  //
   // No readRegisterRegion(): the driver does its own checked read over the
   // fake Wire1 (which is where a short read can be injected), so a driver that
   // went back to the library's unchecked one would fail to build here.
-  float calcGyro(int16_t v) { return v * 0.0175f; }
-  float calcAccel(int16_t v) { return v * 0.000122f; }
   status_t writeRegister(uint8_t reg, uint8_t val) {
     fakeLsmWrite(reg, val);
     return IMU_SUCCESS;
