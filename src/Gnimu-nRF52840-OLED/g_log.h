@@ -20,8 +20,9 @@
 #include <stdio.h>
 
 // Logging: Serial.print/println/printf/flush replacements. With LOG_ENABLED 0
-// each macro and its arguments compile away. At runtime every macro first
-// checks Serial, so an unattached console skips formatting as well as writing.
+// each macro and its arguments compile away. At runtime every call first checks
+// Serial, so an unattached console skips formatting as well as writing.
+// LOG_PRINTF's arguments are still evaluated, because it is a function call.
 //
 // LOG_PRINTF formats into its own LOG_LINE_MAX buffer and clips long lines. The
 // nRF core's Print::printf can transmit stack memory past 255 bytes.
@@ -45,7 +46,8 @@
       Serial.println(__VA_ARGS__);                                             \
   } while (0)
 // Formats into its own buffer and clips; the attribute keeps snprintf's
-// argument checking at every call site.
+// argument checking at every call site. Arguments are evaluated even with no
+// console attached, so they must have no side effects.
 void logPrintf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #define LOG_PRINTF(...) logPrintf(__VA_ARGS__)
 #define LOG_FLUSH()                                                            \

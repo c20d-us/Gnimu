@@ -53,11 +53,6 @@ static_assert(baudSweepIncludes(GNSS_BAUD),
               "detect and switch between, or the receiver could be saved at a "
               "rate the firmware can't find.");
 
-// maxWait for a sweep attempt after the first. begin() polls three times, so a
-// rate with no receiver costs three times this; the library's 1100ms default is
-// sized for SerialUSB.
-static constexpr uint16_t kSweepMaxWaitMs = 250;
-
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 static Stream *gnssStream = nullptr;
 
@@ -74,13 +69,13 @@ static bool gnssUp = false;
 
 // Open the port at `baud` and look for the receiver. Leaves the port open on
 // success, closed on failure.
-static bool tryBaud(uint32_t baud, uint16_t maxWait) {
+static bool tryBaud(uint32_t baud) {
   LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)baud);
 
   gnssStream = gnssPortBegin(baud);
   delay(100); // let the port settle
 
-  if (gnssStream != nullptr && myGNSS.begin(*gnssStream, maxWait)) {
+  if (gnssStream != nullptr && myGNSS.begin(*gnssStream)) {
     LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)baud);
     return true;
   }
@@ -115,17 +110,18 @@ static bool switchToTargetBaud() {
 // Find the receiver, trying GNSS_BAUD first and then the rest of the sweep. If
 // found at another rate, switch it to GNSS_BAUD and save that to flash.
 //
-// The first attempt keeps the library's default maxWait, which covers a
-// receiver still booting after power-on; the rest use kSweepMaxWaitMs.
+// Every attempt uses the library's default maxWait. A shorter one missed a
+// receiver at 115200 on hardware; the wait is a ceiling, so it only costs time
+// at rates where nothing answers.
 static bool connectAndConfigureBaud() {
-  if (tryBaud(GNSS_BAUD, kUBLOXGNSSDefaultMaxWait)) {
+  if (tryBaud(GNSS_BAUD)) {
     return true;
   }
   for (uint32_t rate : kBaudRates) {
     if (rate == GNSS_BAUD) {
       continue; // tried first
     }
-    if (tryBaud(rate, kSweepMaxWaitMs)) {
+    if (tryBaud(rate)) {
       return switchToTargetBaud();
     }
   }

@@ -87,7 +87,7 @@ does not reach.
    cycle (runtime config is RAM/BBR only), unless the module's backup capacitor
    held BBR. Either result belongs in the NEW-5 entry.
 4. ✅ **Done 2026-09-13 (nRF52840-OLED): seven-rate sweep, the three ❌ lines, `❌ GNSS not responding` once a second with the battery field live, "No GNSS" on the panel; BLE advertised and accepted a connection. With no receiver no RaceBox packet is sent, so a connected app shows no data at all, battery included (the battery byte travels in that packet). Decided 2026-09-13 to keep it that way: a dead receiver is a hardware fault needing a power cycle, the panel and serial already say so, and a fallback packet would have to invent time and position fields an app might record as a session.** **Boot with the receiver absent (R2-1, ROB-1)** - the OLED shows its normal
-   searching screen through the baud sweep (~20 s then, ~11 s since R3-7), then **No GNSS**; serial
+   searching screen through the baud sweep (~20 s then, with seven rates; ~32 s since R4-1), then **No GNSS**; serial
    says `❌ GNSS not responding`; BLE and battery carry on. A normal boot must
    never flash "No GNSS".
 5. ✅ **Done 2026-09-13 - baud switch worked as expected.** **Boot with the receiver NOT at `GNSS_BAUD` (g_gnss.cpp split)** - so the
@@ -130,10 +130,14 @@ does not reach.
 
 **GNSS and boot timing (nRF), from the third review**
 
-11. **Boot timings (R3-6, R3-7)** - one nRF. On USB, boot normally: serial still
-    catches the first line, and the receiver is found at `GNSS_BAUD` on the
-    first try. With the receiver unplugged, time from power-on to the first
-    `❌ GNSS not responding`: about 11 s, was about 35 s. Then on battery with
+11. **Boot timings (R3-6, R3-7, R4-1)** - one nRF. On USB, boot normally: serial
+    still catches the first line, and the receiver is found at `GNSS_BAUD` on
+    the first try. **Baud change:** with the receiver saved at 115200, set
+    `GNSS_BAUD` to another rate and boot - the sweep must find it at 115200 and
+    switch it (this is the case that failed with R3-7's 250 ms wait; set
+    `GNSS_BAUD` back afterwards and let it switch again). With the receiver
+    unplugged, time from power-on to the first `❌ GNSS not responding`: about
+    32 s, was about 35 s before R3-7. Then on battery with
     no USB, confirm the device reaches RUNNING (LED, or the panel on the OLED)
     about 3 s sooner than before. While connected, send one write to the Nordic
     UART Rx characteristic from nRF Connect (R3-8): the next 1 Hz window prints
@@ -3332,8 +3336,8 @@ warnings); `check_common.sh` clean (`g_display.cpp` is OLED-only). No host
 harness covers `g_display.cpp` (u8g2), so the rest is on hardware.
 
 **Needs:** a normal boot never shows "No GNSS"; with the GNSS JST unplugged
-before power-on, the searching body through the baud sweep (~20 s then, ~11 s
-since R3-7), then "No GNSS" with a live status bar and uptime.
+before power-on, the searching body through the baud sweep (~20 s then, with seven
+rates; ~32 s since R4-1), then "No GNSS" with a live status bar and uptime.
 
 **Hardware (2026-09-12): built, flashed and booted on all three, working as expected.** Edge conditions are in "Hardware checks outstanding" at the top.
 
@@ -3965,7 +3969,7 @@ source 2026-09-15.
 | R3-3 | ✅ Resolved 2026-09-15 — the AssistNow Autonomous disable restored in all three trees (by Chris); GNSS goldens re-saved, the only diff the three `setAopCfg` lines per variant. The same commit's 7 -> 10 rate baud sweep was intended |
 | R3-4 | ✅ Resolved 2026-09-15 — implemented; severity Low rather than Medium |
 | R3-5 | Declined 2026-09-15 |
-| R3-6, R3-7 | Implemented 2026-09-15 — need hardware check 11 |
+| R3-6, R3-7 | Implemented 2026-09-15 — need hardware check 11. R3-7's short sweep wait reverted by R4-1 |
 | R3-8 | Implemented 2026-09-15 — needs hardware check 11 |
 | R3-9 | Items 1-5 implemented 2026-09-15; item 6 declined |
 
@@ -4072,9 +4076,11 @@ plus the sweep's 200 ms of delays: roughly 35 s across ten entries, all inside
   proposed, would be a bug** (caught by Chris): the list after the first
   attempt must stay complete, or a receiver still saved at the old rate could
   never be found after `GNSS_BAUD` changed.
-- The first attempt keeps the default `maxWait`, which covers a receiver still
-  booting after power-on; the rest use `kSweepMaxWaitMs` (250 ms), the value
-  the library's own header says is enough off SerialUSB.
+- ~~The first attempt keeps the default `maxWait`; the rest use
+  `kSweepMaxWaitMs` (250 ms), the value the library's own header says is enough
+  off SerialUSB.~~ **Reverted by R4-1.** The header says 250 ms "seems fine for
+  I2C" - nothing about a UART; this entry misquoted it. On hardware the short
+  wait missed a receiver at 115200.
 - `tryBaud()` and `switchToTargetBaud()` split out of the loop body.
 - The `GNSS_BAUD` static_assert moves out of all three `config.h` files into
   `g_gnss.cpp` beside the array, checking membership with a `constexpr`
@@ -4083,9 +4089,9 @@ plus the sweep's 200 ms of delays: roughly 35 s across ten entries, all inside
   C++11. Verified it still fires - `GNSS_BAUD 111111` fails the build with the
   message.
 
-A no-receiver boot drops from about 35 s to about 11 s (3.5 s for the first
-rate, then eight at about 0.95 s). A receiver at `GNSS_BAUD` is unaffected; one
-at another rate is found up to 3 s sooner.
+~~A no-receiver boot drops from about 35 s to about 11 s.~~ Since R4-1, about
+32 s: nine attempts at 3.5 s each, the saving being the skipped duplicate. A
+receiver at `GNSS_BAUD` is unaffected.
 
 **Verified (host):** the GNSS harness fake's `begin()` now takes `maxWait` and
 logs it, so the shorter wait is asserted rather than assumed. New checks: the
@@ -4330,3 +4336,64 @@ capture across fast reconnects, before and after, looking for short frames.
 µs per 100 Hz sample, far inside the 5.5 ms GNSS deadline. The fix is still worth
 doing: compile-time factors match the MPU-6050 driver and drop the dependency on
 the library's copy of the settings.
+
+---
+
+## Fourth review — 2026-09-16 (`R4-*`)
+
+`docs/code-review-2026-09-16.md` checked the R3 dispositions against commit
+`ba4e497` and agreed with all of them, then raised three findings.
+
+| ID | Disposition |
+|---|---|
+| R4-1 | Implemented 2026-09-17 — needs hardware check 11 (baud change) |
+| R4-2 | Declined 2026-09-17 |
+| R4-3 | ✅ Resolved 2026-09-17 |
+
+### R4-1 — sweep wait reverted to the library default, as implemented
+
+R3-7 cut every sweep attempt after the first to a 250 ms `maxWait`. **Bench test
+(Chris, 2026-09-16): with the receiver saved at 115200 and `GNSS_BAUD` changed,
+the sweep no longer found it.** The review predicted trouble at 4800 and 9600,
+where NMEA backlog can delay the `CFG-VALGET` reply; 115200 has capacity to
+spare, so the cause is more likely reply latency on the receiver itself (this
+M10 runs 20 Hz GPS+Galileo at twice its rated nav rate on the default CPU
+clock) - not confirmed. R3-7 also rested on a misquote: the SparkFun header
+vouches for 250 ms on I2C only.
+
+**Change** (`g_gnss.cpp`, all three trees): `kSweepMaxWaitMs` deleted;
+`tryBaud()` drops its `maxWait` parameter and calls `myGNSS.begin(*gnssStream)`;
+the comment above `connectAndConfigureBaud()` says why every attempt uses the
+default. `maxWait` is a ceiling, so a longer value costs nothing at a rate that
+answers. R3-7's duplicate skip, membership `static_assert` and helper split all
+stay. No-receiver boot about 32 s (35 s before R3-7). The review's optional
+38400-first reordering was not taken: it speeds only a new module's first boot,
+and the HGLRC boards' shipped rate is not known to be 38400.
+
+**Verified (host):** the fake keeps logging `maxWait`, and the two R3-7 checks
+now assert every attempt waits the default - at-9600 including the verify,
+absent all nine. That makes the harness guard the regression the bench found:
+re-shortening the sweep wait fails both. The R3-7 mutations tied to the short
+wait no longer apply. Goldens re-saved; the diff is only `maxWait=250` ->
+`maxWait=1100` and the check text. All three build with warnings "All", no
+sketch warnings - ESP32 1,183,003 bytes (90%), nRF52840 191,500, OLED 213,284;
+`check_common.sh` clean.
+
+**Needs (bench, one nRF):** the baud-change step now in item 11.
+
+### R4-2 — declined
+
+On a fast ESP32 reconnect the MTU refusals count toward the drop line. Unlike
+R2-4's case - a drop line every second for as long as a client stayed
+unsubscribed - this is one line per reconnect, bracketed by the ❌/✅ refusal
+lines that explain it. If it ever reads as noise, count MTU refusals as a
+second expected subset and subtract them as R2-4 does.
+
+### R4-3 — as implemented
+
+R3-9 item 5 made `LOG_PRINTF` a function call, so its arguments are evaluated
+even with no console, while `LOG_PRINT`/`LOG_PRINTLN` still skip theirs; the
+no-side-effects rule lived only in this record. **Change** (`g_log.h`, all three
+trees): the header comment says every call checks `Serial` but `LOG_PRINTF`'s
+arguments are still evaluated, and the rule sits beside the `LOG_PRINTF`
+declaration. Comment only; telemetry and BLE harnesses pass.

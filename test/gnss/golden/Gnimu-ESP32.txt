@@ -39,10 +39,10 @@ S at-9600
   gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800 rx=16 tx=17
-  gnss.begin(port@4800 maxWait=250) -> 0
+  gnss.begin(port@4800 maxWait=1100) -> 0
   port.end
   port.begin 9600 rx=16 tx=17
-  gnss.begin(port@9600 maxWait=250) -> 1
+  gnss.begin(port@9600 maxWait=1100) -> 1
   setSerialRate 115200 layer=3 -> 1
   port.end
   port.begin 115200 rx=16 tx=17
@@ -75,8 +75,7 @@ S at-9600
   setNavigationFrequency 20 layer=3 -> 1
   setAutoPVTcallbackPtr layer=3 -> 1
 ✅ at-9600: found, switched and verified
-✅ at-9600: the rate after the first is tried at the short maxWait
-✅ at-9600: GNSS_BAUD keeps the default maxWait, on both attempt and verify
+✅ at-9600: every begin() waits the library default, verify included
 S absent
   HardwareSerial(2)
   port.setRxBufferSize 512 -> 512
@@ -84,33 +83,33 @@ S absent
   gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800 rx=16 tx=17
-  gnss.begin(port@4800 maxWait=250) -> 0
+  gnss.begin(port@4800 maxWait=1100) -> 0
   port.end
   port.begin 9600 rx=16 tx=17
-  gnss.begin(port@9600 maxWait=250) -> 0
+  gnss.begin(port@9600 maxWait=1100) -> 0
   port.end
   port.begin 19200 rx=16 tx=17
-  gnss.begin(port@19200 maxWait=250) -> 0
+  gnss.begin(port@19200 maxWait=1100) -> 0
   port.end
   port.begin 38400 rx=16 tx=17
-  gnss.begin(port@38400 maxWait=250) -> 0
+  gnss.begin(port@38400 maxWait=1100) -> 0
   port.end
   port.begin 57600 rx=16 tx=17
-  gnss.begin(port@57600 maxWait=250) -> 0
+  gnss.begin(port@57600 maxWait=1100) -> 0
   port.end
   port.begin 230400 rx=16 tx=17
-  gnss.begin(port@230400 maxWait=250) -> 0
+  gnss.begin(port@230400 maxWait=1100) -> 0
   port.end
   port.begin 460800 rx=16 tx=17
-  gnss.begin(port@460800 maxWait=250) -> 0
+  gnss.begin(port@460800 maxWait=1100) -> 0
   port.end
   port.begin 921600 rx=16 tx=17
-  gnss.begin(port@921600 maxWait=250) -> 0
+  gnss.begin(port@921600 maxWait=1100) -> 0
   port.end
 ✅ absent: returns false, not up (no halt)
 ✅ absent: sweeps all nine rates, then stops
 ✅ absent: GNSS_BAUD is not tried twice
-✅ absent: only the first attempt waits the default
+✅ absent: every attempt waits the library default - a shorter wait missed a receiver at 115200 on hardware
 ✅ absent: every attempt closes its port before the next
 ✅ absent: the RX ring is sized once for the whole sweep, not per attempt
   epoch dropped: no callback registered
@@ -124,10 +123,10 @@ S verify-fails
   gnss.begin(port@115200 maxWait=1100) -> 0
   port.end
   port.begin 4800 rx=16 tx=17
-  gnss.begin(port@4800 maxWait=250) -> 0
+  gnss.begin(port@4800 maxWait=1100) -> 0
   port.end
   port.begin 9600 rx=16 tx=17
-  gnss.begin(port@9600 maxWait=250) -> 1
+  gnss.begin(port@9600 maxWait=1100) -> 1
   setSerialRate 115200 layer=3 -> 1
   port.end
   port.begin 115200 rx=16 tx=17

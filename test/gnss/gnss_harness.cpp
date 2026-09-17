@@ -292,11 +292,8 @@ static int runAt9600() {
   const bool up = gnssBegin();
   fakeGnssLogPrint();
   check(up && gnssIsUp(), "at-9600: found, switched and verified");
-  check(logCount("gnss.begin(port@9600 maxWait=250)") == 1,
-        "at-9600: the rate after the first is tried at the short maxWait");
-  check(logCount("gnss.begin(port@" GNSS_BAUD_STR " maxWait=1100)") == 2,
-        "at-9600: GNSS_BAUD keeps the default maxWait, on both attempt and "
-        "verify");
+  check(logContaining("maxWait=1100") == logCount("gnss.begin"),
+        "at-9600: every begin() waits the library default, verify included");
   return 0;
 }
 
@@ -312,9 +309,9 @@ static int runAbsent() {
         "absent: sweeps all nine rates, then stops");
   check(logCount("gnss.begin(port@" GNSS_BAUD_STR) == 1,
         "absent: GNSS_BAUD is not tried twice");
-  check(logCount("gnss.begin(port@" GNSS_BAUD_STR " maxWait=1100)") == 1 &&
-            logContaining("maxWait=250") == 8,
-        "absent: only the first attempt waits the default");
+  check(logContaining("maxWait=1100") == 9,
+        "absent: every attempt waits the library default - a shorter wait "
+        "missed a receiver at 115200 on hardware");
   check(portsBalanced(), "absent: every attempt closes its port before the next");
   check(logCount("port.setRxBufferSize") <= 1,
         "absent: the RX ring is sized once for the whole sweep, not per attempt");
