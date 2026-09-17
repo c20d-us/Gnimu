@@ -56,4 +56,17 @@ void loop() {
   telemetrySendIfReady();
   bleUpdate();
   ledUpdate();
+
+  // Idle the core for one tick. Code runs from external flash through an
+  // instruction cache, so a free-running loop fetches continuously; once a BLE
+  // connection widened the working set past the cache, the constant SPI bursts
+  // desensed the GNSS front end and the receiver lost its fix within seconds of
+  // a client subscribing. delay() parks the core until the next interrupt,
+  // which stops the fetching. Removing it brings the fault back - it is not a
+  // tuning knob.
+  //
+  // A tick is far inside every deadline: a NAV-PVT takes ~8.7ms on the wire at
+  // 115200 against a 512-byte RX ring holding ~44ms, and the IMU's
+  // IMU_SAMPLE_INTERVAL_MS cadence resyncs past a tick of jitter.
+  delay(1);
 }

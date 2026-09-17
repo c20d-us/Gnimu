@@ -4397,3 +4397,78 @@ no-side-effects rule lived only in this record. **Change** (`g_log.h`, all three
 trees): the header comment says every call checks `Serial` but `LOG_PRINTF`'s
 arguments are still evaluated, and the rule sits beside the `LOG_PRINTF`
 declaration. Comment only; telemetry and BLE harnesses pass.
+
+---
+
+## Field fault — GNSS desense while streaming (ESP32), 2026-09-17
+
+Found on hardware, not in a review. Recorded in full because the eliminations
+cost a day and must not be repeated.
+
+**Symptom.** With a BLE client connected and subscribed, the receiver lost
+satellites within seconds - SV falling to 0, `hAcc` growing without bound,
+position running away - and recovered within seconds of the disconnect. `GNSS:
+20Hz` never faltered, so every epoch was still arriving and parsing cleanly. The
+module's own fix LED went solid, confirming the receiver genuinely lost lock:
+this was never bad data.
+
+**Bisect.** `1.1.0` (`6e10c21`, = main's `src/`) is clean; `d10df92`, the first
+commit of `gnimu_multiproto`, is not. Confirmed back to back on one bench.
+Branch HEAD behaves like `d10df92`.
+
+**Eliminated, each on hardware:**
+
+| Suspect | Result |
+|---|---|
+| Connection TX power | Measured `ESP_BLE_PWR_TYPE_CONN_HDL0` = -12 dBm. Not hot |
+| MTU / R3-2 | Library updates its peer map on the MTU event either way |
+| IMU read path | Swapped in main's `getEvent()`: still sags |
+| IMU pipeline | Filters, trim and latch bypassed: still sags |
+| All I2C traffic | Sensor configured then never read: still sags |
+| MPU register state | Dumped: awake on the gyro PLL, 21Hz DLPF, ±4g, ±500°/s - what `1.1.0` sets |
+| Memory | Loop stack and heap flat across a whole session |
+| GNSS RX ring (512) | Transplanted into `1.1.0`: no sag |
+| Console TX ring, USB supply | Ran on battery with no host: still sags |
+| Notify rate | `GNSS_NAV_RATE_HZ 5`: still sags, if anything sooner |
+| Air traffic, GATT, advertising, pins, receiver config | Identical between builds by inspection |
+
+**Mechanism.** The ESP32 executes from external flash through an instruction
+cache. `loop()` never idled, so the core fetched continuously; once a BLE
+connection pulled the stack's code into the working set alongside the IMU path,
+the branch's more indirected loop no longer fit the cache and missed constantly.
+The resulting SPI bursts sit next to the GNSS front end and desense it. `1.1.0`
+spins just as hard but its tighter loop fits, which is why it never showed this.
+
+**Evidence for it:** `IMU_ENABLED 0` cures it (smaller working set); flash clock
+80 -> 40MHz reduces it from total fix loss to a partial sag that keeps a 3D fix
+(same code, slower bus); nav rate changes nothing (the epoch path was never the
+source); `delay(1)` in `loop()` eliminates it entirely.
+
+**Fix** (`Gnimu-ESP32.ino`): one tick of idle at the end of `loop()`. `delay()`
+parks the core until the next interrupt, so the fetching stops. The comment
+there carries the reasoning and the deadline margins; it is not a tuning knob.
+
+**Verified on hardware:** SV 15-16 held across two connect/stream sessions,
+`hAcc` improving to 256mm, `tAcc` 21ns, GNSS and BLE both steady at 20Hz, no
+unexpected drop lines - and the trim converged (`Trim: 2.8° ✅`), which no run
+during the fault ever managed.
+
+**Left open:**
+
+- The flash clock was set to 40MHz while diagnosing. Restore 80MHz and confirm
+  the fix holds without it, so the build does not depend on a Tools-menu setting
+  that lives outside the repo.
+- The nRF variants spin the same way and do not show the fault (internal flash,
+  no cache to miss). A yield there would be a power optimisation, and on the
+  OLED variant it interacts with the display's epoch-locked budget - a separate,
+  tested change.
+- The principled version of this fix is an event-driven loop (`onReceive()` plus
+  a timed wait) rather than a fixed sleep. Deliberate refactor, not a bug fix.
+
+**Found along the way:** on `1.1.0`, advertising runs at **+9 dBm** while the
+log claims -12 - `ESP_BLE_PWR_TYPE_DEFAULT` does not reach the advertising
+state, and nothing sets `ESP_BLE_PWR_TYPE_ADV`. The g_ble split fixed this
+incidentally by setting both types explicitly. Relevant to this README's claim
+that lowering TX power improves satellite lock: that observation was real, and
+partly measuring this.
+

@@ -176,3 +176,4 @@ See the [main README's Troubleshooting table](../../README.md#troubleshooting) f
 | Symptom | Things to check |
 |---------|-----------------|
 | `❌ IMU not found` | I²C wiring (SDA/SCL), VIN (5V) power, `IMU_I2C_ADDRESS`. |
+| Satellites fall away once an app connects | The loop must idle a tick each pass, or flash-cache traffic desenses the receiver - see `loop()` in the sketch. Also try more separation between the board and the GNSS antenna. |

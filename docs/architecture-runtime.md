@@ -84,6 +84,13 @@ on the nRF52840 a 63-byte ring cannot hold one 100-byte NAV-PVT, so the loop
 must drain *during* each message (a phase-sensitive 5.47 ms deadline); on the
 ESP32 the ring holds 2.5 messages, leaving a duration budget of ~256 ms.
 
+**The ESP32 loop ends in one tick of idle**, which that budget easily affords.
+It runs code from external flash through an instruction cache, and a
+free-running loop fetches continuously; with a BLE connection in the working set
+the SPI bursts desense the GNSS front end badly enough to lose the fix. See the
+comment in `Gnimu-ESP32.ino` and the field-fault entry in
+docs/code-review-remediation.md.
+
 **The one exception is BLE stack callbacks** — the only code we own that runs
 outside `loop()`, and the one thing the project does not schedule. Since
 2026-09-13 they live only in the per-core ports behind `g_ble_port.h`; the
