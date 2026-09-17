@@ -70,3 +70,12 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Capture logs and the vector set derived from them: real GNSS positions, never
+# committed. test/synthetic.gc1 is generated and safe, so it stays tracked.
+test/*.jsonl
+test/captures/
+test/vectors.gc1
+
+# Python bytecode
+__pycache__/
