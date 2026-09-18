@@ -4,7 +4,7 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#variants)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) streaming performance telemetry device. The official RaceBox app and other RaceBox-compatible tools connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the streaming-telemetry function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) motorsports telemetry device. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz. Emulation does *not* include command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
 
 It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
 
@@ -61,7 +61,7 @@ A few practical notes:
 
 Engine vibration doesn't interfere with this process. I checked, and a calibration captured at cold idle is repeatable to about 0.02°, which is miniscule for our purposes. So it doesn't matter whether you start the car before calibration or calibrate first.
 
-For what it's worth, the real RaceBox Mini handles this differently. The user manual instructs to run an accelerometer calibration from the app, and says to *"perform this procedure every time you mount the device."* That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
+For what it's worth, the real RaceBox Mini handles this differently. The manual instructs the user to run an accelerometer calibration from the app, and says to *"perform this procedure every time you mount the device."* That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
 
 ---
 
@@ -71,16 +71,10 @@ I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M10
 
 ---
 
-## Repo layout
+## Repo layout notes
 
 ```
-docs/
-  imu-trim-design.md     Design record for the runtime mounting/gyro calibration
-images/
-  ESP32/                 Build photos for the Gnimu ESP32 variant
-  nRF52840/              Build photos for the Gnimu nRF52840 variant
 src/
-  README.md              Guide to the folders below
   Gnimu-ESP32/           ESP32 firmware + README
   Gnimu-nRF52840/        nRF52840 firmware + README
   Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README
@@ -92,9 +86,7 @@ src/
     nRF52840-OLED/        Diagnostic sketches for the nRF52840-OLED variant
 ```
 
-Each sketch folder is named for its variant and contains the `.ino` of the same
-name, as the Arduino IDE requires. That also means the IDE's window title and
-tab name identify which variant you have open.
+Each sketch folder is named for its variant and contains the `.ino` of the same name, as the Arduino IDE requires. That also means the IDE's window title and tab name identify which variant you have open.
 
 The two nRF52840 trees deliberately duplicate a set of modules and keep them byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of those files, apply the same change to the other tree and run `src/tools/check_common.sh` to confirm they still match. The ESP32 tree is deliberately standalone: it has its own copies of some of the same modules, free to diverge, and the script does not check it.
 
