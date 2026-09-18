@@ -27,14 +27,12 @@
 
 void setup() {
 #if LOG_ENABLED
-  // Wait up to 3s for the serial port so the startup banner and init logs
-  // aren't dropped while the terminal is still attaching. Harmless on
-  // UART-bridge boards (Serial is always truthy there); gives a native-USB
-  // monitor a brief chance to attach. Skipped entirely in silent builds.
+  // A fixed pause, not a wait on Serial: through the USB-UART bridge Serial is
+  // true as soon as begin() returns, and anything sent before the host reopens
+  // the port after a reset is lost - including the GNSS bring-up lines. Skipped
+  // entirely in silent builds.
   Serial.begin(115200);
-  uint32_t t0 = millis();
-  while (!Serial && millis() - t0 < 3000) {
-  }
+  delay(750);
 #endif
   LOG_PRINTF("🚀 Gnimu [%s] starting up...\n", GNIMU_VARIANT);
 
@@ -49,4 +47,16 @@ void loop() {
   imuPoll();
   telemetrySendIfReady();
   bleUpdate();
+
+  // Idle the core for one tick. Code runs from external flash through an
+  // instruction cache, so a free-running loop whose working set outgrows the
+  // cache fetches continuously, and the constant SPI bursts desense the GNSS
+  // front end: the receiver loses satellites and then its fix while a client
+  // streams. delay() parks the core until the next tick, which stops the
+  // fetching whatever the loop's size. It is not a tuning knob.
+  //
+  // A tick is far inside every deadline: the default 256-byte GNSS RX ring
+  // holds ~22ms at 115200, a PVT is sent in the same pass that completes it,
+  // and the IMU cadence resyncs past a tick of jitter.
+  delay(1);
 }

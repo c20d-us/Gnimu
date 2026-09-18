@@ -61,3 +61,7 @@ void stateUpdate();
 
 // The current live state (for g_led + diagnostics to observe).
 SystemState stateCurrent();
+
+// GNSS bring-up failed. Idles while USB powers the device, then enters System
+// OFF. Does not return.
+void stateGnssFailed();

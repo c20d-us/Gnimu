@@ -46,6 +46,19 @@ static ImuAxis gyroAxes[3] = {
 // debug reporting both read it).
 static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 
+// False until bring-up succeeds, and latched false for the rest of the session
+// if a later reconfiguration fails. While false every IMU field reads zero and
+// GNSS, BLE and telemetry carry on without it.
+static bool imuUp = false;
+
+// Mark the IMU down for the rest of the session. Logs once.
+static void markImuDown() {
+  imuUp = false;
+  latestUnits = {0, 0, 0, 0, 0, 0};
+  LOG_PRINTLN("❌ IMU not answering - continuing without it: IMU fields will "
+              "read zero.");
+}
+
 // A single raw IMU sample, split into per-axis arrays indexed [0]=X, [1]=Y,
 // [2]=Z, matching accelAxes/gyroAxes.
 struct ImuRawSample {
@@ -86,16 +99,6 @@ static int16_t toProtocolInt16(float value) {
   return (int16_t)value;
 }
 
-// Read the IMU and return the accel (g) / gyro (deg/s) values for this
-// instant, remapped into the vehicle frame and runtime-trimmed.
-//
-// There is no build-time zero correction here any more. Hand-measured per-chip
-// offsets (IMU_*_OFFSET_*) were removed once g_imu_trim learned the same
-// correction at runtime: the trim measures the total resting error and cannot
-// separate chip bias from mounting tilt - and does not need to, since one
-// correction removes both. That deleted the only per-chip data in the whole
-// configuration, so the firmware image is now identical across boards.
-//
 // Reassemble a little-endian register pair, matching the byte order the
 // library's own readRegisterInt16() uses (low byte first).
 static inline int16_t rawPair(const uint8_t *p) {
@@ -150,6 +153,12 @@ static bool trimSpeedMps(float *speedMps) {
   return true;
 }
 
+// Read one sample: accel (g) / gyro (deg/s), remapped into the vehicle frame
+// and runtime-trimmed.
+//
+// There is no build-time zero correction: the runtime trim measures the total
+// resting error, chip bias and mounting tilt together, so the firmware image
+// is identical across boards.
 static ImuRawSample readImuRaw() {
   // Last good sample, reused if a read fails - see the error branch below.
   // Zero-initialised, so a failure before the very first successful read
@@ -212,7 +221,8 @@ static ImuRawSample readImuRaw() {
 // Shared by imuBegin() and imuDisarmWake(): (re)apply normal-operation
 // ranges/ODR/bandwidth, BDU, and re-seed the axis filters. Does not touch
 // the power pin as callers that need the chip powered on do that themselves.
-static void configureNormalMode() {
+// False if the IMU did not answer.
+static bool configureNormalMode() {
   // Configure ranges / output data rates / bandwidth from config.h. The Seeed
   // library takes plain integers here and applies them in begin(); it also
   // brings up its own I2C bus internally - no manual Wire/Wire1 setup needed.
@@ -226,11 +236,8 @@ static void configureNormalMode() {
   myIMU.settings.tempEnabled = 0; // unused by this firmware
 
   // The Seeed library returns 0 (IMU_SUCCESS) on success.
-  if (myIMU.begin() != 0) {
-    LOG_PRINTLN("❌ Failed to find IMU module - halting");
-    while (1)
-      delay(100);
-  }
+  if (myIMU.begin() != 0)
+    return false;
 
   // Raise the IMU bus above the core's 100kHz default. MUST come after
   // begin(): the library calls Wire1.begin() internally, which hardcodes the
@@ -270,8 +277,11 @@ static void configureNormalMode() {
     accelAxes[i].reset(seed.accel[i]);
     gyroAxes[i].reset(seed.gyro[i]);
   }
+  return true;
 }
 
+// Never halts: a missing IMU leaves it down, and the rest of the device runs
+// without it.
 void imuBegin() {
   // Power the onboard LSM6DS3TR-C, then give it time to boot before I2C. Pin
   // 15 driven HIGH enables it.
@@ -296,7 +306,11 @@ void imuBegin() {
   };
   imuTrimBegin(trimCfg);
 
-  configureNormalMode();
+  if (!configureNormalMode()) {
+    markImuDown();
+    return;
+  }
+  imuUp = true;
   LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");
 }
 
@@ -311,6 +325,9 @@ void imuBegin() {
 static bool wakeArmed = false;
 
 void imuArmWake() {
+  // With the IMU down only a BLE connect wakes LIGHT_SLEEP.
+  if (!imuUp)
+    return;
   pinMode(IMU_INT1_PIN, INPUT); // push-pull active-high chip output
 
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, IMU_WAKE_CTRL1_XL);
@@ -356,8 +373,14 @@ bool imuWakeTriggered() {
 }
 
 void imuDisarmWake() {
+  if (!imuUp)
+    return;
   wakeArmed = false;
-  configureNormalMode(); // restores ODR/range and un-routes MD1_CFG
+  // Restores ODR/range and un-routes MD1_CFG.
+  if (!configureNormalMode()) {
+    markImuDown();
+    return;
+  }
   LOG_PRINTLN("☀️ IMU wake-up detector disarmed, normal ODR restored.");
 }
 
@@ -371,6 +394,9 @@ void imuPoll() {
   static unsigned long lastImuReadMs = 0;
   static unsigned long lastTransmitReadMs = 0;
   const unsigned long nowMs = millis();
+
+  if (!imuUp)
+    return; // latestUnits stays zero
 
   // Update all six axis filters if it's time to sample.
   if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {

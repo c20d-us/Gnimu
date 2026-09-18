@@ -40,17 +40,19 @@ g_power.* / g_state.*   Power gating and the sleep-state machine (nRF52840 only)
 The folder name and the `.ino` name always match, as the Arduino IDE requires -
 which conveniently means the IDE's title bar tells you which variant is open.
 
-**If you change a file, check whether it is shared.** Several modules are
-deliberately duplicated byte-identical across variants rather than factored into
-a library (a shared library doesn't fit the Arduino sketch build model). Change
-one copy, apply the same change to the others, then run:
+**If you change an nRF52840 file, check whether it is shared.** The two nRF52840
+trees deliberately duplicate a set of modules byte-identical rather than
+factoring them into a library (a shared library doesn't fit the Arduino sketch
+build model). Change one copy, apply the same change to the other tree, then
+run:
 
 ```bash
 ./src/tools/check_common.sh
 ```
 
-It lists which files are in the shared set, which are shared only between the two
-nRF52840 trees, and which are excluded on purpose.
+It lists which files are in the shared set and which are excluded on purpose.
+The ESP32 tree is deliberately standalone and is not checked: it keeps its own
+copies of some of the same modules, free to diverge.
 
 ---
 

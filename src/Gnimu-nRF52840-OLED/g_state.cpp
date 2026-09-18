@@ -91,6 +91,7 @@ static void enterBatteryWait() {
   current = STATE_BATTERY_WAIT;
 }
 
+#if STATE_CHARGE_ONLY_ON_USB
 // Runtime entry to CHARGE_ONLY from RUNNING (boot-classified entries have
 // already skipped peripheral bring-up in setup(), no teardown needed there).
 // Same UART-ownership rule as BATTERY_WAIT: bleStop() + gnssEnd() first,
@@ -103,6 +104,7 @@ static void enterChargeOnly() {
   LOG_FLUSH();
   current = STATE_CHARGE_ONLY;
 }
+#endif
 
 // Entry action for LIGHT_SLEEP from RUNNING. Reversible without a reset -
 // BLE stays advertising/connectable throughout (no bleStop()), only GNSS and
@@ -131,7 +133,8 @@ static void exitLightSleep(const char *reasonLog) {
     // Escalated to a full EN-cut already - cold-start it back up, same as a
     // normal RUNNING boot.
     powerGnssRailOn();
-    gnssBegin();
+    if (!gnssBegin())
+      stateGnssFailed();
   }
   imuDisarmWake();
   bleDisconnectedSinceMs = 0;
@@ -324,3 +327,14 @@ void stateUpdate() {
 }
 
 SystemState stateCurrent() { return current; }
+
+// Without the GNSS the device has nothing to send, so it never runs on. It
+// idles while USB powers it, keeping the error on the console without draining
+// the cell, and powers off once it is on battery. A switch cycle or a USB
+// plug-in retries from boot.
+void stateGnssFailed() {
+  while (powerUsbPresent())
+    delay(100);
+  current = STATE_DEEP_SLEEP;
+  enterDeepSleepFrom("GNSS down, on battery -> DEEP_SLEEP.");
+}

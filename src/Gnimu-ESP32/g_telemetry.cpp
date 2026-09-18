@@ -16,7 +16,6 @@
 
 #include "g_telemetry.h"
 #include "config.h"
-#include "g_battery.h"
 #include "g_ble.h"
 #include "g_gnss.h"
 #include "g_imu.h"
@@ -132,15 +131,16 @@ static void sendPacket() {
 
   // Offset 66: Lat/Lon Flags
   uint8_t latLonFlags = 0;
-  if (pvt->fixType <
-      2) { // If no 2D/3D fix, then coordinates are considered invalid
-    latLonFlags |= (1 << 0); // Bit 0: Invalid Latitude, Longitude, WGS
-                             // Altitude, and MSL Altitude
+  // Bit 0: invalid latitude, longitude, WGS and MSL altitude. Keyed off the
+  // clamped fix type so it always agrees with offset 20.
+  if (safeFixType == 0) {
+    latLonFlags |= (1 << 0);
   }
   writeLittleEndian(payload, 66, latLonFlags);
 
   // Offset 67: Battery status (1 byte) - bit 7 = charging, bits 0-6 = percent.
-  writeLittleEndian(payload, 67, batteryProtocolByte());
+  // No battery on this build: always 100%, not charging.
+  writeLittleEndian(payload, 67, (uint8_t)100);
 
   // Offset 68-78: IMU data
   writeLittleEndian(payload, 68, imu.gX);
@@ -164,8 +164,9 @@ static void sendPacket() {
   packet[87] = checksum.ckB;
 
   // Hand the packet off to BLE
-  bleSendPacket(packet, 88);
-  bleSentPacketCount++;
+  if (bleSendPacket(packet, 88)) {
+    bleSentPacketCount++;
+  }
 }
 
 // Close the stats window: convert the epoch/packet counts accumulated since
@@ -219,45 +220,24 @@ static void telemetrySerialReport(unsigned long now) {
     //   ❌  measured a mount too far off level to correct; never converges
     //   ⏳  still deciding - either no stationary window has closed yet
     //       (tiltDegrees() reads 0 until the first block, so a badly mounted
-    //       device shows ⏳ for ~31s before the ❌), or a correctable mount
+    //       device shows ⏳ for ~11s before the ❌), or a correctable mount
     //       that has not converged
     //
     // Same policy as the OLED status-bar indicator, and the same collapse of
     // docs/imu-trim-design.md section 9's tiers onto one threshold. On the two
     // variants with no panel this line is the ONLY trim indicator.
     const float trimTilt = imuTrimTiltDegrees();
-    const char *trimState = imuTrimConverged() ? "✅"
+    const char *trimState = imuTrimConverged()                   ? "✅"
                             : (trimTilt > IMU_TRIM_MAX_TILT_DEG) ? "❌"
                                                                  : "⏳";
 
-#if BATTERY_HAS_GAUGE
-    // Battery voltage/percent/charging for debugging
-    const BatteryStatus bat = batteryGetStatus();
-
-    // Print out the informational report. Voltage is the honest measurement;
-    // SoC is deliberately omitted from serial output because the voltage->%
-    // lookup is masked by charge/TPS draw and can swing 10+% between plugged
-    // and unplugged - misleading in the console. The percent still drives the
-    // BLE Battery Service + LED thresholds where consumers expect a 0-100 %.
     LOG_PRINTF(
-        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
-        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
-        "centiDeg/s: X=%d Y=%d Z=%d | Trim: %.1fdeg %s | Batt: %.2fV%s\n",
+        "RT: %us | BLE: %.0fHz | GNSS: %.0fHz | SV: %u | Fix: %u | tAcc: "
+        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | mG: X=%d Y=%d Z=%d | "
+        "c°/s: X=%d Y=%d Z=%d | Trim: %.1f° %s\n",
         (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
-        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
-        trimTilt, trimState, bat.voltage, bat.charging ? "⚡" : "");
-#else
-    // No battery gauge on this build - the same report minus the Batt segment
-    // (the battery byte in the packet itself still carries the constant
-    // percent via batteryProtocolByte()).
-    LOG_PRINTF(
-        "RT: %us | BLE: %.2fHz | GNSS: %.2fHz | SV: %u | Fix: %u | tAcc: "
-        "%uns | hAcc: %umm | Lat: %.7f | Lon: %.7f | milliG: X=%d Y=%d Z=%d | "
-        "centiDeg/s: X=%d Y=%d Z=%d | Trim: %.1fdeg %s\n",
-        (unsigned int)((now - bootTimeMs) / 1000), bleRate, gnssRate, sats, fix,
-        tAcc, hAcc, lat, lon, imu.gX, imu.gY, imu.gZ, imu.rX, imu.rY, imu.rZ,
-        trimTilt, trimState);
-#endif
+        (unsigned int)tAcc, (unsigned int)hAcc, lat, lon, imu.gX, imu.gY,
+        imu.gZ, imu.rX, imu.rY, imu.rZ, trimTilt, trimState);
     // Counters and the window timestamp are reset by updateRates(), which runs
     // whether or not this report is compiled in.
   }

@@ -30,7 +30,8 @@ struct ImuProtocolUnits {
 };
 
 // Power the IMU, detect it, set ranges/ODR/bandwidth, and seed the filters
-// with a first reading. Halts with a serial message if the chip isn't found.
+// with a first reading. If the chip isn't found it logs once and stays down,
+// and every IMU field reads zero.
 void imuBegin();
 
 // Poll the IMU and advance its filters. Self-throttles internally on two

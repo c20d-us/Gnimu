@@ -20,12 +20,15 @@
 #include "g_gnss.h"
 #include "g_imu_trim.h"
 #include "g_log.h"
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-#include <Wire.h> // for the setClock() in imuBegin()
+#include <Wire.h>
 
-// IMU
-static Adafruit_MPU6050 myIMU;
+// MPU-6050 address and the registers this build touches.
+static constexpr uint8_t kImuAddr = 0x68; // AD0 low
+static constexpr uint8_t kImuWhoAmIValue = 0x68;
+static constexpr uint8_t kRegSmplrtDiv = 0x19; // 0x19-0x1C are consecutive
+static constexpr uint8_t kRegAccelOut = 0x3B;
+static constexpr uint8_t kRegPwrMgmt1 = 0x6B;
+static constexpr uint8_t kRegWhoAmI = 0x75;
 
 // Three axes each for accelerometer and gyroscope, indexed [0]=X, [1]=Y,
 // [2]=Z. Arrays let imuBegin()/imuPoll() drive all three axes of a sensor
@@ -50,9 +53,55 @@ static ImuProtocolUnits latestUnits = {0, 0, 0, 0, 0, 0};
 // A single raw IMU sample, split into per-axis arrays indexed [0]=X, [1]=Y,
 // [2]=Z, matching accelAxes/gyroAxes.
 struct ImuRawSample {
-  float accel[3]; // m/s^2 (Adafruit MPU6050 native units)
-  float gyro[3];  // rad/s (Adafruit MPU6050 native units)
+  float accel[3]; // m/s^2
+  float gyro[3];  // rad/s
 };
+
+// False until bring-up succeeds, and latched false for the rest of the session
+// if the IMU stops answering. While false every IMU field reads zero and GNSS,
+// BLE and telemetry carry on without it.
+static bool imuUp = false;
+
+// Consecutive failed reads that mark the IMU down: about 100ms at 100Hz.
+static constexpr uint8_t kImuDownAfterFailures = 10;
+
+// FS_SEL / AFS_SEL code for each full-scale range, 0xFF if the chip has no
+// such range. The code lands in bits 4:3 of GYRO_CONFIG / ACCEL_CONFIG.
+static constexpr uint8_t accelRangeCode(int g) {
+  return g == 2 ? 0 : g == 4 ? 1 : g == 8 ? 2 : g == 16 ? 3 : 0xFF;
+}
+static constexpr uint8_t gyroRangeCode(int dps) {
+  return dps == 250    ? 0
+         : dps == 500  ? 1
+         : dps == 1000 ? 2
+         : dps == 2000 ? 3
+                       : 0xFF;
+}
+static constexpr uint8_t kAccelRangeCode = accelRangeCode(IMU_ACCEL_RANGE_G);
+static constexpr uint8_t kGyroRangeCode = gyroRangeCode(IMU_GYRO_RANGE_DPS);
+static_assert(kAccelRangeCode != 0xFF && kGyroRangeCode != 0xFF,
+              "ERROR: IMU_ACCEL_RANGE_G / IMU_GYRO_RANGE_DPS is not an "
+              "MPU-6050 range.");
+
+// SMPLRT_DIV, CONFIG, GYRO_CONFIG, ACCEL_CONFIG, written in one burst and read
+// back to verify. Divider 0 samples at the DLPF's 1kHz output rate.
+static constexpr uint8_t kImuConfig[4] = {
+    0x00,
+    (uint8_t)IMU_DLPF_CFG,
+    (uint8_t)(kGyroRangeCode << 3),
+    (uint8_t)(kAccelRangeCode << 3),
+};
+
+// Raw counts per g and per deg/s for the configured ranges, from the register
+// map. Fixed at compile time; imuBegin() verifies the chip took the ranges.
+static constexpr float kAccelCountsPerG = 16384.0f / (1 << kAccelRangeCode);
+static constexpr float kGyroCountsPerDps =
+    kGyroRangeCode == 0   ? 131.0f
+    : kGyroRangeCode == 1 ? 65.5f
+    : kGyroRangeCode == 2 ? 32.8f
+                          : 16.4f;
+static constexpr float kGravity = 9.80665f;       // m/s^2 per g
+static constexpr float kDegToRad = 0.017453293f;  // rad/s per deg/s
 
 // ============================================================================
 // Axis remap - installed orientation. Maps the sensor frame into the vehicle
@@ -87,15 +136,6 @@ static int16_t toProtocolInt16(float value) {
   return (int16_t)value;
 }
 
-// Read the IMU and return the accel (m/s^2) / gyro (rad/s) values for this
-// instant, remapped into the vehicle frame and runtime-trimmed.
-//
-// There is no build-time zero correction here any more. Hand-measured per-chip
-// offsets (IMU_*_OFFSET_*) were removed once g_imu_trim learned the same
-// correction at runtime: the trim measures the total resting error and cannot
-// separate chip bias from mounting tilt - and does not need to, since one
-// correction removes both. That deleted the only per-chip data in the whole
-// configuration, so the firmware image is now identical across boards.
 // Fetch GNSS ground speed for the trim gate, in m/s.
 //
 // gnssLatestPvt() rather than gnssConsumePvt(): the latter is consume-once and
@@ -144,16 +184,90 @@ static bool trimSpeedMps(float *speedMps) {
   return true;
 }
 
+// Mark the IMU down for the rest of the session. Logs once.
+static void markImuDown() {
+  if (!imuUp)
+    return;
+  imuUp = false;
+  latestUnits = {0, 0, 0, 0, 0, 0};
+  LOG_PRINTLN("❌ IMU stopped answering - IMU fields will read zero until "
+              "reboot.");
+}
+
+// Write consecutive registers from reg. Unchecked: imuBegin() reads the
+// configuration back.
+static void writeRegs(uint8_t reg, const uint8_t *data, size_t len) {
+  Wire.beginTransmission(kImuAddr);
+  Wire.write(reg);
+  Wire.write(data, len);
+  (void)Wire.endTransmission();
+}
+
+// Read consecutive registers from reg. False on a short read.
+//
+// requestFrom()'s count is the check: on this core endTransmission(false) only
+// queues the write, and the whole transaction happens inside requestFrom().
+static bool readRegs(uint8_t reg, uint8_t *out, size_t len) {
+  Wire.beginTransmission(kImuAddr);
+  Wire.write(reg);
+  (void)Wire.endTransmission(false);
+  if (Wire.requestFrom(kImuAddr, len, true) != len)
+    return false;
+  for (size_t i = 0; i < len; i++)
+    out[i] = (uint8_t)Wire.read();
+  return true;
+}
+
+// Reassemble a big-endian register pair.
+static inline int16_t rawPair(const uint8_t *p) {
+  return (int16_t)(((uint16_t)p[0] << 8) | (uint16_t)p[1]);
+}
+
+// One burst of the 14 data registers from ACCEL_XOUT_H: accel X/Y/Z,
+// temperature, gyro X/Y/Z. False on a short read, or if all three accel axes
+// are exactly zero - the chip's power-on state after a supply glitch, which
+// reads back cleanly but is not a measurement.
+static bool readImuRegisters(ImuRawSample *out) {
+  uint8_t raw[14];
+  if (!readRegs(kRegAccelOut, raw, sizeof(raw)))
+    return false;
+
+  const int16_t ax = rawPair(&raw[0]);
+  const int16_t ay = rawPair(&raw[2]);
+  const int16_t az = rawPair(&raw[4]);
+  if (ax == 0 && ay == 0 && az == 0)
+    return false;
+
+  out->accel[0] = (ax / kAccelCountsPerG) * kGravity;
+  out->accel[1] = (ay / kAccelCountsPerG) * kGravity;
+  out->accel[2] = (az / kAccelCountsPerG) * kGravity;
+  // raw[6..7] is the die temperature, read only because it sits between the
+  // accel and gyro registers.
+  out->gyro[0] = (rawPair(&raw[8]) / kGyroCountsPerDps) * kDegToRad;
+  out->gyro[1] = (rawPair(&raw[10]) / kGyroCountsPerDps) * kDegToRad;
+  out->gyro[2] = (rawPair(&raw[12]) / kGyroCountsPerDps) * kDegToRad;
+  return true;
+}
+
+// Read one sample, remapped into the vehicle frame and runtime-trimmed. A
+// failed read returns the last good sample without touching the trim;
+// kImuDownAfterFailures in a row marks the IMU down.
+//
+// There is no build-time zero correction: the runtime trim measures the total
+// resting error, chip bias and mounting tilt together, so the firmware image
+// is identical across boards.
 static ImuRawSample readImuRaw() {
-  sensors_event_t a, g, temp;
-  myIMU.getEvent(&a, &g, &temp);
+  static ImuRawSample lastGood = {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}};
+  static uint8_t failedInARow = 0;
+
   ImuRawSample s;
-  s.accel[0] = a.acceleration.x;
-  s.accel[1] = a.acceleration.y;
-  s.accel[2] = a.acceleration.z;
-  s.gyro[0] = g.gyro.x;
-  s.gyro[1] = g.gyro.y;
-  s.gyro[2] = g.gyro.z;
+  if (!readImuRegisters(&s)) {
+    if (++failedInARow >= kImuDownAfterFailures)
+      markImuDown();
+    return lastGood;
+  }
+  failedInARow = 0;
+
   remapAxes(s.accel);
   remapAxes(s.gyro);
 
@@ -166,30 +280,16 @@ static ImuRawSample readImuRaw() {
   imuTrimUpdate(s.accel, s.gyro, speedMps, speedValid);
   imuTrimApply(s.accel, s.gyro);
 
+  lastGood = s;
   return s;
 }
 
 // Initialize the IMU, including setting up the sensor ranges and seed values.
+// Never halts: a missing or misconfigured IMU leaves it down, and the rest of
+// the device runs without it.
 void imuBegin() {
-  if (!myIMU.begin()) {
-    LOG_PRINTLN("❌ Failed to find the IMU module - halting");
-    while (1)
-      delay(100);
-  }
-
-  // Raise the IMU bus above the core's 100kHz default. MUST come after
-  // begin(): that call brings the bus up and would overwrite anything set
-  // earlier.
-  Wire.setClock(IMU_I2C_CLOCK_HZ);
-
-  // IMU started, proceed with configuration
-  LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");
-  myIMU.setAccelerometerRange(IMU_ACCEL_RANGE_G);
-  myIMU.setGyroRange(IMU_GYRO_RANGE_DPS);
-  myIMU.setFilterBandwidth(IMU_FILTER_BANDWIDTH_HZ);
-
-  // Ahead of the seed read below, which calls readImuRaw() and would otherwise
-  // reach the trim before it has a config.
+  // Configured even if the IMU turns out to be absent, so the trim's accessors
+  // report sane values either way.
   const ImuTrimConfig trimCfg = {
       IMU_GRAVITY_NATIVE,      (float)IMU_SAMPLE_INTERVAL_MS,
       IMU_TRIM_QUALIFY_MS,     IMU_TRIM_BLOCK_MS,
@@ -199,6 +299,42 @@ void imuBegin() {
       (bool)IMU_TRIM_REQUIRE_FIX,
   };
   imuTrimBegin(trimCfg);
+
+  // 400kHz rather than the core's 100kHz default; see IMU_I2C_CLOCK_HZ.
+  Wire.begin();
+  Wire.setClock(IMU_I2C_CLOCK_HZ);
+
+  uint8_t whoAmI = 0;
+  if (!readRegs(kRegWhoAmI, &whoAmI, 1) || whoAmI != kImuWhoAmIValue) {
+    LOG_PRINTLN("❌ IMU not found - continuing without it: IMU fields will "
+                "read zero.");
+    return;
+  }
+
+  // Reset to a known state, then wake on the X gyro's PLL, a steadier clock
+  // than the internal oscillator the chip wakes on.
+  const uint8_t reset = 0x80;
+  const uint8_t wake = 0x01;
+  writeRegs(kRegPwrMgmt1, &reset, 1);
+  delay(100);
+  writeRegs(kRegPwrMgmt1, &wake, 1);
+  writeRegs(kRegSmplrtDiv, kImuConfig, sizeof(kImuConfig));
+
+  // readImuRegisters() scales from these ranges at compile time - a write that
+  // did not land would mis-scale every sample.
+  uint8_t pwr = 0;
+  uint8_t cfg[sizeof(kImuConfig)] = {};
+  if (!readRegs(kRegPwrMgmt1, &pwr, 1) || pwr != wake ||
+      !readRegs(kRegSmplrtDiv, cfg, sizeof(cfg)) ||
+      memcmp(cfg, kImuConfig, sizeof(cfg)) != 0) {
+    LOG_PRINTLN("❌ IMU did not take its configuration - continuing without "
+                "it: IMU fields will read zero.");
+    return;
+  }
+  // Let the gyro and filter settle before the seed read below.
+  delay(100);
+  imuUp = true;
+  LOG_PRINTLN("✅ IMU Accelerometer/Gyro enabled.");
 
   // Seed each axis with a real first reading rather than leaving it at its
   // zero-baseline default. Otherwise the first update() would see a huge
@@ -222,6 +358,9 @@ void imuPoll() {
   static unsigned long lastImuReadMs = 0;
   static unsigned long lastTransmitReadMs = 0;
   const unsigned long nowMs = millis();
+
+  if (!imuUp)
+    return; // latestUnits stays zero
 
   // Update all six axis filters if it's time to sample.
   if (nowMs - lastImuReadMs >= IMU_SAMPLE_INTERVAL_MS) {

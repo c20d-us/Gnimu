@@ -15,7 +15,7 @@ core. Open the serial monitor at **115200**.
 | Sketch | Validates | Extra parts | Pass criteria |
 |---|---|---|---|
 | [`imu_probe/`](imu_probe/imu_probe.ino) | Onboard LSM6DS3TR-C power pin, library bring-up, units (`g_imu.cpp`) | none | `begin() OK`; resting board reads ~+1 g on one accel axis (total ~1 g, not ~9.8) and ~0 dps gyro. *(Confirmed.)* |
-| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_AXIS_*_SRC`/`_SIGN` — see note below; usually the firmware's own `milliG` line is enough) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
+| [`imu_tiltmap/`](imu_tiltmap/imu_tiltmap.ino) | Maps LSM6DS3 sensor axes to the board (fills `config.h`'s `IMU_AXIS_*_SRC`/`_SIGN` — see note below; usually the firmware's own `mG` line is enough) | none | Flat + component-up prints `UP = +Z`; each edge-down pose names the in-plane axis. |
 | [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis IMU zero-point offsets in the raw sensor frame, independent of the axis remap however it's spelled (formerly fed `config.h`; now a bench diagnostic only). **Base tree's copy** — the OLED tree has [its own](../nRF52840-OLED/imu_calibration/imu_calibration.ino) | level bench surface | Unattended, no USB needed: warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to internal flash. Press any key over Serial to halt, then `a` to aggregate the run into six `IMU_*_OFFSET_*`-formatted lines. **Those no longer go anywhere** — see the note below. |
 | [`imu_wake/`](imu_wake/imu_wake.ino) | LSM6DS3TR-C's embedded wake-up (activity) detector register config (`CTRL1_XL`, `WAKE_UP_THS`, `WAKE_UP_DUR`) used by LIGHT_SLEEP's shake-to-wake exit trigger | none | Threshold/debounce tuned so a real pickup/shake reliably fires without false-triggering from bench vibration or handling. *(Bench-tuned.)* |
 | [`led_check/`](led_check/led_check.ino) | RGB LED pins + active-LOW polarity + status colors (`g_led.cpp`) | none | The LED color matches each name printed over serial; OFF goes fully dark. *(Confirmed.)* |
@@ -54,7 +54,7 @@ core. Open the serial monitor at **115200**.
 
 > **`imu_tiltmap` is single-sourced here on purpose, and is usually not the
 > tool you want.** The production firmware already prints the 1 Hz serial
-> `milliG` line, and the three static poses documented in `config.h`'s axis
+> `mG` line, and the three static poses documented in `config.h`'s axis
 > section fully determine the map from it — which is how the base tree's
 > as-built map was actually settled, in preference to a drive test. Reach for
 > this sketch when a board's sensor orientation is unknown from scratch;

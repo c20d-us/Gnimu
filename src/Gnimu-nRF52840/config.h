@@ -137,10 +137,10 @@
 //
 // What the length actually buys is a backstop for when that ordering does not
 // hold: the device is switched on as the car leaves the paddock, so the first
-// qualifying stop is a staging lane or a red light on a cambered road. 30s
+// qualifying stop is a staging lane or a red light on a cambered road. 10s
 // clears a rolling pause or a stop sign. It cannot fix the case properly -
 // only powering the device on where it is parked does that.
-#define IMU_TRIM_QUALIFY_MS 30000
+#define IMU_TRIM_QUALIFY_MS 10000
 
 // Averaging block length once the window is open. A long stop yields a steady
 // run of blocks rather than re-serving the qualification delay between each.

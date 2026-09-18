@@ -21,17 +21,29 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
+#include <atomic>
 
 // BLE state
 static const char deviceName[] = RACEBOX_MODEL " " DEVICE_ID;
 static BLEServer *pServer = NULL;
 static BLECharacteristic *pCharacteristicTx = NULL;
-static BLECharacteristic *pCharacteristicRx = NULL;
-static unsigned long connectTimeMs = 0;
 static volatile bool deviceConnected = false;
 static volatile bool oldDeviceConnected = false;
 
-// Drive the onboard LED: solid when connected, blink when disconnected
+// The peer's ATT MTU, 23 until the phone's MTU exchange raises it. Written by
+// Bluedroid callbacks on the other core, read by the loop.
+static std::atomic<uint16_t> peerMtu{23};
+
+// Frames are refused until the MTU can carry them. A few refusals on a fast
+// reconnect are normal, before the exchange completes; only a refusal lasting
+// kMtuRefusalLogMs is logged, once per session.
+static constexpr unsigned long kMtuRefusalLogMs = 1000;
+static bool mtuRefusing = false;
+static bool mtuRefusalLogged = false;
+static unsigned long mtuRefusingSinceMs = 0;
+
+// Blink the onboard LED while disconnected. The connect edge in bleUpdate()
+// turns it solid once, rather than rewriting it on every pass.
 static void updateLed() {
   if (!deviceConnected) {
     static unsigned long lastBlinkMs = 0;
@@ -39,48 +51,46 @@ static void updateLed() {
       lastBlinkMs = millis();
       digitalWrite(LED_ONBOARD_PIN, !digitalRead(LED_ONBOARD_PIN));
     }
-  } else {
-    digitalWrite(LED_ONBOARD_PIN, HIGH);
   }
 }
 
-// BLE Callbacks
+// BLE Callbacks. They run on Bluedroid's task on the other core, so they only
+// set state; bleUpdate() logs the edges from the loop.
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
+    (void)pServer;
+    // Store the MTU before publishing the connection.
+    peerMtu.store(23, std::memory_order_release);
     deviceConnected = true;
-    // Request a larger MTU to fit an 88-byte packet + headers in one go
-    pServer->updatePeerMTU(pServer->getConnId(), BLE_MTU_BYTES);
-    connectTimeMs = millis();
-    LOG_PRINTLN("✅ BLE Client connected & MTU update requested");
+  }
+  void onMtuChanged(BLEServer *pServer,
+                    esp_ble_gatts_cb_param_t *param) override {
+    (void)pServer;
+    peerMtu.store(param->mtu.mtu, std::memory_order_release);
   }
   void onDisconnect(BLEServer *pServer) {
     deviceConnected = false;
-    LOG_PRINTLN("❌ BLE Client disconnected");
-  }
-};
-
-class RxCharacteristicCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    // Zero heap allocation. We just check if any bytes arrived.
-    size_t rxLen = pCharacteristic->getLength();
-    if (rxLen > 0) {
-      LOG_PRINTF("📨 Received %d bytes from app (ignored)\n", rxLen);
-    }
   }
 };
 
 void bleBegin() {
   pinMode(LED_ONBOARD_PIN, OUTPUT);
   BLEDevice::init(deviceName);
-  BLEDevice::setPower(BLE_TX_POWER);
+  // One level for both states. ESP_BLE_PWR_TYPE_DEFAULT reaches connections
+  // but not advertising, which otherwise stays at the controller's +9 dBm.
+  BLEDevice::setPower(BLE_TX_POWER, ESP_BLE_PWR_TYPE_ADV);
+  BLEDevice::setPower(BLE_TX_POWER, ESP_BLE_PWR_TYPE_DEFAULT);
   {
-    int requestedDbm = (BLE_TX_POWER * 3) - 12;
-    int actualDbm = BLEDevice::getPower();
-    if (actualDbm == requestedDbm) {
-      LOG_PRINTF("✅ BLE TX power set to %d dBm.\n", actualDbm);
+    const int requestedDbm = (BLE_TX_POWER * 3) - 12;
+    const int advDbm = BLEDevice::getPower(ESP_BLE_PWR_TYPE_ADV);
+    const int connDbm = BLEDevice::getPower(ESP_BLE_PWR_TYPE_DEFAULT);
+    if (advDbm == requestedDbm && connDbm == requestedDbm) {
+      LOG_PRINTF("✅ BLE TX power set to %d dBm (advertising and connected).\n",
+                 requestedDbm);
     } else {
-      LOG_PRINTF("⚠️  BLE TX power mismatch - requested %d dBm, got %d dBm.\n",
-                 requestedDbm, actualDbm);
+      LOG_PRINTF("⚠️  BLE TX power mismatch - requested %d dBm, got "
+                 "advertising %d dBm, connected %d dBm.\n",
+                 requestedDbm, advDbm, connDbm);
     }
   }
   pServer = BLEDevice::createServer();
@@ -91,10 +101,11 @@ void bleBegin() {
   pCharacteristicTx = pService->createCharacteristic(
       RACEBOX_CHARACTERISTIC_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pCharacteristicTx->addDescriptor(new BLE2902());
-  pCharacteristicRx = pService->createCharacteristic(
+  // Rx exists for the RaceBox GATT layout; writes to it are accepted and
+  // ignored.
+  pService->createCharacteristic(
       RACEBOX_CHARACTERISTIC_RX_UUID,
       BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
-  pCharacteristicRx->setCallbacks(new RxCharacteristicCallbacks());
   pService->start();
 
   // Device Information Service
@@ -129,14 +140,28 @@ void bleBegin() {
   LOG_PRINTLN("📡 BLE advertising started.");
 }
 
-bool bleIsConnected() {
-  // Give the connection a short pause to ensure that MTU negotiation completes.
-  return deviceConnected && (millis() - connectTimeMs > BLE_CONNECT_SETTLE_MS);
-}
+bool bleIsConnected() { return deviceConnected; }
 
-void bleSendPacket(uint8_t *data, size_t len) {
+bool bleSendPacket(uint8_t *data, size_t len) {
+  // A notify carries MTU - 3 bytes; a longer one would be cut short.
+  const uint16_t mtu = peerMtu.load(std::memory_order_acquire);
+  if (len + 3 > mtu) {
+    if (!mtuRefusing) {
+      mtuRefusing = true;
+      mtuRefusingSinceMs = millis();
+    } else if (!mtuRefusalLogged &&
+               millis() - mtuRefusingSinceMs >= kMtuRefusalLogMs) {
+      mtuRefusalLogged = true;
+      LOG_PRINTF("❌ BLE: peer MTU %u too small for %u-byte frames - not "
+                 "sending.\n",
+                 (unsigned int)mtu, (unsigned int)len);
+    }
+    return false;
+  }
+  mtuRefusing = false;
   pCharacteristicTx->setValue(data, len);
   pCharacteristicTx->notify();
+  return true;
 }
 
 void bleUpdate() {
@@ -149,13 +174,18 @@ void bleUpdate() {
 
   // Disconnect edge - schedule a re-advertise after the settle delay.
   if (!deviceConnected && oldDeviceConnected) {
+    LOG_PRINTLN("👋 BLE Client disconnected");
     disconnectMs = millis();
     reAdvertisePending = true;
     oldDeviceConnected = deviceConnected;
   }
   // Connect edge - a client is back; cancel any pending re-advertise.
   if (deviceConnected && !oldDeviceConnected) {
+    LOG_PRINTLN("🤝 BLE Client connected");
+    digitalWrite(LED_ONBOARD_PIN, HIGH);
     reAdvertisePending = false;
+    mtuRefusing = false;
+    mtuRefusalLogged = false;
     oldDeviceConnected = deviceConnected;
   }
   // Settle delay has elapsed, restart advertising.
@@ -165,7 +195,6 @@ void bleUpdate() {
   if (reAdvertisePending &&
       millis() - disconnectMs >= BLE_READVERTISE_DELAY_MS) {
     if (BLEDevice::getAdvertising()->start()) {
-      LOG_PRINTLN("📡 BLE re-advertising started.");
       reAdvertisePending = false;
     } else {
       LOG_PRINTLN("⚠️  BLE re-advertising failed to start - will retry.");

@@ -41,10 +41,13 @@ void setup() {
 #if LOG_ENABLED
   // Wait up to 3s for the USB CDC port to enumerate on the host, so the
   // startup lines aren't dropped into the void while the terminal is still
-  // re-attaching.
+  // re-attaching. Only with VBUS present: on battery there is no host, and the
+  // wait would only delay every power-on.
   Serial.begin(115200);
-  uint32_t t0 = millis();
-  while (!Serial && millis() - t0 < 3000) {
+  if (powerUsbPresent()) {
+    uint32_t t0 = millis();
+    while (!Serial && millis() - t0 < 3000) {
+    }
   }
 #endif
   LOG_PRINTF("🚀 Gnimu [%s] starting up...\n", GNIMU_VARIANT);
@@ -70,7 +73,8 @@ void setup() {
     // Serial1.begin inside gnssBegin claims/reclaims D6/D7 as UART pins.
     // imuBegin drives its own power pin high.
     powerGnssRailOn();
-    gnssBegin();
+    if (!gnssBegin())
+      stateGnssFailed(); // does not return
     imuBegin();
     bleBegin();
     telemetryBegin();

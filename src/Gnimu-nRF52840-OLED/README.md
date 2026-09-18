@@ -180,9 +180,9 @@ Same as [Gnimu nRF52840's troubleshooting table][0] for everything not display-r
 
 The remaining IMU/GNSS/battery diagnostic sketches are not duplicated here — see [Gnimu nRF52840's `tools/`][0-tools].
 
-`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `milliG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
+`imu_tiltmap` is deliberately **not** copied here, because you rarely need it: this firmware already prints the 1 Hz serial `mG` line, and the three static poses in `config.h`'s axis section derive the whole map from it. Reach for the sketch only when a board's sensor orientation is unknown from scratch; it reports in the same `IMU_AXIS_*_SRC`/`_SIGN` form this tree uses, since all three trees now share that scheme.
 
-> ⚠️ Derive the axis map against the **raw serial `milliG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
+> ⚠️ Derive the axis map against the **raw serial `mG` numbers**, not the Gnimu Monitor readout. Monitor is a display layer that has been wrong about exactly this before, masking a mirrored axis map; it cannot validate firmware signs.
 
 ---
 

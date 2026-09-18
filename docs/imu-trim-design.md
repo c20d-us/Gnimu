@@ -187,15 +187,19 @@ qualifying window already does the selection, by ordering rather than by
 duration.** You power on parked, so the paddock stop is first and the lock is set
 before the car ever reaches staging.
 
-Settled at **30 s**, where the length serves only as a backstop for the case
+Settled at **10 s**, where the length serves only as a backstop for the case
 where the ordering fails: the device is switched on as the car leaves the
 paddock, making the first qualifying stop a staging lane or a red light on a
-cambered road. 30 s clears a rolling pause or a stop sign; no duration fixes that
+cambered road. 10 s clears a rolling pause or a stop sign; no duration fixes that
 case properly, and the real protection is the instruction to power on where the
 car is parked.
 
+*Shortened from 30 s on 2026-09-18.* Since the length is only a backstop, the
+extra 20 s bought little protection and delayed every lock. At 10 s the trim
+locks about 15 s after the car stops (10 s qualifying plus the 5 x 1 s window).
+
 *User-facing statement:* "Once the device is powered on, settled, and stationary
-for 30 seconds, it will calibrate itself to mount orientation and retain that
+for 10 seconds, it will calibrate itself to mount orientation and retain that
 calibration until the device is powered off." That this compresses to one
 sentence with no caveats is itself part of the argument for it.
 
@@ -495,7 +499,7 @@ file's established style:
 
 ```
 IMU_GRAVITY_NATIVE          1.0f      // 9.80665f on ESP32
-IMU_TRIM_QUALIFY_MS         30000
+IMU_TRIM_QUALIFY_MS         10000
 IMU_TRIM_BLOCK_MS           1000
 IMU_TRIM_LOCK_BLOCKS        5
 IMU_TRIM_SPEED_MAX_MPS      0.5f
