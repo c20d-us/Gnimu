@@ -20,7 +20,7 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 ## What it does
 
 - Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
-- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, subtracts per-chip zero-point offsets, smooths it with a transient-aware filter, and decimates it to the BLE transmission rate — see [IMU smoothing](#imu-smoothing).
+- Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, levels it and removes gyro bias with a runtime trim learned while stationary, smooths it with a transient-aware filter, and decimates it to the BLE transmission rate — see [IMU smoothing](#imu-smoothing).
 - Packs the GNSS and IMU data into a **RaceBox Data Message** (a u-blox UBX-framed binary packet) and streams it over **BLE** to a RaceBox-compatible client.
 - Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
 - Prints a human-readable **serial status line** at 1Hz for debugging: packet rate, GNSS data rate, satellite count, fix type, horizontal accuracy, position, and IMU values.
@@ -148,7 +148,6 @@ Photos of the reference build, from loose components to the finished, enclosed u
 - **[Arduino IDE](https://www.arduino.cc/en/software)** (2.x recommended).
 - **ESP32 board support** — install the `esp32` package by Espressif via the Boards Manager.
 - Libraries (install via Library Manager):
-  - **Adafruit MPU6050** (pulls in Adafruit Unified Sensor + Adafruit BusIO)
   - **SparkFun u-blox GNSS v3**
   - BLE support is built into the ESP32 Arduino core — no extra install needed.
 
@@ -181,10 +180,10 @@ All user-tunable settings live in [`config.h`](config.h), grouped into sections.
 | `GNSS_NAV_RATE_HZ` | GNSS PVT rate in Hz (1–25). Set once at startup and held for the life of the session, connected or not. |
 | `GNSS_SV_MINELEV_DEG` | Ignore satellites below this elevation angle (anti-multipath). |
 | `GNSS_CONSTELLATIONS` | Per-constellation enable/disable list (GPS, Galileo, GLONASS, BeiDou, QZSS, SBAS). Enable only what your module/region supports — too many can drop the update rate below 25Hz. |
-| `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_FILTER_BANDWIDTH_HZ` | MPU-6050 full-scale ranges and built-in low-pass bandwidth (Adafruit MPU6050 enum tokens). |
+| `IMU_ACCEL_RANGE_G`, `IMU_GYRO_RANGE_DPS`, `IMU_DLPF_CFG` | MPU-6050 full-scale ranges (in g and deg/s) and built-in low-pass filter setting (DLPF_CFG 0-6). |
 | `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | EMA baseline smoothing strength per axis group. Lower = smoother, more lag. |
 | `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2`, `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS` | Deviation (native sensor units — m/s² for accel, rad/s for gyro) that triggers blending the raw peak into the transmitted value. See [IMU smoothing](#imu-smoothing). |
-| `IMU_TRIM_*` | Runtime levelling and gyro de-biasing. After 30 s continuously stationary with a valid 3D fix, the firmware measures its own mounting tilt and gyro zero, applies them, and **locks the orientation for the rest of the power cycle**. Replaces the old per-board calibration step — the firmware image is now identical on every unit. `IMU_TRIM_REQUIRE_FIX 0` for bench testing, which never gets a fix indoors. See [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md). |
+| `IMU_TRIM_*` | Runtime levelling and gyro de-biasing. After 10 s continuously stationary with a valid 3D fix, the firmware measures its own mounting tilt and gyro zero, applies them, and **locks the orientation for the rest of the power cycle**. Replaces the old per-board calibration step — the firmware image is now identical on every unit. `IMU_TRIM_REQUIRE_FIX 0` for bench testing, which never gets a fix indoors. See [`docs/imu-trim-design.md`](../../docs/imu-trim-design.md). |
 | `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | Mounting-orientation remap into the vehicle frame. Each vehicle axis names which sensor axis feeds it (`0`=X, `1`=Y, `2`=Z) plus a sign, covering all **24** physically-realizable orientations. A determinant `static_assert` rejects a mirrored (impossible) map at compile time. Defaults are the identity map, leaving the raw sensor frame untouched. Derivation procedure and the order table are in `config.h`. |
 | `BLE_TX_POWER` | BLE transmit power. **Lowering this reduces RF interference with the GNSS front end and can noticeably improve satellite lock** — see notes below. |
 | `LOG_ENABLED` | Master switch for all serial diagnostic output. `0` = **silent build**: every `LOG_*` call vanishes at compile time and `setup()` skips the wait for the serial port. |
@@ -199,7 +198,7 @@ Raw accelerometer and gyroscope samples are read at 100Hz and run through a per-
 - Within each transmission window, the axis also tracks the largest raw deviation from that baseline.
 - If the deviation exceeds `IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2` / `IMU_GYRO_TRANSIENT_THRESHOLD_RADPS`, the transmitted value blends toward the raw peak in proportion to how far past the threshold it went — fully at 2× the threshold, partially in between, pure baseline at or under it.
 
-This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `config.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved.
+This keeps the transmitted trace smooth during normal driving while still surfacing sharp events (kerb strikes, hard transients) that a plain low-pass filter would otherwise flatten out. The thresholds are tunable per-axis-group in `config.h` and should be set above your car's vibration floor (engine/tire/kerb noise) but below the magnitude of events you want preserved. As shipped, both thresholds are parked far out of reach, so the output is the plain EMA until the mount is rigid enough to tune them.
 
 ### A note on BLE power and GNSS lock
 

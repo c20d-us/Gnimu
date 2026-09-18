@@ -24,10 +24,10 @@
 //      from other constants. Changing them without changing the matching part
 //      of the system (or the protocol) will break compatibility.
 // Within each section, entries are grouped by subsystem (Device Identity, IMU,
-// GNSS, BLE, LED, Logging, Battery, Protocol), in the same order in both
+// GNSS, BLE, LED, Logging, Protocol), in the same order in both
 // sections. Every define is prefixed with the subsystem it belongs to, and
 // every value that carries a unit is suffixed with it (_MS, _HZ, _G, _DPS,
-// _MPS2, _RADPS, _DEG, _BYTES, _PERCENT, _PIN).
+// _MPS2, _RADPS, _DEG, _BYTES, _PIN).
 
 // ============================================================================
 // ============================================================================
@@ -63,23 +63,17 @@
 
 #define IMU_SAMPLE_INTERVAL_MS 10 // 10 == 100Hz sample rate
 
-// Sensor full-scale ranges and the built-in low-pass bandwidth
-// (Uses Adafruit MPU6050 enum tokens)
-#define IMU_ACCEL_RANGE_G MPU6050_RANGE_4_G        // 4g, ample for auto-x
-#define IMU_GYRO_RANGE_DPS MPU6050_RANGE_500_DEG   // 500 deg/s for auto-x
-#define IMU_FILTER_BANDWIDTH_HZ MPU6050_BAND_21_HZ // built-in low-pass filter
+// Sensor full-scale ranges and the built-in low-pass filter.
+#define IMU_ACCEL_RANGE_G 4    // 2, 4, 8 or 16 g; 4g is ample for auto-x
+#define IMU_GYRO_RANGE_DPS 500 // 250, 500, 1000 or 2000 deg/s
+#define IMU_DLPF_CFG 4         // DLPF_CFG 0-6; 4 = 21Hz accel, 20Hz gyro
 
 // I2C bus speed for the MPU-6050.
 //
 // This is a LATENCY setting: imuPoll() reads the sensor every
 // IMU_SAMPLE_INTERVAL_MS, and every millisecond spent blocked in that transfer
-// is a millisecond gnssPoll() is not draining the GNSS UART.
-//
-// The default is NOT 400kHz and has to be set explicitly. Wire.begin() leaves
-// the ESP32 bus at 100kHz; Adafruit_BusIO exposes setSpeed() but the MPU-6050
-// library never calls it, so nothing raises it on its own. g_imu.cpp applies
-// this AFTER myIMU.begin(). begin() brings the bus up and would overwrite any
-// earlier setting.
+// is a millisecond gnssPoll() is not draining the GNSS UART. Wire.begin()
+// leaves the ESP32 bus at 100kHz, so imuBegin() raises it explicitly.
 #define IMU_I2C_CLOCK_HZ 400000
 
 // ImuAxis smoothing rates and transient thresholds.
@@ -87,11 +81,11 @@
 // window's peak must exceed before it gets blended into the transmitted value
 // instead of the plain EMA baseline.
 //
-// The ACCEL values carry over the tuning done on the nRF52840 build against 13
+// The ACCEL alpha carries over the tuning done on the nRF52840 build against 13
 // autocross runs cross-checked with the GNSS solution; see that config.h for
-// the full reasoning. They have NOT been re-measured on this board, which
-// carries a different IMU (MPU6050, not LSM6DS3TR-C). The GYRO values are
-// untested placeholders on every build.
+// the full reasoning. It has NOT been re-measured on this board, which carries
+// a different IMU (MPU6050, not LSM6DS3TR-C). The GYRO alpha is an untested
+// placeholder on every build.
 //
 // The short version: the threshold must sit ABOVE the car's vibration floor.
 // At the original 2.0 m/s^2 it sat below it, so the blend fired on nearly every
@@ -101,13 +95,13 @@
 // threshold has to be raised first. The alpha is also the anti-alias filter for
 // the 100Hz -> transmit-rate decimation; 0.09 puts its corner at ~1.5Hz.
 //
-// 14.7 m/s^2 (~1.5g) is a HOLDING value matching the nRF52840 build, chosen for
-// a mount too springy to separate vibration from genuine events. It parks the
-// blend out of reach, leaving the plain EMA baseline. Re-tune after remounting.
+// Both thresholds are PARKED pending retune. Values are far beyond anything a
+// car produces (99 m/s^2 is ~10g), so the blend never fires and the output is
+// the plain EMA baseline.
 #define IMU_ACCEL_ALPHA 0.09f // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~1.5Hz
-#define IMU_GYRO_ALPHA 0.09f  // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~3.6Hz
-#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 99.0f   // ~1.5g
-#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 9999.0f // ~28.6 deg/s
+#define IMU_GYRO_ALPHA 0.09f  // EMA smoothing: 1.0 = raw, 0.1 = heavy. ~1.5Hz
+#define IMU_ACCEL_TRANSIENT_THRESHOLD_MPS2 99.0f   // parked, ~10g
+#define IMU_GYRO_TRANSIENT_THRESHOLD_RADPS 9999.0f // parked
 
 // Runtime IMU trim (levelling + gyro de-bias)
 //
@@ -117,12 +111,12 @@
 //
 // These are per-DESIGN values, not per-board: identical on every unit. Only
 // IMU_GRAVITY_NATIVE and IMU_TRIM_GYRO_VAR_MAX differ from the nRF52840
-// trees, and only because the MPU6050 driver reports m/s^2 and rad/s where
+// trees, and only because this build's IMU read reports m/s^2 and rad/s where
 // the LSM6DS3 reports g and deg/s.
 
 // 1 g expressed in this variant's native accel units. The trim module is
 // otherwise unit-agnostic; this is the single magnitude it needs.
-#define IMU_GRAVITY_NATIVE 9.80665f // m/s^2, the MPU6050 driver's native unit
+#define IMU_GRAVITY_NATIVE 9.80665f // m/s^2, g_imu.cpp's native accel unit
 
 // How long every stillness criterion must hold CONTINUOUSLY before a window
 // opens.
@@ -137,10 +131,10 @@
 //
 // What the length actually buys is a backstop for when that ordering does not
 // hold: the device is switched on as the car leaves the paddock, so the first
-// qualifying stop is a staging lane or a red light on a cambered road. 30s
+// qualifying stop is a staging lane or a red light on a cambered road. 10s
 // clears a rolling pause or a stop sign. It cannot fix the case properly -
 // only powering the device on where it is parked does that.
-#define IMU_TRIM_QUALIFY_MS 30000
+#define IMU_TRIM_QUALIFY_MS 10000
 
 // Averaging block length once the window is open. A long stop yields a steady
 // run of blocks rather than re-serving the qualification delay between each.
@@ -313,13 +307,7 @@
 //   ESP_PWR_LVL_P9   =   +9 dBm (maximum power)
 #define BLE_TX_POWER ESP_PWR_LVL_N12
 
-#define BLE_MTU_BYTES 128            // must be >= 91 to carry an 88-byte notify
 #define BLE_READVERTISE_DELAY_MS 500 // delay before re-advertising
-
-// How long after a client connects before bleIsConnected() reports true.
-// Gives the MTU negotiation a moment to finish so the first notify isn't
-// sent against the default 23-byte MTU and chunked.
-#define BLE_CONNECT_SETTLE_MS 100
 
 // ----------------------------------------------------------------------------
 // --- LED (onboard status LED) ---
@@ -356,19 +344,6 @@
 // Decimate the IMU stream down to the transmission rate. Derived from
 // GNSS_NAV_RATE_HZ so the two can't drift out of sync.
 #define IMU_TRANSMIT_INTERVAL_MS (1000 / GNSS_NAV_RATE_HZ)
-
-// ----------------------------------------------------------------------------
-// --- Battery ---
-// ----------------------------------------------------------------------------
-
-// No battery circuit on this build. The RaceBox protocol still carries a
-// battery byte, so we report a constant full charge.
-#define BATTERY_REPORT_PERCENT 100
-
-// This build has no battery gauge: the shared telemetry module omits the
-// battery segment from the serial stats line, and g_battery is a constant
-// stub.
-#define BATTERY_HAS_GAUGE 0
 
 // ----------------------------------------------------------------------------
 // --- Protocol (RaceBox BLE protocol) ---
@@ -473,6 +448,10 @@ static_assert(IMU_ACCEL_ALPHA > 0.0f && IMU_ACCEL_ALPHA <= 1.0f,
 static_assert(IMU_GYRO_ALPHA > 0.0f && IMU_GYRO_ALPHA <= 1.0f,
               "ERROR: IMU_GYRO_ALPHA must be in the range (0.0, 1.0]");
 
+// The MPU-6050's DLPF_CFG takes 0-6; 7 is reserved.
+static_assert(IMU_DLPF_CFG >= 0 && IMU_DLPF_CFG <= 6,
+              "ERROR: IMU_DLPF_CFG must be in the range 0-6.");
+
 // Enforce positive transient thresholds (a zero/negative threshold would
 // disable transient blending entirely; see ImuAxis::read()).
 static_assert(
@@ -494,22 +473,12 @@ static_assert(IMU_TRANSMIT_INTERVAL_MS >= IMU_SAMPLE_INTERVAL_MS,
               "least one fast sample for ImuAxis's transient peak tracking "
               "to work.");
 
-// Enforce MTU large enough for an 88-byte notify plus the 3-byte ATT header,
-// and no larger than the maximum ATT MTU defined by the BLE spec.
-static_assert(BLE_MTU_BYTES >= 91,
-              "ERROR: BLE_MTU_BYTES must be >= 91 to carry an 88-byte notify.");
-static_assert(BLE_MTU_BYTES <= 517,
-              "ERROR: BLE_MTU_BYTES must be <= 517, the maximum ATT MTU "
-              "defined by the Bluetooth Low Energy spec.");
-
 // Enforce positive timing intervals (a zero or negative value here would
 // either fire every loop() or, once implicitly converted to the unsigned
 // long millis() uses, wrap around to a value so large the action would
 // effectively never fire).
 static_assert(BLE_READVERTISE_DELAY_MS > 0,
               "ERROR: BLE_READVERTISE_DELAY_MS must be greater than 0.");
-static_assert(BLE_CONNECT_SETTLE_MS > 0,
-              "ERROR: BLE_CONNECT_SETTLE_MS must be greater than 0.");
 static_assert(LED_BLINK_INTERVAL_MS > 0,
               "ERROR: LED_BLINK_INTERVAL_MS must be greater than 0.");
 static_assert(LOG_STATS_INTERVAL_MS > 0,
@@ -598,11 +567,3 @@ static_assert(IMU_AXIS_PARITY * IMU_AXIS_X_SIGN * IMU_AXIS_Y_SIGN *
               "An even permutation needs an even number of sign flips, an odd "
               "permutation an odd number. See the order table in the Axis "
               "orientation section above.");
-
-// Enforce a valid reported battery percentage (transmitted as a raw byte)
-static_assert(BATTERY_REPORT_PERCENT >= 0 && BATTERY_REPORT_PERCENT <= 100,
-              "ERROR: BATTERY_REPORT_PERCENT must be between 0 and 100.");
-
-// Battery-gauge feature flag: strictly 0 or 1.
-static_assert(BATTERY_HAS_GAUGE == 0 || BATTERY_HAS_GAUGE == 1,
-              "ERROR: BATTERY_HAS_GAUGE must be 0 or 1.");

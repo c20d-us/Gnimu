@@ -172,7 +172,8 @@ static void rebuildRotation() {
   cross3(gRef_, kUp, v);
   const float c = dot3(gRef_, kUp);
 
-  // Perfectly level (or numerically indistinguishable from it): no rotation.
+  // Fully inverted, where 1/(1+c) is singular. Unreachable - see above - so
+  // fall back to no rotation rather than divide by zero.
   const float denom = 1.0f + c;
   if (denom < 1e-6f) {
     setIdentity(R_);

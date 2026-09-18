@@ -47,7 +47,7 @@ Start with the README for whichever hardware you're building (links at the top o
 
 ## A note about mounting and self-calibration
 
-The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary for 30 seconds with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point, applies them, and holds that calibration until the device is powered off.
+The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary for 10 seconds with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point, applies them, and holds that calibration until the device is powered off.
 
 That means you don't have to get the mount perfectly level, and there's no per-board calibration step before you flash. Earlier versions of this firmware needed six hand-measured zero-point offsets pasted into `config.h` for every individual board; those are gone, and the firmware image is now identical on every unit.
 
@@ -56,7 +56,7 @@ A few practical notes:
 - **Mount the device in your desired location, power it on while parked, and let it sit.** The calibration happens during the *first* qualifying stationary period, which is what keeps it from calibrating itself to a sloped staging lane later on.
 - **Give it a minute or two.** The calibration window doesn't start until there's a usable 3D fix, and on a cold start that's usually the largest part of the stabilization period. In my testing it's taken anywhere from 70 to 95 seconds from power-on to get to the calibration window.
 - If you're connected to serial, **watch the `Trim:` field** on the log line. `⏳` means it hasn't locked yet; `✅` means it has, and the number beside it is the mounting tilt it measured. On the OLED build the same states show up as an icon in the status bar. You'll see a check once it's locked, an X if it refused, and nothing while it's still deciding.
-- **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting, and shows `❌` — so if you see that with a `Trim:` angle above 15°, the mount is the problem, not the firmware. Don't expect the `❌` immediately though: the reported tilt sits at 0° until the first measurement lands, so a badly mounted device shows `⏳` for the first 30 seconds or so and only then switches over.
+- **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting, and shows `❌` — so if you see that with a `Trim:` angle above 15°, the mount is the problem, not the firmware. Don't expect the `❌` immediately though: the reported tilt sits at 0° until the first measurement lands, so a badly mounted device shows `⏳` for the first 15 seconds or so and only then switches over.
 - **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car.
 
 Engine vibration doesn't interfere with this process. I checked, and a calibration captured at cold idle is repeatable to about 0.02°, which is miniscule for our purposes. So it doesn't matter whether you start the car before calibration or calibrate first.
@@ -85,7 +85,7 @@ src/
   Gnimu-nRF52840/        nRF52840 firmware + README
   Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README
   tools/
-    check_common.sh      Verifies the modules shared across variants are identical
+    check_common.sh      Verifies the modules the two nRF52840 trees share are identical
     common/              Diagnostic sketches not tied to any one platform
     ESP32/               Diagnostic sketches for the ESP32 variant
     nRF52840/            Diagnostic sketches for the nRF52840 variant
@@ -96,7 +96,7 @@ Each sketch folder is named for its variant and contains the `.ino` of the same
 name, as the Arduino IDE requires. That also means the IDE's window title and
 tab name identify which variant you have open.
 
-Several modules are deliberately duplicated across the variants and kept byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of the shared files, apply the same change to the others and run `src/tools/check_common.sh` to confirm they still match. The script covers all three variants; add any new sketch folder to its `VARIANTS` list or that copy goes unchecked.
+The two nRF52840 trees deliberately duplicate a set of modules and keep them byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of those files, apply the same change to the other tree and run `src/tools/check_common.sh` to confirm they still match. The ESP32 tree is deliberately standalone: it has its own copies of some of the same modules, free to diverge, and the script does not check it.
 
 ---
 

@@ -35,13 +35,6 @@ static BLEBas blebas; // Battery Service (0x180F)
 static volatile bool deviceConnected = false;
 static uint8_t lastBasPercent = 0xFF; // force a first Battery-service write
 
-// Last MTU value we logged, so bleUpdate() only prints on an actual change
-// rather than every loop. 0 = "nothing logged yet this connection" - reset
-// on every connect/disconnect so a new connection's negotiation is reported
-// fresh rather than silently comparing against a stale value from the
-// previous client.
-static uint16_t lastLoggedMtu = 0;
-
 // Tracks whether bleBegin() has completed successfully. bleStop() is a no-op
 // unless this is true - guards against calling Bluefruit APIs on an
 // uninitialized stack (e.g. from a boot-classified quiet state where
@@ -50,17 +43,11 @@ static bool bleInitialized = false;
 
 // Connection callbacks
 static void connectCallback(uint16_t conn_handle) {
+  (void)conn_handle;
   deviceConnected = true;
   // Switch to the connected TX power level (see BLE_TX_POWER_* in config.h).
   Bluefruit.setTxPower(BLE_TX_POWER_CONN_DBM);
-  BLEConnection *conn = Bluefruit.Connection(conn_handle);
-  // Let the CENTRAL drive the MTU exchange. The ceiling is already raised by
-  // configPrphBandwidth(BANDWIDTH_MAX). MTU here always reads the BLE default
-  // (23) since negotiation hasn't happened yet at connect time. bleUpdate()
-  // polls and logs the follow-up change once the central actually raises it.
-  const uint16_t mtu = conn->getMtu();
-  LOG_PRINTF("✅ BLE client connected (MTU %u).\n", mtu);
-  lastLoggedMtu = mtu; // baseline - bleUpdate() only logs a genuine change
+  LOG_PRINTLN("🤝 BLE Client connected");
 }
 
 static void disconnectCallback(uint16_t conn_handle, uint8_t reason) {
@@ -68,26 +55,8 @@ static void disconnectCallback(uint16_t conn_handle, uint8_t reason) {
   deviceConnected = false;
   // Restore advertising TX power; advertising auto-restarts.
   Bluefruit.setTxPower(BLE_TX_POWER_ADV_DBM);
-  LOG_PRINTF("❌ BLE client disconnected (reason 0x%02X).\n", reason);
-  lastLoggedMtu = 0; // next connection's negotiation reported fresh
-}
-
-// Debug: print any bytes the client writes to the Rx characteristic.
-static void rxCallback(uint16_t conn_handle) {
-  (void)conn_handle;
-  if (!bleuart.available())
-    return;
-  LOG_PRINT("📨 Received BLE command: ");
-  while (bleuart.available()) {
-    // The read must live OUTSIDE the LOG macro: in silent builds the macro
-    // (and its arguments) vanish at preprocessor level, and losing the
-    // read() side effect here would leave the buffer forever non-empty -
-    // an infinite loop inside a BLE callback.
-    const uint8_t b = (uint8_t)bleuart.read();
-    (void)b; // silence the unused warning in silent builds
-    LOG_PRINTF("0x%02X ", b);
-  }
-  LOG_PRINTLN();
+  LOG_PRINTF("👋 BLE Client disconnected (reason 0x%02X)\n", reason);
+  (void)reason; // only read by the log line, which silent builds compile out
 }
 
 static void startAdvertising() {
@@ -133,9 +102,9 @@ void bleBegin() {
   blebas.begin();
   blebas.write(batteryGetStatus().percent);
 
-  // Nordic UART / RaceBox service
+  // Nordic UART / RaceBox service. Rx exists for the RaceBox GATT layout;
+  // writes to it are accepted and ignored.
   bleuart.begin();
-  bleuart.setRxCallback(rxCallback);
 
   startAdvertising();
 
@@ -157,22 +126,6 @@ void bleUpdate() {
   if (pct != lastBasPercent) {
     blebas.write(pct);
     lastBasPercent = pct;
-  }
-
-  // Detect and log MTU growth after connect. See connectCallback()'s comment
-  // for why this has to be polled rather than event-driven. Confirms the
-  // central actually raised the MTU (expected: 23 -> 247) rather than
-  // silently staying stuck at 23, which would otherwise only show up as an
-  // unexplained "chunked" 88-byte notify.
-  if (deviceConnected) {
-    BLEConnection *conn = Bluefruit.Connection(0);
-    if (conn) {
-      const uint16_t mtu = conn->getMtu();
-      if (mtu != lastLoggedMtu) {
-        LOG_PRINTF("🔧 BLE MTU changed: %u -> %u\n", lastLoggedMtu, mtu);
-        lastLoggedMtu = mtu;
-      }
-    }
   }
 }
 

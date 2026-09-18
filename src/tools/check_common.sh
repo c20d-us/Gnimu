@@ -16,25 +16,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # ============================================================================
-# check_common.sh - verify the cross-variant common modules are byte-identical.
+# check_common.sh - verify the modules shared by the two nRF52840 trees are
+# byte-identical.
 #
-# Every variant sketch deliberately carries duplicate copies of the modules
-# below (a shared-library approach was evaluated and rejected as too convoluted
-# for the Arduino build model). The duplication contract is: a change to one
-# copy MUST be applied to all the others. This script enforces that contract -
-# it exits 0 when every file is byte-identical across every variant and 1
+# The nRF52840 and nRF52840-OLED sketches deliberately carry duplicate copies of
+# the modules below (a shared-library approach was evaluated and rejected as too
+# convoluted for the Arduino build model). The duplication contract is: a change
+# to one copy MUST be applied to the other. This script enforces that contract -
+# it exits 0 when every file is byte-identical across both trees and 1
 # otherwise.
 #
-# There are TWO check groups, because the sharing is not uniform:
-#
-#   ALL-VARIANT  - modules every sketch carries, including the ESP32 tree.
-#   NRF-ONLY     - modules the two nRF52840 trees share but the ESP32 tree has
-#                  no counterpart for (different MCU, sensor, and power model:
-#                  no battery gauge, no state machine, no power gate). These
-#                  were drifting unchecked until 2026-08-14.
-#
-# Add a variant to the relevant *_VARIANTS list when a new sketch folder is
-# created, or its copies go unchecked and drift silently.
+# The ESP32 tree is deliberately standalone and is not checked. It carries its
+# own copies of some of these modules, free to diverge so it can be kept as
+# simple and tight as its hardware needs.
 #
 # Run it from anywhere:  ./src/tools/check_common.sh
 # ============================================================================
@@ -43,30 +37,9 @@ set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# --- Group 1: every sketch folder holding a copy of the common set. The first
-# entry is the reference the others are compared against - which one it is does
-# not matter, since the contract is that all are identical.
-VARIANTS=(
-  Gnimu-ESP32
-  Gnimu-nRF52840
-  Gnimu-nRF52840-OLED
-)
-
-# The designated common set. Add a file here if it becomes shared; remove it
-# if it is deliberately allowed to diverge.
-COMMON_FILES=(
-  ImuAxis.h
-  ImuAxis.cpp
-  g_imu_trim.h
-  g_imu_trim.cpp
-  g_log.h
-  g_telemetry.h
-  g_telemetry.cpp
-  g_ubx_helpers.h
-  g_ubx_helpers.cpp
-)
-
-# --- Group 2: the two nRF52840 trees only.
+# The two nRF52840 sketch folders. The first entry is the reference the other is
+# compared against - which one it is does not matter, since the contract is that
+# both are identical.
 NRF_VARIANTS=(
   Gnimu-nRF52840
   Gnimu-nRF52840-OLED
@@ -77,11 +50,9 @@ NRF_VARIANTS=(
 #   g_led.cpp   - OLED tree yields the LED to the panel via displayIsPresent().
 #   g_state.cpp - OLED tree calls displaySleep() before the MCU halts.
 #   g_power.h   - switch-sense pin differs (A4 base / A1 OLED; A4 IS SDA there).
-#
-# g_imu.cpp joined this list on 2026-08-14, when the base tree was migrated to
-# the generalized IMU_AXIS_*_SRC/_SIGN remap the OLED tree already used. It was
-# the last axis-scheme divergence in the codebase.
 NRF_COMMON_FILES=(
+  ImuAxis.h
+  ImuAxis.cpp
   g_battery.h
   g_battery.cpp
   g_ble.h
@@ -90,9 +61,16 @@ NRF_COMMON_FILES=(
   g_gnss.cpp
   g_imu.cpp
   g_imu.h
+  g_imu_trim.h
+  g_imu_trim.cpp
+  g_led.h
+  g_log.h
   g_power.cpp
   g_state.h
-  g_led.h
+  g_telemetry.h
+  g_telemetry.cpp
+  g_ubx_helpers.h
+  g_ubx_helpers.cpp
 )
 
 status=0
@@ -135,19 +113,13 @@ check_group() {
   done
 }
 
-echo "--- All variants (${#VARIANTS[@]}) ---"
-check_group "all" "${VARIANTS[0]}" "${#COMMON_FILES[@]}" \
-  "${COMMON_FILES[@]}" "${VARIANTS[@]}"
-
-echo
-echo "--- nRF52840 trees only (${#NRF_VARIANTS[@]}) ---"
+echo "--- nRF52840 trees (${#NRF_VARIANTS[@]}) ---"
 check_group "nrf" "${NRF_VARIANTS[0]}" "${#NRF_COMMON_FILES[@]}" \
   "${NRF_COMMON_FILES[@]}" "${NRF_VARIANTS[@]}"
 
 echo
 if [ "$status" -eq 0 ]; then
-  echo "All ${#COMMON_FILES[@]} common files are byte-identical across all ${#VARIANTS[@]} variants,"
-  echo "and all ${#NRF_COMMON_FILES[@]} nRF-shared files across both nRF52840 variants."
+  echo "All ${#NRF_COMMON_FILES[@]} shared files are byte-identical across both nRF52840 trees."
 else
   echo "COMMON-FILE DRIFT DETECTED. The common modules must stay byte-identical:"
   echo "review the differences (e.g. diff src/<variant-a>/<file> src/<variant-b>/<file>),"

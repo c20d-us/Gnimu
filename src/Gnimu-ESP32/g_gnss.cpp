@@ -51,17 +51,18 @@ static bool connectAndConfigureBaud() {
 
   for (int i = 0; i < numRates; i++) {
     uint32_t testBaud = baudRates[i];
-    LOG_PRINTF("🔎 Trying GNSS at %d baud...\n", testBaud);
+    LOG_PRINTF("🔎 Trying GNSS at %u baud...\n", (unsigned int)testBaud);
 
     gnssSerial.begin(testBaud, SERIAL_8N1, GNSS_RX_PIN, GNSS_TX_PIN);
     delay(100); // Give the serial port a moment to stabilize
 
     if (myGNSS.begin(gnssSerial)) {
-      LOG_PRINTF("✅ GNSS detected at %d baud.\n", testBaud);
+      LOG_PRINTF("✅ GNSS detected at %u baud.\n", (unsigned int)testBaud);
 
       // If we found it, but it's at the wrong speed, switch it.
       if (testBaud != GNSS_BAUD) {
-        LOG_PRINTF("🔀 Switching GNSS to target %d baud...\n", GNSS_BAUD);
+        LOG_PRINTF("🔀 Switching GNSS to target %u baud...\n",
+                   (unsigned int)GNSS_BAUD);
         myGNSS.setSerialRate(GNSS_BAUD);
         delay(100);
 
@@ -209,15 +210,14 @@ void gnssBegin() {
         zeroed++;
       }
     }
-    LOG_PRINTF("✅ NMEA sentence rates zeroed (%d of %d; any remainder is "
-               "unsupported by this firmware).\n",
-               zeroed, NUM_NMEA_MSGOUT_KEYS);
+    LOG_PRINTF("✅ NMEA sentence rates zeroed (%d of %d).\n", zeroed,
+               NUM_NMEA_MSGOUT_KEYS);
     (void)zeroed; // only read by the log line, which silent builds compile out
   }
 
   // Set the minimum elevation of satellites to track (anti-multipath)
   if (myGNSS.setVal8(UBLOX_CFG_NAVSPG_INFIL_MINELEV, GNSS_SV_MINELEV_DEG)) {
-    LOG_PRINTF("✅ GNSS minimum SV elevation set to %d deg.\n",
+    LOG_PRINTF("✅ GNSS minimum SV elevation set to %d°.\n",
                GNSS_SV_MINELEV_DEG);
   } else {
     LOG_PRINTLN("❌ Failed to set GNSS minimum elevation.");
@@ -264,8 +264,10 @@ const UBX_NAV_PVT_data_t *gnssLatestPvt() {
 // GNSS module poller - called every loop().
 // Prompts firing of registered callback when a new PVT epoch is available.
 void gnssPoll() {
-  // Pump the UART and parse incoming bytes into complete packets
-  myGNSS.checkUblox();
-  // Fire the registered callbacks for any completed packets
-  myGNSS.checkCallbacks();
+  // Pump the UART and parse incoming bytes into complete packets. Callbacks can
+  // only become pending when bytes arrive, so skip the library's long walk of
+  // every message type on the passes where nothing did.
+  if (myGNSS.checkUblox()) {
+    myGNSS.checkCallbacks();
+  }
 }

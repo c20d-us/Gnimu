@@ -157,7 +157,7 @@ static void drawStatusBar(const char *label, bool bleUp, bool showTrim,
   //
   // Blank covers two cases deliberately - no stationary window has closed yet
   // (tiltDegrees() reads 0 until the first block, so a badly mounted device
-  // shows blank for the first ~31s before the X appears), and a mount inside
+  // shows blank for the first ~11s before the X appears), and a mount inside
   // the correctable range that simply has not converged. Neither is worth
   // distinguishing here: the check is the thing being waited for.
   //

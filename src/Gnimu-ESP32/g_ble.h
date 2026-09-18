@@ -34,8 +34,9 @@ void bleBegin();
 bool bleIsConnected();
 
 // Send a packet to the connected client via a notify on the Tx characteristic.
-// Caller is responsible for checking bleIsConnected() first if it cares.
-void bleSendPacket(uint8_t *data, size_t len);
+// Returns false, sending nothing, if the peer's MTU can't carry it yet. Caller
+// is responsible for checking bleIsConnected() first if it cares.
+bool bleSendPacket(uint8_t *data, size_t len);
 
 // Service the connection lifecycle.
 // Re-advertise after a disconnect, track connect/disconnect edges, and drive

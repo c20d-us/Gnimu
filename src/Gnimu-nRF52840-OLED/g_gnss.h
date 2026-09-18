@@ -28,8 +28,9 @@
 // ============================================================================
 
 // Bring up the receiver and configure the GNSS.
-// Call once in setup(). Halts if the module is not detected.
-void gnssBegin();
+// False if the module is not detected; the caller hands that to
+// stateGnssFailed().
+bool gnssBegin();
 
 // Release Serial1 so its pins (D6/D7) revert to plain GPIO and can be idled
 // low by powerHoldPeripheralsOff(). MUST be called before the state machine
