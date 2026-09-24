@@ -333,8 +333,8 @@
 // and the power used once a client is CONNECTED. Lower power reduces RF
 // interference with the GNSS.
 // Valid nRF52840 levels: -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8.
-#define BLE_TX_POWER_ADV_DBM -16  // while advertising
-#define BLE_TX_POWER_CONN_DBM -16 // while client is connected
+#define BLE_TX_POWER_ADV_DBM -12  // while advertising
+#define BLE_TX_POWER_CONN_DBM -12 // while client is connected
 
 // ----------------------------------------------------------------------------
 // --- Battery ---
@@ -345,9 +345,9 @@
 // GNSS rail (EN pulled low) then enters System OFF, which remains latched until
 // a real power event (USB plug-in or a switch off->on cycle).
 // Debounce so acquisition current spikes don't trip it.
-#define BATTERY_CUTOFF_V 3.35f          // Cutoff voltage threshold
-#define BATTERY_WARN_V 3.60f            // Amber LED blink voltage threshold
-#define BATTERY_CRITICAL_V 3.40f        // Red LED blink voltage threshold
+#define BATTERY_CUTOFF_V 3.30f          // Cutoff voltage threshold
+#define BATTERY_WARN_V 3.40f            // Amber LED blink voltage threshold
+#define BATTERY_CRITICAL_V 3.35f        // Red LED blink voltage threshold
 #define BATTERY_CUTOFF_DEBOUNCE_MS 5000 // low-V duration before tripping
 
 // --- Non-blocking VBAT sampler ---
@@ -394,7 +394,7 @@
 //
 // Deliberately simplified to just two endpoints - a straight line, not a
 // real LiPo discharge curve.
-#define BATTERY_DISCHARGE_CURVE {{3.90f, 100}, {3.35f, 0}}
+#define BATTERY_DISCHARGE_CURVE {{4.10f, 100}, {3.30f, 0}}
 
 // ----------------------------------------------------------------------------
 // --- Power ---

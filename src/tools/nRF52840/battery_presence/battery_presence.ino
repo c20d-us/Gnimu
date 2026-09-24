@@ -17,7 +17,7 @@
 // ============================================================================
 // DIAGNOSTIC: battery presence (switch-sense)
 //
-// Reads the slide switch's spare-pole divider tap on A4, the authoritative
+// Reads the slide switch's spare-pole divider tap, the authoritative
 // battery-present signal shipped in g_power.cpp. The 510k/510k divider taps
 // ~2 V (half of the ~4.2 V node) when the switch is OFF, and is pulled to
 // ~0 V when ON.
@@ -47,17 +47,18 @@ void setup() {
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 3000) {
   }
-  Serial.println("=== switch-sense (A4) check ===");
+  Serial.println("=== switch-sense check ===");
 
   analogReadResolution(12);
   analogReference(AR_INTERNAL_3_0); // pairs with the 3000 mV reference above
   analogSampleTime(SWITCH_SENSE_TACQ_US);
+  pinMode(SWITCH_SENSE_PIN, INPUT);
 }
 
 void loop() {
   const int mv = readSwitchMv();
-  Serial.printf("A4=%d mV -> %s\n", mv,
+  Serial.printf("Tap=%d mV -> %s\n", mv,
                 mv > SWITCH_OFF_THRESHOLD_MV ? "OFF (disconnected)"
-                                              : "ON (connected)");
+                                             : "ON (connected)");
   delay(500);
 }
