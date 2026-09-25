@@ -7,6 +7,8 @@ namespace gnimu {
 // Implemented once per platform in platform/<mcu>/Clock.cpp; only the file
 // matching the selected board compiles.
 struct PlatformClock {
+  // Starts the timebase; call once before the first nowUs().
+  static void begin();
   // Monotonic microseconds since boot, 64-bit.
   static uint64_t nowUs();
   // Sleep until the deadline without busy-waiting. Granularity is one RTOS

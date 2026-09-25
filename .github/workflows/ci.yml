@@ -24,10 +24,20 @@ jobs:
         board: [esp32, nrf52840]
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: arduino/setup-arduino-cli@v2
       - name: Install board cores
         run: |
           arduino-cli core update-index --config-file arduino-cli.yaml
           arduino-cli core install esp32:esp32@3.3.11 --config-file arduino-cli.yaml
           arduino-cli core install Seeeduino:nrf52@1.1.13 --config-file arduino-cli.yaml
+      - name: Install libraries
+        run: arduino-cli lib install "SparkFun u-blox GNSS v3@3.1.15"
+      - name: Install nRF DFU packaging tool
+        if: matrix.board == 'nrf52840'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/nrfutil-venv"
+          "$RUNNER_TEMP/nrfutil-venv/bin/pip" install 'adafruit-nrfutil==0.5.3.post16'
+          echo "$RUNNER_TEMP/nrfutil-venv/bin" >> "$GITHUB_PATH"
       - run: scripts/build.sh ${{ matrix.board }}

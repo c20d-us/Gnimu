@@ -7,6 +7,8 @@
 
 namespace gnimu {
 
+void PlatformClock::begin() {}
+
 uint64_t PlatformClock::nowUs() { return static_cast<uint64_t>(esp_timer_get_time()); }
 
 void PlatformClock::sleepUntilUs(uint64_t deadlineUs) {
