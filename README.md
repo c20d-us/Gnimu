@@ -94,9 +94,7 @@ The two nRF52840 trees deliberately duplicate a set of modules and keep them byt
 
 ## Acknowledgments & Origins
 
-Gnimu began as a derivative of [**Anchit Chandra Sekhar's RaceBox mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided the foundational logic and initial inspiration, both Gnimu variants have been completely overhauled from the original single-file Arduino sketch architecture — modular codebases, externalized configuration, and (for Gnimu nRF52840) a full battery/power subsystem and a from-scratch BLE stack port. I am grateful to the original author for the initial implementation that started me down the road on this project.
-
-I also want to acknowledge that much of the background research and some of the more complex code in this project wouldn't have been possible without the help of Claude and Claude Code. I've done quite a lot of coding over the course of my career, but not much C++ work and no Arduino projects before this one. Claude Code helped me learn the basics of Arduino development and solved some of the thornier issues that I struggled with along the way. Claude was invaluable as a research assistant, and uncovered documentation that I never would have found otherwise. 
+Gnimu began as a derivative of [**Anchit Chandra Sekhar's RaceBox Mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided some foundational ideas and initial inspiration, both Gnimu variants have taken on completely different shapes compared to the original single-file Arduino sketch architecture — modular codebases, externalized configuration, and (for Gnimu nRF52840) a full battery/power subsystem and a from-scratch BLE stack port. I am grateful to the original author for the initial implementation that started me down the road on this project.
 
 Protocol details follow the *RaceBox BLE Protocol Description*, [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
 
