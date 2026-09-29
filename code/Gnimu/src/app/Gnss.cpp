@@ -56,37 +56,48 @@ void Gnss::step(bool ok, const char* fmt, ...) {
   log_->log("GNSS: %s %s", what, ok ? "ok" : "FAILED");
 }
 
-// Tries the configured baud first for the fastest normal boot, then sweeps the
-// common u-blox rates. If the receiver is found at another rate it is switched
-// to the configured one, and only then is the baud written to flash.
-bool Gnss::connectAtBaud() {
-  const uint32_t rates[] = {config::kGnssBaud, 9600, 38400, 57600, 115200, 230400, 460800};
-  for (uint32_t rate : rates) {
-    log_->log("GNSS: trying %lu baud", static_cast<unsigned long>(rate));
-    GnssUart::begin(rate);
-    delay(100);
-    if (receiver.begin(GnssUart::stream())) {
-      log_->log("GNSS: detected at %lu baud", static_cast<unsigned long>(rate));
-      if (rate == config::kGnssBaud) return true;
+// Opens the port at `baud` and looks for the receiver. Leaves the port open on
+// success and closed on failure. The library's default wait is deliberate: a
+// shorter one has missed a receiver at 115200 on hardware, and the wait only
+// costs time at rates where nothing answers.
+bool Gnss::tryBaud(uint32_t baud) {
+  log_->log("GNSS: trying %lu baud", static_cast<unsigned long>(baud));
+  GnssUart::begin(baud);
+  delay(100);
+  if (receiver.begin(GnssUart::stream())) {
+    log_->log("GNSS: detected at %lu baud", static_cast<unsigned long>(baud));
+    return true;
+  }
+  GnssUart::end();
+  delay(100);
+  return false;
+}
 
-      log_->log("GNSS: switching to %lu baud", static_cast<unsigned long>(config::kGnssBaud));
-      receiver.setSerialRate(config::kGnssBaud);
-      delay(100);
-      GnssUart::end();
-      delay(100);
-      GnssUart::begin(config::kGnssBaud);
-      delay(100);
-      if (!receiver.begin(GnssUart::stream())) {
-        log_->log("GNSS: could not verify the new baud rate");
-        return false;
-      }
-      // Only the I/O port subsection: nothing else is configured yet, and
-      // everything else deliberately stays out of flash.
-      step(receiver.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT), "baud rate saved to flash");
-      return true;
-    }
-    GnssUart::end();
-    delay(100);
+// Switches a receiver found at another rate to the configured one, then writes
+// only the baud to flash. Everything else deliberately stays out of flash.
+bool Gnss::switchToTargetBaud() {
+  log_->log("GNSS: switching to %lu baud", static_cast<unsigned long>(config::kGnssBaud));
+  receiver.setSerialRate(config::kGnssBaud);
+  delay(100);
+  GnssUart::end();
+  delay(100);
+  GnssUart::begin(config::kGnssBaud);
+  delay(100);
+  if (!receiver.begin(GnssUart::stream())) {
+    log_->log("GNSS: could not verify the new baud rate");
+    return false;
+  }
+  step(receiver.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT), "baud rate saved to flash");
+  return true;
+}
+
+// The configured rate first for the fastest normal boot, then the rest of the
+// sweep.
+bool Gnss::connectAtBaud() {
+  if (tryBaud(config::kGnssBaud)) return true;
+  for (uint32_t rate : config::kGnssBaudRates) {
+    if (rate == config::kGnssBaud) continue;
+    if (tryBaud(rate)) return switchToTargetBaud();
   }
   return false;
 }

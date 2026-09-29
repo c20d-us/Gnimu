@@ -19,6 +19,8 @@ class Gnss {
   bool consumeEpoch(GnssEpoch& out);
 
  private:
+  bool tryBaud(uint32_t baud);
+  bool switchToTargetBaud();
   bool connectAtBaud();
   void configure();
   void configureConstellations();
