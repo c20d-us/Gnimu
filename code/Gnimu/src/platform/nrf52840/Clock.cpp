@@ -1,4 +1,9 @@
-#if defined(ARDUINO_ARCH_NRF52)
+// NRF52840_XXAA, not ARDUINO_ARCH_NRF52: the latter is shared by every board
+// this core (and other nRF52 cores, e.g. Adafruit's) supports, including
+// nRF52832 boards that lack peripherals this file uses directly (TIMER4 here
+// does not exist on an nRF52832). NRF52840_XXAA is Nordic's own chip macro,
+// defined by every board in this core that is actually an nRF52840.
+#if defined(NRF52840_XXAA)
 
 #include <Arduino.h>
 

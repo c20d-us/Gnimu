@@ -24,20 +24,36 @@ struct Job {
 // Fixed-rate cooperative scheduler. Jobs run in table order (order is
 // priority). Clock supplies `static uint64_t nowUs()`. The scheduler never
 // sleeps: tick() returns the next deadline and the caller decides how to wait.
+// Every job starts enabled; the app disables the ones its current state
+// doesn't run. At least one job must stay enabled. Every periodUs must be
+// positive (the skipped count divides by it); Config.h asserts the app's.
 template <size_t N, class Clock>
 class Scheduler {
  public:
-  explicit Scheduler(const Job (&jobs)[N]) : jobs_(jobs) {}
+  explicit Scheduler(const Job (&jobs)[N]) : jobs_(jobs) {
+    for (size_t i = 0; i < N; i++) enabled_[i] = true;
+  }
 
   void start() {
     const uint64_t now = Clock::nowUs();
     for (size_t i = 0; i < N; i++) nextDue_[i] = now;
   }
 
-  // Runs every job that is due, at most once each, and returns the earliest
-  // upcoming deadline.
+  // Re-enabling restarts the job's grid at "now", so the time it spent
+  // disabled isn't counted as skipped periods.
+  void setEnabled(size_t i, bool on) {
+    if (on && !enabled_[i]) nextDue_[i] = Clock::nowUs();
+    enabled_[i] = on;
+  }
+  bool enabled(size_t i) const { return enabled_[i]; }
+
+  // Runs every enabled job that is due, at most once each, and returns the
+  // earliest upcoming deadline among enabled jobs only - a disabled job's
+  // stale deadline would otherwise read as permanently overdue and the
+  // caller would never sleep.
   uint64_t tick() {
     for (size_t i = 0; i < N; i++) {
+      if (!enabled_[i]) continue;
       const uint64_t begin = Clock::nowUs();
       if (begin < nextDue_[i]) continue;
 
@@ -57,9 +73,9 @@ class Scheduler {
       if (job.budgetUs != 0 && us > job.budgetUs) s.overruns++;
     }
 
-    uint64_t next = nextDue_[0];
-    for (size_t i = 1; i < N; i++)
-      if (nextDue_[i] < next) next = nextDue_[i];
+    uint64_t next = UINT64_MAX;
+    for (size_t i = 0; i < N; i++)
+      if (enabled_[i] && nextDue_[i] < next) next = nextDue_[i];
     return next;
   }
 
@@ -75,6 +91,7 @@ class Scheduler {
  private:
   const Job (&jobs_)[N];
   uint64_t nextDue_[N] = {};
+  bool enabled_[N];
   JobStats stats_[N] = {};
 };
 

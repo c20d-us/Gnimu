@@ -94,12 +94,61 @@ static void testReturnsEarliestDeadline() {
   assert(s.tick() == 1000 + 3000);
 }
 
+static void testDisabledJobNeverRuns() {
+  reset();
+  Counter a, b;
+  const Job jobs[] = {{"a", 1000, 0, runCounter, &a}, {"b", 1000, 0, runCounter, &b}};
+  Scheduler<2, FakeClock> s(jobs);
+  s.setEnabled(1, false);
+  s.start();
+  for (int i = 0; i < 5; i++) {
+    s.tick();
+    FakeClock::now += 1000;
+  }
+  assert(a.calls == 5 && b.calls == 0);
+  assert(s.stats(1).runs == 0 && s.stats(1).skipped == 0);
+}
+
+// The case that matters: a disabled job's deadline is frozen in the past, so
+// if it counted toward the returned deadline the caller would never sleep.
+static void testDisabledJobIgnoredForDeadline() {
+  reset();
+  Counter a, b;
+  const Job jobs[] = {{"a", 10000, 0, runCounter, &a}, {"b", 1000, 0, runCounter, &b}};
+  Scheduler<2, FakeClock> s(jobs);
+  s.start();
+  s.setEnabled(1, false);
+  FakeClock::now += 50000;
+  const uint64_t next = s.tick();
+  assert(next > FakeClock::now);
+  assert(next == 1000 + 10000 * 6);
+}
+
+static void testReenableRestartsGridWithoutSkips() {
+  reset();
+  Counter a, b;
+  const Job jobs[] = {{"a", 1000, 0, runCounter, &a}, {"b", 1000, 0, runCounter, &b}};
+  Scheduler<2, FakeClock> s(jobs);
+  s.start();
+  s.tick();
+  s.setEnabled(1, false);
+  FakeClock::now += 100000;  // 100 of b's periods pass while it's off
+  s.setEnabled(1, true);
+  s.tick();
+  assert(b.calls == 2);
+  assert(s.stats(1).skipped == 0);
+  assert(s.enabled(1));
+}
+
 int main() {
   testFixedRateNoDrift();
   testNotRunEarly();
   testSkipAhead();
   testBudgetAndStats();
   testReturnsEarliestDeadline();
+  testDisabledJobNeverRuns();
+  testDisabledJobIgnoredForDeadline();
+  testReenableRestartsGridWithoutSkips();
   puts("scheduler: all tests passed");
   return 0;
 }

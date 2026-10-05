@@ -1,0 +1,23 @@
+// Two-layer guard: see Clock.cpp for why CONFIG_IDF_TARGET_ESP32 needs
+// ARDUINO_ARCH_ESP32 and sdkconfig.h around it, not just a bare #if.
+#if defined(ARDUINO_ARCH_ESP32)
+#include "sdkconfig.h"
+#if CONFIG_IDF_TARGET_ESP32
+
+#include <Arduino.h>
+#include <Wire.h>
+
+#include "../ImuBus.h"
+#include "BoardConfig.h"
+
+namespace gnimu {
+
+void imuBusBegin(uint32_t clockHz) {
+  Wire.begin(board::kImuSdaPin, board::kImuSclPin);
+  Wire.setClock(clockHz);
+}
+
+}  // namespace gnimu
+
+#endif  // CONFIG_IDF_TARGET_ESP32
+#endif  // ARDUINO_ARCH_ESP32

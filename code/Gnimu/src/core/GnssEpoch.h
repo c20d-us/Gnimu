@@ -10,9 +10,34 @@ struct GnssEpoch {
   uint64_t arrivalUs = 0;  // when the epoch was parsed, on the platform clock
   uint32_t iTowMs = 0;     // GPS time of week
   uint32_t hAccMm = 0;
+  uint32_t tAccNs = 0;     // time accuracy estimate (UTC)
+  int32_t latDeg1e7 = 0;   // degrees * 1e-7, same native scale as the PVT field
+  int32_t lonDeg1e7 = 0;
   uint16_t pDop = 0;       // 0.01 units
   uint8_t fixType = 0;
   uint8_t numSv = 0;
+  uint32_t gSpeedMmPerS = 0;  // ground speed
+  bool gnssFixOk = false;      // PVT flags.gnssFixOK; distinct from fixType
+
+  // The rest of NAV-PVT that the RaceBox packet carries, in PVT-native units.
+  uint16_t year = 0;  // UTC
+  uint8_t month = 0;
+  uint8_t day = 0;
+  uint8_t hour = 0;
+  uint8_t min = 0;
+  uint8_t sec = 0;
+  bool validDate = false;  // PVT valid.* bits
+  bool validTime = false;
+  bool fullyResolved = false;
+  bool validMag = false;
+  int32_t nanoNs = 0;  // fraction of second, -1e9..1e9
+  int32_t heightMm = 0;  // above ellipsoid
+  int32_t hMslMm = 0;    // above mean sea level
+  uint32_t vAccMm = 0;
+  int32_t headMotDeg1e5 = 0;
+  uint32_t sAccMmPerS = 0;
+  uint32_t headAccDeg1e5 = 0;
+  bool headVehValid = false;  // PVT flags.headVehValid
 };
 
 // Counts epochs and spots the ones that never arrived, from gaps in iTOW.

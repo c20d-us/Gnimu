@@ -6,6 +6,14 @@
 namespace gnimu {
 namespace config {
 
+// Which BLE protocol this build speaks. Compile-time, like the board: one
+// binary per protocol. The protocol, not the board, decides whether the IMU
+// is sampled at all - a RaceChrono build ignores even an onboard IMU.
+enum class Protocol : uint8_t { RaceBox };
+constexpr Protocol kProtocol = Protocol::RaceBox;
+constexpr bool protocolUsesImu(Protocol p) { return p == Protocol::RaceBox; }
+constexpr bool kProtocolUsesImu = protocolUsesImu(kProtocol);
+
 constexpr uint32_t kGnssBaud = 115200;
 // Every rate a receiver could be saved at, in the order the sweep tries them.
 // kGnssBaud is tried first and skipped here.
@@ -32,9 +40,145 @@ constexpr unsigned kConstellationCount = 2;
 // The drain period is also the longest the loop ever sleeps. The UART RX ring
 // must hold more than one period of data, with plenty of margin.
 constexpr uint32_t kGnssDrainPeriodUs = 1000;
-constexpr uint32_t kGnssDrainBudgetUs = 3000;
+// Includes the per-epoch BLE send, which occasionally takes the pass just past
+// 3 ms while streaming (measured max 3.2 ms); harmless against the RX ring.
+constexpr uint32_t kGnssDrainBudgetUs = 4000;
 constexpr uint32_t kConsolePeriodUs = 10000;
 constexpr uint32_t kConsoleBudgetUs = 2000;
+// Longest one console line waits for room in the output buffer before it's
+// dropped. Native USB blocks while a host holds the port open without
+// reading; this keeps every write well inside the time the GNSS RX ring
+// takes to fill (~5 ms on the nRF's 64-byte ring).
+constexpr uint32_t kConsoleWaitUs = 2000;
+// BLE housekeeping: connection-edge logging. Sends
+// happen from the GNSS job as each epoch lands, not from this job.
+constexpr uint32_t kBlePeriodUs = 10000;
+constexpr uint32_t kBleBudgetUs = 2000;
+// Low on purpose (Classic): less RF near the GNSS antenna, and the phone is
+// usually close. Raise it if connections drop. Each board validates the value
+// against the levels its own radio supports.
+constexpr int kBleTxPowerDbm = -12;
+
+// Status LED. core/StatusLed.h decides the patterns; these set their timing.
+constexpr uint32_t kLedPeriodUs = 25000;  // fine enough to render the 10 Hz fault blink cleanly
+constexpr uint32_t kLedBudgetUs = 500;
+// The standard blink - advertising, battery warning/critical, charging -
+// Classic's 1 s on, 1 s off.
+constexpr uint32_t kLedBlinkHalfMs = 1000;
+constexpr uint32_t kLedFaultHalfMs = 50;          // 10 Hz
+// BATTERY_WAIT: amber, fast enough to read as "not running" next to the 1 s
+// battery-warning amber. Only ever on USB power, so it costs nothing.
+constexpr uint32_t kLedBatteryWaitHalfMs = 200;
+
+// Battery (boards that have one). Classic's g_battery values, kept by NG.
+// The job period is also the spacing between readings within a run.
+constexpr uint32_t kBatteryPeriodUs = 2500;
+constexpr uint32_t kBatteryBudgetUs = 500;
+constexpr uint8_t kBatterySamplesPerRun = 20;    // ~50 ms window at 2.5 ms spacing
+constexpr uint32_t kBatteryRunIntervalMs = 250;  // 4 Hz between run starts
+constexpr float kBatteryEmaAlpha = 0.1f;         // display only; the cutoff sees raw peaks
+constexpr float kBatteryCutoffV = 3.30f;         // also 0% on the straight-line curve
+constexpr float kBatteryCriticalV = 3.35f;
+constexpr float kBatteryWarningV = 3.40f;
+constexpr float kBatteryFullScaleV = 4.10f;  // 100% on the curve
+// Low long enough to be a depleted cell, not acquisition-current sag: ~20 runs.
+constexpr uint32_t kBatteryCutoffDebounceMs = 5000;
+constexpr float kBatteryChargeFullV = 4.10f;  // NG's plausibility floor for "full"
+constexpr uint32_t kBatteryChargeFullDebounceMs = 5000;
+
+// Power state machine (battery boards). The job also paces the switch-sense
+// ADC read; 50 ms is Classic's switch poll rate.
+constexpr uint32_t kPowerPeriodUs = 50000;
+constexpr uint32_t kPowerBudgetUs = 1000;
+// A switch OFF must last this long to count (noise, EMI, a brushed switch).
+constexpr uint32_t kSwitchOffDebounceMs = 500;
+// Back ON within this of first going OFF, while running on USB, enters
+// CHARGE_ONLY (NG's gesture); longer reboots into RUNNING.
+constexpr uint32_t kChargeOnlyWindowMs = 2000;
+
+// Periodic status line cadence ('L' toggle or an N+Enter report count); fired
+// from the console job's own tick, not a separate scheduler job.
+constexpr uint64_t kStatusPeriodUs = 1000000;
+// Largest status-line count accepted from the console (3600 = an hour of 1 s
+// lines). The console's entry buffer and per-pass read limit follow from its
+// digit count, so changing this resizes both.
+constexpr uint32_t kStatusMaxCount = 3600;
+
+// Shared by both chips (Classic uses identical values on ESP32 and nRF).
+// 100 Hz, undecimated - a future encoder step picks its own transmit cadence
+// rather than this job deciding one.
+constexpr uint32_t kImuSamplePeriodUs = 10000;
+constexpr uint32_t kImuSampleBudgetUs = 1000;
+constexpr int kImuAccelRangeG = 4;    // 2, 4, 8 or 16 g; 4g is ample for auto-x
+constexpr int kImuGyroRangeDps = 500;  // 500, 1000 or 2000 deg/s suit both IMUs (MPU-6050 also 250, LSM6DS3 125/245)
+constexpr uint32_t kImuI2cClockHz = 400000;
+constexpr float kImuAccelAlpha = 0.09f;  // EMA smoothing: 1.0 = raw, 0.1 = heavy
+constexpr float kImuGyroAlpha = 0.09f;
+// Consecutive failed reads that mark the IMU down: ~100 ms at 100 Hz.
+constexpr uint8_t kImuDownAfterFailures = 10;
+
+// MPU-6050 only: DLPF_CFG has no LSM6DS3 equivalent (it uses ODR + bandwidth
+// instead, set directly in Lsm6ds3.cpp).
+constexpr uint8_t kImuDlpfCfg = 4;  // DLPF_CFG 0-6; 4 = 21Hz accel, 20Hz gyro
+
+// Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
+// is a builder/BOM choice (currently identity), while the Sense's onboard
+// LSM6DS3TR-C has a fixed orientation on that PCB (Classic's -1,-1,+1,
+// ported as-is). See core/ImuSample.h for how src/sign are applied.
+constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
+constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
+constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};
+constexpr float kLsm6ds3AxisSign[3] = {-1.0f, -1.0f, +1.0f};
+
+// Trim (runtime levelling + gyro de-biasing), ported from Classic's
+// g_imu_trim. Shared by both chips: both drivers already convert to SI
+// (m/s^2, rad/s) before this point, unlike Classic's per-variant native
+// units, so one set of thresholds applies to both. Values and their vehicle-
+// measured rationale are Classic's own (2018 M2, 2026-09-08/09).
+constexpr float kImuTrimGravityNative = 9.80665f;  // m/s^2; matches ImuSample's units
+// 10s: not a noise requirement (half a second of averaging is already 2
+// orders of magnitude finer than anything that matters), and not what keeps a
+// sloped staging lane out of the calibration - locking after the FIRST
+// qualifying window does that, since the first stop of a session is the
+// paddock. This is only a backstop for the device being switched on already
+// leaving the paddock, so the first qualifying stop is a staging lane instead.
+constexpr uint32_t kImuTrimQualifyMs = 10000;
+constexpr uint32_t kImuTrimBlockMs = 1000;
+// 5 blocks = 5s on top of the qualify wait. Margin against a sub-threshold
+// disturbance (someone leaning on the car) biasing a measurement that's never
+// revisited - not a precision requirement.
+constexpr uint32_t kImuTrimLockBlocks = 5;
+constexpr float kImuTrimSpeedMaxMps = 0.5f;
+// |a| plausibility band, deliberately wide: a tight "|a| == 1g" test is
+// circular, since the chip's own zero-g bias is exactly what trim exists to
+// remove (an uncalibrated MPU-6050 reading 0.925g failed a 4% band on every
+// sample and could never converge). This only catches something gross - a
+// misconfigured gravityNative, a dead axis, a failed read.
+constexpr float kImuTrimAccelSanityTol = 0.25f;
+// Per-axis accel std-dev ceiling. Measured: stationary engine-idling gives
+// 6-10 mg per axis; driving gives 70-118 mg. This sits ~4x above idle and ~2x
+// below driving; it's the secondary motion check, GNSS speed is the primary.
+constexpr float kImuTrimAccelVarMax = 0.392f;  // m/s^2, == 0.04g
+// Per-axis gyro std-dev ceiling. Variance, not magnitude - gating on |gyro|
+// is circular, since a chip whose resting bias exceeds the threshold would
+// hold the gate shut against the very measurement that would correct it.
+// Measured: cold idle 0.62 deg/s, warm idle 0.37 deg/s, driving 3.6-4.2 deg/s.
+// 1.0 clears cold idle by 1.6x and stays 4.2x under driving; a rougher engine
+// than the one this was tuned against may need this raised.
+constexpr float kImuTrimGyroVarMax = 0.017453f;  // rad/s, == 1.0 deg/s
+// Largest tilt trim will correct; past this the user has most likely made a
+// mistake rather than a mounting choice, so the rotation is refused rather
+// than clamped.
+constexpr float kImuTrimMaxTiltDeg = 15.0f;
+// Demand a valid 3D fix before trimming: closes the one real gap in the rest
+// of the gate (constant-velocity cruise on smooth pavement reads ~1g with
+// near-zero gyro variance, indistinguishable from parked). Set false for bench
+// testing indoors, which never gets a fix.
+constexpr bool kImuTrimRequireFix = true;
+// How long the last epoch may go without a fresh one before its speed stops
+// counting as valid - a receiver that dies mid-drive must not freeze the gate
+// open on a stale "stationary" reading.
+constexpr uint32_t kImuTrimPvtStaleMs = 1000;
 
 static_assert(baudSweepIncludes(kGnssBaud),
               "kGnssBaud must be a rate the sweep can detect and switch between");
@@ -49,7 +193,63 @@ static_assert(kConstellationPriority[0] != kConstellationPriority[1] &&
                   kConstellationPriority[1] != kConstellationPriority[3] &&
                   kConstellationPriority[2] != kConstellationPriority[3],
               "constellation priority must list each system exactly once");
-static_assert(kGnssDrainPeriodUs > 0, "drain period must be positive");
+// The scheduler divides by every job period. A job added to App's table
+// with a new period constant belongs here too.
+static_assert(kGnssDrainPeriodUs > 0 && kImuSamplePeriodUs > 0 && kBatteryPeriodUs > 0 &&
+                  kPowerPeriodUs > 0 && kBlePeriodUs > 0 && kLedPeriodUs > 0 && kConsolePeriodUs > 0,
+              "every job period must be positive");
+static_assert(kStatusPeriodUs > 0, "status period must be positive");
+static_assert(kLedBlinkHalfMs > 0 && kLedFaultHalfMs > 0 && kLedBatteryWaitHalfMs > 0,
+              "LED half-periods must be positive");
+static_assert(kLedPeriodUs / 1000 <= kLedBatteryWaitHalfMs,
+              "LED job must run at least once per BATTERY_WAIT half-period");
+static_assert(kBatteryCutoffV > 3.0f && kBatteryCutoffV < kBatteryCriticalV &&
+                  kBatteryCriticalV < kBatteryWarningV && kBatteryWarningV < kBatteryFullScaleV &&
+                  kBatteryFullScaleV <= 4.2f,
+              "battery thresholds must be ordered cutoff < critical < warning < full <= 4.2 V");
+static_assert(kBatterySamplesPerRun >= 1 &&
+                  kBatterySamplesPerRun * (kBatteryPeriodUs / 1000.0f) < kBatteryRunIntervalMs,
+              "a battery sampling run must finish within its run interval");
+static_assert(kBatteryCutoffDebounceMs >= kBatteryRunIntervalMs,
+              "cutoff debounce shorter than one sampling run");
+static_assert(kBatteryEmaAlpha > 0.0f && kBatteryEmaAlpha <= 1.0f, "alpha must be in (0, 1]");
+static_assert(kSwitchOffDebounceMs >= 2 * (kPowerPeriodUs / 1000),
+              "switch debounce must span more than one switch reading");
+static_assert(kChargeOnlyWindowMs > kSwitchOffDebounceMs,
+              "the CHARGE_ONLY window must be longer than the switch-off debounce, or the gesture is impossible");
+static_assert(kLedPeriodUs / 1000 <= kLedFaultHalfMs,
+              "LED job must run at least once per fault half-period or the blink aliases");
+
+constexpr bool isMpu6050AccelRange(int g) {
+  return g == 2 || g == 4 || g == 8 || g == 16;
+}
+constexpr bool isMpu6050GyroRange(int dps) {
+  return dps == 250 || dps == 500 || dps == 1000 || dps == 2000;
+}
+static_assert(isMpu6050AccelRange(kImuAccelRangeG), "not an MPU-6050 accelerometer range");
+static_assert(isMpu6050GyroRange(kImuGyroRangeDps), "not an MPU-6050 gyro range");
+static_assert(kImuDlpfCfg <= 6, "DLPF_CFG is a 0-6 register field");
+static_assert(kImuAccelAlpha > 0.0f && kImuAccelAlpha <= 1.0f, "alpha must be in (0, 1]");
+static_assert(kImuGyroAlpha > 0.0f && kImuGyroAlpha <= 1.0f, "alpha must be in (0, 1]");
+constexpr bool isAxisPermutation(const uint8_t src[3]) {
+  return src[0] < 3 && src[1] < 3 && src[2] < 3 && src[0] != src[1] && src[0] != src[2] &&
+         src[1] != src[2];
+}
+static_assert(isAxisPermutation(kMpu6050AxisSrc), "Mpu6050 axis remap must be a permutation of 0,1,2");
+static_assert(isAxisPermutation(kLsm6ds3AxisSrc), "Lsm6ds3 axis remap must be a permutation of 0,1,2");
+
+static_assert(kImuTrimGravityNative > 0.0f, "gravity must be positive");
+static_assert(kImuTrimQualifyMs >= kImuSamplePeriodUs / 1000, "qualify window shorter than one sample");
+static_assert(kImuTrimBlockMs >= kImuSamplePeriodUs / 1000, "block shorter than one sample");
+static_assert(kImuTrimLockBlocks >= 1, "must lock on at least one block");
+static_assert(kImuTrimSpeedMaxMps > 0.0f, "speed gate must be positive");
+static_assert(kImuTrimAccelSanityTol > 0.0f && kImuTrimAccelSanityTol < 1.0f,
+              "sanity tolerance must be a fraction of gravity in (0, 1)");
+static_assert(kImuTrimAccelVarMax > 0.0f, "accel variance ceiling must be positive");
+static_assert(kImuTrimGyroVarMax > 0.0f, "gyro variance ceiling must be positive");
+static_assert(kImuTrimMaxTiltDeg > 0.0f && kImuTrimMaxTiltDeg < 60.0f,
+              "max tilt must be a small, physically sane angle");
+static_assert(kImuTrimPvtStaleMs > 0, "stale window must be positive");
 
 }  // namespace config
 }  // namespace gnimu
