@@ -103,7 +103,8 @@ constexpr uint32_t kChargeOnlyWindowMs = 2000;
 // from the console job's own tick, not a separate scheduler job.
 constexpr uint64_t kStatusPeriodUs = 1000000;
 // Largest status-line count accepted from the console (3600 = an hour of 1 s
-// lines). The console's entry buffer and per-pass read limit follow from its
+// lines), and the length of an L run, so status reporting always ends by
+// itself. The console's entry buffer and per-pass read limit follow from its
 // digit count, so changing this resizes both.
 constexpr uint32_t kStatusMaxCount = 3600;
 

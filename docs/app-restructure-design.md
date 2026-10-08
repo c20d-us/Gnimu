@@ -331,6 +331,8 @@ After R6, Phase 2 starts, adding its events to the state machine with tests firs
 ## Implementation notes
 
 - **R6:** GnssFeed was built as `core/GnssFeed.h`, pure and fed epochs through `add()`, rather than `app/GnssFeed` polling the receiver. That keeps the Phase 2 liveness logic host-testable. R6 also added `isCharging()` in `core/BatteryMonitor.h` as the single definition used by the boot line, the status line and the RaceBox charging bit.
+- **R4:** App routes every console command (owner's choice, instead of Diagnostics returning a bool on `C`). Commands are a typed `CommandKind` from the parser. Each owner resets only its own state on `C`, which fixed a rate-tracker wrap after `C`, and `RateTracker` gained a counter-went-backwards safety net.
+- **R5:** the snapshot carries raw IMU units, and the formatters convert through `toDisplayUnits()` in core (host-tested). The status line's rates are a separate `StatusRates` argument rather than snapshot fields. Pointers were kept (open question 5).
 - **Order changed after R3** (owner, 2026-10-05): R6, then Phase 2's GNSS items, then R4 and R5.
 
 ## Revision notes

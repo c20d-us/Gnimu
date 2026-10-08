@@ -2,7 +2,6 @@
 
 #include "../core/BatteryMonitor.h"
 #include "../core/GnssFeed.h"
-#include "../core/RateTracker.h"
 #include "../core/RunStateMachine.h"
 #include "../core/Scheduler.h"
 #include "../core/StatusLed.h"
@@ -12,6 +11,7 @@
 #include "../peripherals/imu/ImuDevice.h"
 #include "Config.h"
 #include "Console.h"
+#include "Diagnostics.h"
 #include "protocol/Protocol.h"
 
 namespace gnimu {
@@ -64,19 +64,9 @@ class App {
   // the verified bring-up instead of restarting peripherals in place.
   [[noreturn]] void restart(const char* why);
   [[noreturn]] void enterSystemOff();
+  // Console C: the counters App owns. Diagnostics re-baselines its own rate
+  // trackers when it sees the same command.
   void clearStats();
-  void printBuild();
-  void printDeviceId();
-  // Arms (or disarms, with count == 0) periodic status reporting and resets
-  // the rate tracker's baseline so the first line's GNSS Hz reflects only the
-  // interval after arming, not however long epochs have been accumulating.
-  void armStatus(int32_t count);
-  void printStatus(uint64_t nowUs);
-  // Physical units (m/s^2, rad/s) to display units, same factors as Classic's
-  // protocol conversion; unlike the protocol path there's no int16 saturation
-  // here, since these are debug prints, not a wire format. Shared by the `D`
-  // report and the status line so the conversion lives in exactly one place.
-  static void toDisplayUnits(const ImuSample& imu, int32_t accelMg[3], int32_t gyroCdegS[3]);
 
   MemberJobs<App, kJobs> jobs_;
   Scheduler<kJobs, PlatformClock> scheduler_;
@@ -87,16 +77,12 @@ class App {
   char deviceId_[11] = {};  // 10 digits; also the BLE name suffix and DIS serial
   GnssFeed feed_;
   Protocol protocol_;
-  RateTracker gnssRate_;  // status line: epochs/s
-  RateTracker bleRate_;   // status line: packets sent/s
   StatusLed statusLed_;
   BatteryMonitor battery_;
   RunStateMachine machine_;
   uint32_t loops_ = 0;
-  // -1 = continuous (until 'L' or a 0-count stops it), 0 = off, >0 = reports
-  // remaining before it auto-stops.
-  int32_t statusRemaining_ = 0;
-  uint64_t nextStatusDueUs_ = 0;
+  // Last: it references most of the members above.
+  Diagnostics diagnostics_;
 };
 
 }  // namespace gnimu

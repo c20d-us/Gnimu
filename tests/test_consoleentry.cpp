@@ -25,9 +25,17 @@ static EntryResult feedAll(Entry& e, const char* s) {
 
 static void testCommands() {
   Entry e;
-  for (const char* s : {"D\n", "C\r", "V\r\n", "L\n"}) {
-    const EntryResult r = feedAll(e, s);
-    assert(r.kind == EntryKind::Command && r.cmd == s[0]);
+  struct Case {
+    const char* text;
+    CommandKind kind;
+  };
+  const Case cases[] = {{"D\n", CommandKind::Report},
+                        {"C\r", CommandKind::Clear},
+                        {"V\r\n", CommandKind::Version},
+                        {"L\n", CommandKind::ToggleStatus}};
+  for (const Case& c : cases) {
+    const EntryResult r = feedAll(e, c.text);
+    assert(r.kind == EntryKind::Command && r.cmd == c.kind);
   }
 }
 

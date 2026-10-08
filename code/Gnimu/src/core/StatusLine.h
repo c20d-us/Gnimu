@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "BatteryMonitor.h"
+#include "DeviceStatus.h"
 #include "GnssEpoch.h"
 #include "TextOut.h"
 
@@ -12,24 +13,11 @@ namespace gnimu {
 // scroll by, as opposed to the on-request `D` report's full table. Pipe-
 // delimited "Label: value" cells, matching Classic's console line style
 // rather than a comma key=value format.
-struct StatusView {
-  uint64_t uptimeUs;
-  // Hz * 100 internally (see RateTracker) - packets sent / epochs received
-  // since the last status line, not cumulative counts - but displayed rounded
-  // to a whole Hz. Integer throughout, no float format specifier, same
-  // reasoning as Report.h.
-  uint32_t bleCentiHz;
-  uint32_t gnssCentiHz;
-  const BatteryStatus *battery; // nullptr on boards without one (the ESP32)
-  bool usbPresent;
-  const GnssEpoch
-      *latest; // nullptr until the first epoch, same convention as ReportView
-  // Pre-converted by the caller (milli-g, centi-deg/s), same reasoning as
-  // ReportView: Report/StatusLine stay free of float format specifiers.
-  int32_t imuAccelMilliG[3];
-  int32_t imuGyroCentiDegS[3];
-  bool trimConverged;
-  int32_t trimTiltCentiDeg; // pre-converted by the caller, same as Report.h
+// The status line's per-line rates: events since the previous line, as
+// RateTracker measures them. Hz * 100, displayed rounded to a whole Hz.
+struct StatusRates {
+  uint32_t bleCentiHz;   // packets sent
+  uint32_t gnssCentiHz;  // epochs received
 };
 
 namespace detail {
@@ -46,50 +34,51 @@ inline void putDegrees1e7(Out &o, const char *label, int32_t v1e7) {
 }
 } // namespace detail
 
-inline size_t formatStatus(char *buf, size_t cap, const StatusView &v) {
+inline size_t formatStatus(char *buf, size_t cap, const DeviceStatus &d, const StatusRates &r) {
   detail::Out o{buf, cap, 0};
   if (cap)
     buf[0] = '\0';
 
   const unsigned long uptimeS =
-      static_cast<unsigned long>(v.uptimeUs / 1000000ULL);
+      static_cast<unsigned long>(d.uptimeUs / 1000000ULL);
   const unsigned long bleHz =
-      (static_cast<unsigned long>(v.bleCentiHz) + 50) / 100;
+      (static_cast<unsigned long>(r.bleCentiHz) + 50) / 100;
   const unsigned long gnssHz =
-      (static_cast<unsigned long>(v.gnssCentiHz) + 50) / 100;
+      (static_cast<unsigned long>(r.gnssCentiHz) + 50) / 100;
   o.put("RT: %lus | BLE: %luHz | GNSS: %luHz | ", uptimeS, bleHz, gnssHz);
-  if (v.battery && v.battery->valid) {
+  if (d.power.battery && d.power.battery->valid) {
     // Volts to hundredths, integer-only like everything else here.
     const unsigned long centiV =
-        static_cast<unsigned long>(v.battery->voltage * 100.0f + 0.5f);
-    const bool charging = isCharging(*v.battery, v.usbPresent);
+        static_cast<unsigned long>(d.power.battery->voltage * 100.0f + 0.5f);
+    const bool charging = isCharging(*d.power.battery, d.power.usbPresent);
     o.put("Batt: %lu.%02luV %u%%%s | ", centiV / 100, centiV % 100,
-          static_cast<unsigned>(v.battery->percent),
+          static_cast<unsigned>(d.power.battery->percent),
           charging ? " \xE2\x9A\xA1" : "");
   }
-  if (v.latest) {
+  if (d.gnss.latest) {
     o.put("Fix: %u | SV: %u | tAcc: %luns | hAcc: %lumm | ",
-          static_cast<unsigned>(v.latest->fixType),
-          static_cast<unsigned>(v.latest->numSv),
-          static_cast<unsigned long>(v.latest->tAccNs),
-          static_cast<unsigned long>(v.latest->hAccMm));
-    detail::putDegrees1e7(o, "Lat", v.latest->latDeg1e7);
-    detail::putDegrees1e7(o, "Long", v.latest->lonDeg1e7);
+          static_cast<unsigned>(d.gnss.latest->fixType),
+          static_cast<unsigned>(d.gnss.latest->numSv),
+          static_cast<unsigned long>(d.gnss.latest->tAccNs),
+          static_cast<unsigned long>(d.gnss.latest->hAccMm));
+    detail::putDegrees1e7(o, "Lat", d.gnss.latest->latDeg1e7);
+    detail::putDegrees1e7(o, "Long", d.gnss.latest->lonDeg1e7);
   } else {
     o.put("Fix: none | ");
   }
+  const ImuDisplay imu = toDisplayUnits(d.imu.sample);
   o.put("Accel mG: %ld %ld %ld | Gyro c°/s: %ld %ld %ld | ",
-        static_cast<long>(v.imuAccelMilliG[0]),
-        static_cast<long>(v.imuAccelMilliG[1]),
-        static_cast<long>(v.imuAccelMilliG[2]),
-        static_cast<long>(v.imuGyroCentiDegS[0]),
-        static_cast<long>(v.imuGyroCentiDegS[1]),
-        static_cast<long>(v.imuGyroCentiDegS[2]));
+        static_cast<long>(imu.accelMilliG[0]),
+        static_cast<long>(imu.accelMilliG[1]),
+        static_cast<long>(imu.accelMilliG[2]),
+        static_cast<long>(imu.gyroCentiDegS[0]),
+        static_cast<long>(imu.gyroCentiDegS[1]),
+        static_cast<long>(imu.gyroCentiDegS[2]));
   // Same rounded-to-tenths, integer-only tilt conversion as Report.h.
   const unsigned long tiltTenths =
-      (static_cast<unsigned long>(v.trimTiltCentiDeg) + 5) / 10;
+      (static_cast<unsigned long>(tiltCentiDeg(d.imu.tiltDegrees)) + 5) / 10;
   o.put("Trim: %lu.%lu° %s\n", tiltTenths / 10, tiltTenths % 10,
-        v.trimConverged ? "🔒" : "⏳");
+        d.imu.trimLocked ? "🔒" : "⏳");
   return o.len;
 }
 

@@ -9,10 +9,15 @@ constexpr size_t decimalDigits(uint32_t v) { return v < 10 ? 1 : 1 + decimalDigi
 
 enum class EntryKind : uint8_t { None, Command, Count, TooLarge, Unrecognised };
 
+// The console's commands, named once here where the letters are recognised:
+// D Report, C Clear, V Version, L ToggleStatus. Everything downstream
+// switches on these, so a new command can't go unrouted without a warning.
+enum class CommandKind : uint8_t { None, Report, Clear, Version, ToggleStatus };
+
 struct EntryResult {
   EntryKind kind = EntryKind::None;
-  char cmd = 0;        // Command only
-  uint32_t count = 0;  // Count only
+  CommandKind cmd = CommandKind::None;  // Command only
+  uint32_t count = 0;                   // Count only
 };
 
 // Collects console input into entries ended by Enter (CR or LF). An entry is
@@ -73,14 +78,25 @@ class ConsoleEntry {
       }
       return r;
     }
-    const char c = buf_[0];
-    if (len_ == 1 && !overflow_ && (c == 'D' || c == 'C' || c == 'V' || c == 'L')) {
-      r.kind = EntryKind::Command;
-      r.cmd = c;
-    } else {
-      r.kind = EntryKind::Unrecognised;
-    }
+    const CommandKind k = len_ == 1 && !overflow_ ? commandFor(buf_[0]) : CommandKind::None;
+    r.kind = k == CommandKind::None ? EntryKind::Unrecognised : EntryKind::Command;
+    r.cmd = k;
     return r;
+  }
+
+  static CommandKind commandFor(char c) {
+    switch (c) {
+      case 'D':
+        return CommandKind::Report;
+      case 'C':
+        return CommandKind::Clear;
+      case 'V':
+        return CommandKind::Version;
+      case 'L':
+        return CommandKind::ToggleStatus;
+      default:
+        return CommandKind::None;
+    }
   }
 
   char buf_[kCapacity + 1] = {};

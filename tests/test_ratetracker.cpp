@@ -37,7 +37,18 @@ static void testZeroElapsedNeverDividesByZero() {
   assert(t.sampleCentiHz(5, 1000) == 0);
 }
 
+// A counter reset between samples (console C) re-baselines instead of
+// wrapping into an enormous rate.
+static void testCounterGoingBackwardsRebaselines() {
+  RateTracker r;
+  r.reset(2000, 0);
+  assert(r.sampleCentiHz(20, 1000000) == 0);
+  // The next window measures from the reset point.
+  assert(r.sampleCentiHz(40, 2000000) == 2000);  // 20 events in 1 s
+}
+
 int main() {
+  testCounterGoingBackwardsRebaselines();
   testBasicRate();
   testDifferentIntervalSameRate();
   testChainedSamplesUseThePreviousBaseline();

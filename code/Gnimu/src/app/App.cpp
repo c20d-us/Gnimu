@@ -9,7 +9,6 @@
 #include "../platform/HardwareId.h"
 #include "../platform/PeripheralPower.h"
 #include "../platform/StatusLedPort.h"
-#include "BuildInfo.h"
 
 namespace gnimu {
 
@@ -24,21 +23,6 @@ uint32_t nowMs() { return static_cast<uint32_t>(PlatformClock::nowUs() / 1000); 
 constexpr RunConfig kRunConfig = {board::kHasBattery, Protocol::kUsesImu,
                                   {config::kSwitchOffDebounceMs, config::kChargeOnlyWindowMs}};
 
-// The next whole multiple of the status period in uptime. Lines land on the
-// grid plus at most one console tick, so RT steps by exactly one per line
-// instead of occasionally skipping or repeating a second.
-uint64_t nextStatusGridUs(uint64_t nowUs) {
-  return (nowUs / config::kStatusPeriodUs + 1) * config::kStatusPeriodUs;
-}
-
-// The first line after arming lands on the first grid point a full period
-// away, so the first measurement window is 1-2 s long. Landing on the very
-// next grid point could leave a window of a few milliseconds, where a single
-// epoch more or less reads as tens of Hz (seen: "GNSS: 50Hz").
-uint64_t firstStatusGridUs(uint64_t nowUs) {
-  return nextStatusGridUs(nowUs + config::kStatusPeriodUs - 1);
-}
-
 }  // namespace
 
 App::App()
@@ -51,7 +35,9 @@ App::App()
                 config::kBatteryCutoffV, config::kBatteryCriticalV, config::kBatteryWarningV,
                 config::kBatteryFullScaleV, config::kBatteryCutoffDebounceMs,
                 config::kBatteryChargeFullV, config::kBatteryChargeFullDebounceMs}),
-      machine_(kRunConfig) {
+      machine_(kRunConfig),
+      diagnostics_(console_, scheduler_.jobs(), scheduler_.allStats(), kJobs, loops_, feed_, imu_,
+                   ble_, board::kHasBattery ? &battery_.status() : nullptr, deviceId_) {
   // Here, not in the class: GCC only evaluates it once App is complete.
   static_assert(jobSpecsValid(kJobSpecs), "job specs out of id order, unnamed, or with a zero period");
 }
@@ -64,8 +50,8 @@ void App::begin() {
   StatusLedPort::begin();
   console_.begin();
   decimalDeviceId(hardwareId(), deviceId_);
-  printBuild();
-  printDeviceId();
+  diagnostics_.printBuild();
+  diagnostics_.printDeviceId();
   console_.log("Gnimu starting");
   if (board::kHasSwitchedPower) console_.log("Power: GNSS rail, IMU and LED held off \xE2\x9C\x85");
 
@@ -98,9 +84,12 @@ void App::begin() {
     }
   }
   scheduler_.start();
-  console_.log("%s. Commands end with Enter: D = report, C = clear, V = version, L = toggle 1s status, "
-               "N = N status reports (0-%lu).",
-               stateName(machine_.state()), static_cast<unsigned long>(config::kStatusMaxCount));
+  // Two lines: together they'd pass Console::log's 160-character limit.
+  console_.log("%s.", stateName(machine_.state()));
+  console_.log("Commands end with Enter: D = report, C = clear statistics counters, V = version, "
+               "L = 1s status on/off (up to %lu lines), N = N status reports (0-%lu).",
+               static_cast<unsigned long>(config::kStatusMaxCount),
+               static_cast<unsigned long>(config::kStatusMaxCount));
 }
 
 const BatteryStatus* App::batteryStatus() const {
@@ -257,84 +246,22 @@ void App::ledJob() {
 
 void App::consoleJob() {
   const ConsoleCommand cmd = console_.poll();
-  if (cmd.cmd == 'D') {
-    int32_t accelMg[3], gyroCdegS[3];
-    toDisplayUnits(imu_.read(), accelMg, gyroCdegS);
-    console_.printReport({scheduler_.jobs(), scheduler_.allStats(), kJobs,
-                               loops_, PlatformClock::nowUs(), &feed_.epochs(), feed_.latest(),
-                               imu_.up(),
-                               {accelMg[0], accelMg[1], accelMg[2]},
-                               {gyroCdegS[0], gyroCdegS[1], gyroCdegS[2]}, imu_.trimConverged(),
-                               static_cast<int32_t>(imu_.trimTiltDegrees() * 100.0f),
-                               ble_.connected(), ble_.stats(), batteryStatus(),
-                               BatteryPort::usbPresent(), console_.dropped()});
-  } else if (cmd.cmd == 'C') {
-    clearStats();
-  } else if (cmd.cmd == 'V') {
-    printBuild();
-    printDeviceId();
-  } else if (cmd.cmd == 'L') {
-    // A second 'L' stops whatever's running, continuous or counting down;
-    // otherwise it starts continuous reporting.
-    armStatus(statusRemaining_ != 0 ? 0 : -1);
+  // Every command is routed here, to whoever owns it. App owns the counters
+  // Clear resets; Diagnostics sees every command too and resets only its own
+  // state, after App's.
+  switch (cmd.kind) {
+    case CommandKind::Clear:
+      clearStats();
+      break;
+    case CommandKind::None:
+    case CommandKind::Report:
+    case CommandKind::Version:
+    case CommandKind::ToggleStatus:
+      break;
   }
-  if (cmd.hasCount) {
-    // Typing a number always (re)arms to exactly that count, overriding
-    // whatever was running before; 0 stops reporting, same as a second 'L'.
-    armStatus(static_cast<int32_t>(cmd.count));
-  }
-
-  if (statusRemaining_ != 0) {
-    const uint64_t now = PlatformClock::nowUs();
-    if (now >= nextStatusDueUs_) {
-      printStatus(now);
-      // Fixed grid, not "now + period": scheduling from now let every line
-      // land up to a console tick later than the last, slipping a whole
-      // second of RT every ~100 lines. After a long stall, resync to the next
-      // grid point rather than firing a burst of catch-up lines.
-      nextStatusDueUs_ += config::kStatusPeriodUs;
-      if (nextStatusDueUs_ <= now) nextStatusDueUs_ = nextStatusGridUs(now);
-      if (statusRemaining_ > 0) statusRemaining_--;
-    }
-  }
+  diagnostics_.handle(cmd);
+  diagnostics_.tick(PlatformClock::nowUs());
 }
-
-void App::armStatus(int32_t count) {
-  statusRemaining_ = count;
-  if (count != 0) {
-    const uint64_t now = PlatformClock::nowUs();
-    gnssRate_.reset(feed_.epochs().epochs(), now);
-    bleRate_.reset(ble_.stats().sent, now);
-    nextStatusDueUs_ = firstStatusGridUs(now);
-  }
-}
-
-void App::printStatus(uint64_t nowUs) {
-  const uint32_t bleCentiHz = bleRate_.sampleCentiHz(ble_.stats().sent, nowUs);
-  const uint32_t gnssCentiHz = gnssRate_.sampleCentiHz(feed_.epochs().epochs(), nowUs);
-  int32_t accelMg[3], gyroCdegS[3];
-  toDisplayUnits(imu_.read(), accelMg, gyroCdegS);
-  console_.printStatus({nowUs, bleCentiHz, gnssCentiHz, batteryStatus(), BatteryPort::usbPresent(),
-                        feed_.latest(),
-                        {accelMg[0], accelMg[1], accelMg[2]},
-                        {gyroCdegS[0], gyroCdegS[1], gyroCdegS[2]}, imu_.trimConverged(),
-                        static_cast<int32_t>(imu_.trimTiltDegrees() * 100.0f)});
-}
-
-void App::toDisplayUnits(const ImuSample& imu, int32_t accelMg[3], int32_t gyroCdegS[3]) {
-  for (int i = 0; i < 3; i++) {
-    accelMg[i] = static_cast<int32_t>(imu.accel[i] * kMps2ToMilliG);
-    gyroCdegS[i] = static_cast<int32_t>(imu.gyro[i] * kRadpsToCentiDeg);
-  }
-}
-
-void App::printBuild() {
-  char line[192];
-  formatBuildLine(line, sizeof(line), buildInfo());
-  console_.log("%s", line);
-}
-
-void App::printDeviceId() { console_.log("Device ID: %s", deviceId_); }
 
 void App::clearStats() {
   scheduler_.clearStats();

@@ -23,7 +23,7 @@ ConsoleCommand Console::poll() {
       case EntryKind::None:
         break;
       case EntryKind::Command:
-        result.cmd = r.cmd;
+        result.kind = r.cmd;
         break;
       case EntryKind::Count:
         result.hasCount = true;
@@ -45,12 +45,12 @@ ConsoleCommand Console::poll() {
   return result;
 }
 
-void Console::printReport(const ReportView& view) {
+void Console::printReport(const JobTable& jobs, const DeviceStatus& status) {
   // Worst case (7 jobs, every counter at 10 digits, battery line) is ~1420
   // bytes. Static rather than on the loop task's stack, which is only a few
   // KB on the nRF.
   static char buf[1536];
-  const size_t n = formatReport(buf, sizeof(buf), view);
+  const size_t n = formatReport(buf, sizeof(buf), jobs, status);
   // A line at a time: the whole report is bigger than the USB buffer, but
   // each line fits, so emit() can send or drop it whole.
   size_t start = 0;
@@ -62,12 +62,12 @@ void Console::printReport(const ReportView& view) {
   if (start < n) emit(buf + start, n - start);
 }
 
-void Console::printStatus(const StatusView& view) {
+void Console::printStatus(const DeviceStatus& status, const StatusRates& rates) {
   // A full line (Fix+SV+tAcc+hAcc+Lat+Long+Accel+Gyro+Trim) runs ~185 bytes;
   // 160 silently truncated it before the trailing newline - exactly the kind
   // of mistake Out's truncation guard hides instead of catching loudly.
   char buf[256];
-  const size_t n = formatStatus(buf, sizeof(buf), view);
+  const size_t n = formatStatus(buf, sizeof(buf), status, rates);
   emit(buf, n);
 }
 

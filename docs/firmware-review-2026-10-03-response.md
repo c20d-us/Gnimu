@@ -603,8 +603,102 @@ Considered and left out: templating every module on its hardware types for host 
   1. The pause is retried up to 3 times, draining the UART before each retry. It logs `(attempt N)` when a retry was needed.
   2. `ensureVal()` judges a written setting by its (already retried) flash readback alone, not by the write's ACK, so a lost ACK on a write that landed no longer logs `write to flash failed ❌`.
 - `Gnss.cpp` is clean against the full ESP32 core and the SparkFun library.
-- **To verify:** several nRF boots in a row. The pause should be ✅ (occasionally with an attempt number), and every setting ✅.
+- **Verified 2026-10-08:** 6 nRF boots in a row with no failures.
 
+
+#### R4: Diagnostics module, typed console commands, and the C rate glitch. Done
+
+**Owner's choices:**
+- App routes every console command and owns `C`'s counters.
+- Commands are a typed enum.
+- Each owner resets only its own state on `C`.
+- A RateTracker safety net is added.
+
+**Change:**
+- **New `app/Diagnostics.{h,cpp}`**, a pure move of App's console reporting:
+  - the D report assembly, the status-line grid, arming and printing, the GNSS and BLE rate trackers, `toDisplayUnits`, and the build and device-ID lines
+  - references are passed at construction; it only reads the modules it reports on
+  - `handle(cmd)` acts on Report, Version, ToggleStatus and counts; on Clear it re-baselines its own rate trackers
+  - `tick(nowUs)` prints a status line when one is due
+- **App:**
+  - `consoleJob()` polls, routes with a `switch` (Clear → `clearStats()`, App's own counters), then passes the command to Diagnostics and ticks it.
+  - The boot prints the build and device ID through Diagnostics.
+  - Four members and six functions are gone. `App.cpp` is 270 lines (437 before the restructure).
+- **`CommandKind`** (`None, Report, Clear, Version, ToggleStatus`) in `core/ConsoleEntry.h`:
+  - The letters are mapped once, where the parser recognises them.
+  - `ConsoleCommand` carries a `CommandKind` instead of a `char`.
+  - App and Diagnostics `switch` over it, so an unrouted new command draws a warning.
+- **Latent glitch fixed:** `C` while the status line ran left the rate trackers holding the pre-clear epoch count, so the next line's GNSS Hz wrapped to a huge number (owner reproduced it). Diagnostics now re-baselines on Clear, after App clears the counters.
+- **Safety net:** `RateTracker::sampleCentiHz()` re-baselines and returns 0 when a counter goes backwards, instead of wrapping.
+
+**Behaviour change:** the D report, status line, V and C output are unchanged, except that the post-`C` status line is now correct.
+
+**Checks:**
+- Host suites pass, plain and sanitized.
+- `App.h` syntax-checks on arm-none-eabi-g++ 9 and xtensa g++.
+- `App.cpp`, `Diagnostics.cpp` and `Console.cpp` are clean against the full ESP32 core.
+
+**Files:** `app/Diagnostics.{h,cpp}` (new), `app/App.{h,cpp}`, `app/Console.{h,cpp}`, `core/ConsoleEntry.h`, `core/RateTracker.h`, `tests/test_consoleentry.cpp`, `tests/test_ratetracker.cpp`.
+
+**Tests:**
+- Each letter maps to its `CommandKind`.
+- `RateTracker` re-baselines on a counter going backwards, and the next window measures from the reset point.
+
+**Verified 2026-10-08:** both boards compile, flash and boot, and all console commands work.
+
+#### R5: one device-status snapshot. Done
+
+**Owner's choices:** pointers rather than copies (open question 5); the two refinements below.
+
+**Change:**
+- **New `core/DeviceStatus.h`:** one snapshot with named nested parts.
+  - `uptimeUs`
+  - `gnss` (epoch tracker, latest epoch or nullptr)
+  - `imu` (up, the raw `ImuSample` in physical units, trim locked, tilt in degrees)
+  - `ble` (connected, `BleStats`)
+  - `power` (battery or nullptr, USB present)
+  - `consoleDropped`
+
+  It has no default member values, so it stays a C++11 aggregate: `DeviceStatus s = {};` zeroes everything, and fields are set by name.
+- **The formatters:** `formatReport(buf, cap, JobTable, DeviceStatus)` and `formatStatus(buf, cap, DeviceStatus, StatusRates)`. `ReportView` and `StatusView` are gone.
+  - The job table is report-only.
+  - The per-line rates are a separate argument, so the snapshot has no fields that are valid only on some paths.
+- **The IMU display conversion moved into core and into the formatters:** `toDisplayUnits()` and `tiltCentiDeg()` in `core/ImuSample.h`, truncating exactly as before. It is now host-tested, and the snapshot carries physical units with no "pre-converted" fields.
+- **Diagnostics:** `snapshot(nowUs)` is one function of plain assignments, used by both the report and the status line. The status line adds `StatusRates`.
+
+**Behaviour change:** none. **Every expected output string in `test_report.cpp` and `test_statusline.cpp` is unchanged since the Phase 1 commit;** the only diffs in those files are setup lines and an include. That is the byte-for-byte proof.
+
+**Checks:**
+- Host suites pass, plain and sanitized.
+- Both formatter tests compile with arm-none-eabi-g++ 9 and xtensa g++ (`-Werror`).
+- `App.h` syntax-checks.
+- `App.cpp`, `Diagnostics.cpp` and `Console.cpp` are clean against the full ESP32 core.
+
+**Files:** `core/DeviceStatus.h` (new), `core/ImuSample.h`, `core/Report.h`, `core/StatusLine.h`, `app/Diagnostics.{h,cpp}`, `app/Console.{h,cpp}`, `tests/display_units.h` (new test helper), `tests/test_report.cpp`, `tests/test_statusline.cpp`.
+
+**Tests:**
+- The formatter tests build snapshots by named fields. A test helper turns intended display integers into physical-unit inputs half a unit from zero, so truncation lands exactly.
+- New `testDisplayUnits`: 9.81 m/s² → 1000 mG, −9.81 → −1000 (truncation toward zero), 1 rad/s → 5729 c°/s, tilt 12.349° → 1234 centi-deg.
+
+**Verified 2026-10-08:** both boards; `D` and the status line are exactly as before.
+
+#### Console follow-ups after R5 (owner requests, 2026-10-08). Done (unverified)
+
+- **`L` is capped at `kStatusMaxCount`:** `L` now starts a run of `kStatusMaxCount` lines (3600) instead of running forever, so status reporting left on by a host that went away still ends by itself. A second `L` still stops it. `statusRemaining_` became unsigned, with no "continuous" (−1) value.
+- **Boot help wording:**
+  - `C` is described as "clear statistics counters", so it isn't mistaken for clearing the screen.
+  - `L` is described as "1s status on/off (up to 3600 lines)".
+- **The help is split into two lines:** the state (`Running.`), then the command list. The longer wording would have passed `Console::log`'s 160-character limit in every state: 161–197 characters combined, against 152 for the command line alone.
+
+- **D report IMU line reformatted:** `IMU: up, Accel XYZ mG 0 0 1000, Gyro XYZ c°/s 0 0 0` (mG, matching the status line), with units once per group instead of after every value (`core/Report.h`, with `tests/test_report.cpp` expectations updated).
+
+**Files:** `app/Diagnostics.{h,cpp}`, `app/App.cpp`, `app/Console.h`, `app/Config.h` (comments), `core/Report.h`, `tests/test_report.cpp`.
+
+**Checks:** host suites pass. `App.cpp` and `Diagnostics.cpp` are clean against the full ESP32 core.
+
+**To verify:**
+- The boot ends with the state line, then the command line, in full.
+- `L⏎` starts lines, and `L⏎` again stops them.
 
 ### Phase 2: survive faults instead of hanging
 
