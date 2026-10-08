@@ -8,9 +8,9 @@ using namespace gnimu;
 
 namespace {
 
-const RunConfig kBattery = {true, true, {500, 2000}};
-const RunConfig kNoBattery = {false, true, {500, 2000}};
-const RunConfig kNoImu = {true, false, {500, 2000}};
+const RunConfig kBattery = {true, true, {500}};
+const RunConfig kNoBattery = {false, true, {500}};
+const RunConfig kNoImu = {true, false, {500}};
 
 bool enters(const Transition& t, RunState s) { return t.kind == Transition::Kind::Enter && t.to == s; }
 bool stays(const Transition& t) { return t.kind == Transition::Kind::Stay; }
@@ -23,18 +23,24 @@ bool systemOff(const Transition& t) { return t.kind == Transition::Kind::SystemO
 RunStateMachine running() {
   RunStateMachine m(kBattery);
   assert(enters(m.boot(true, true, false), RunState::Starting));
-  assert(enters(m.gnssStarted(true), RunState::Running));
+  assert(enters(m.started(FaultReason::None), RunState::Running));
   return m;
 }
 
-// Switch held off long enough to count (500 ms debounce, 50 ms power ticks).
-Transition switchOffFor(RunStateMachine& m, uint32_t startMs, uint32_t ms, bool usb = true) {
-  Transition last = Transition::stay();
+// The switch held in one position for `ms` (500 ms debounce, 50 ms power
+// ticks); returns the first non-Stay transition.
+Transition switchFor(RunStateMachine& m, bool on, uint32_t startMs, uint32_t ms, bool usb = true) {
   for (uint32_t t = startMs; t <= startMs + ms; t += 50) {
-    const Transition r = m.power(t, false, usb, false);
-    if (!stays(r)) last = r;
+    const Transition r = m.power(t, on, usb, false);
+    if (!stays(r)) return r;
   }
-  return last;
+  return Transition::stay();
+}
+Transition switchOffFor(RunStateMachine& m, uint32_t startMs, uint32_t ms, bool usb = true) {
+  return switchFor(m, false, startMs, ms, usb);
+}
+Transition switchOnFor(RunStateMachine& m, uint32_t startMs, uint32_t ms, bool usb = true) {
+  return switchFor(m, true, startMs, ms, usb);
 }
 
 }  // namespace
@@ -54,26 +60,41 @@ static void testBootClassification() {
   assert(enters(onUsbLow.boot(true, true, true), RunState::Starting));
 }
 
-static void testRunningOnlyThroughDetectedGnss() {
+static void testRunningOnlyWhenEverythingStarted() {
   RunStateMachine m(kBattery);
   m.boot(true, true, false);
   assert(m.state() == RunState::Starting);
-  assert(enters(m.gnssStarted(false), RunState::Fault));
+  assert(enters(m.started(FaultReason::GnssMissing), RunState::Fault));
   assert(m.fault() == FaultReason::GnssMissing);
-  // Once faulted, a late "detected" can't reach Running.
-  assert(stays(m.gnssStarted(true)));
+  // Once faulted, a late success can't reach Running.
+  assert(stays(m.started(FaultReason::None)));
   assert(m.state() == RunState::Fault);
 }
 
-static void testGnssStartedOutsideStartingStays() {
+// Each bring-up failure faults with its own reason, for its own message.
+static void testBringUpFailureReasons() {
+  RunStateMachine ble(kBattery);
+  ble.boot(true, true, false);
+  assert(enters(ble.started(FaultReason::BleFailed), RunState::Fault));
+  assert(ble.fault() == FaultReason::BleFailed);
+
+  RunStateMachine noBattery(kNoBattery);
+  noBattery.boot(true, true, false);
+  assert(enters(noBattery.started(FaultReason::BleFailed), RunState::Fault));
+  assert(noBattery.fault() == FaultReason::BleFailed);
+}
+
+static void testStartedOutsideStartingStays() {
   RunStateMachine m = running();
-  assert(stays(m.gnssStarted(true)));
-  assert(stays(m.gnssStarted(false)));
+  assert(stays(m.started(FaultReason::None)));
+  assert(stays(m.started(FaultReason::GnssMissing)));
+  assert(stays(m.started(FaultReason::BleFailed)));
   assert(m.state() == RunState::Running);
+  assert(m.fault() == FaultReason::None);
 
   RunStateMachine waiting(kBattery);
   waiting.boot(false, true, false);
-  assert(stays(waiting.gnssStarted(true)));
+  assert(stays(waiting.started(FaultReason::None)));
   assert(waiting.state() == RunState::BatteryWait);
 }
 
@@ -87,12 +108,12 @@ static void testSwitchOffOnUsbWaits() {
 static void testFaultCanStillWaitOrCutOff() {
   RunStateMachine m(kBattery);
   m.boot(true, true, false);
-  m.gnssStarted(false);
+  m.started(FaultReason::GnssMissing);
   assert(enters(switchOffFor(m, 1000, 600), RunState::BatteryWait));
 
   RunStateMachine cut(kBattery);
   cut.boot(true, false, false);
-  cut.gnssStarted(false);
+  cut.started(FaultReason::GnssMissing);
   assert(systemOff(cut.power(1000, true, false, true)));
 }
 
@@ -102,34 +123,48 @@ static void testCutoffOnBattery() {
   assert(systemOff(m.power(1050, true, false, true)));
 }
 
-static void testBatteryWaitSwitchOnRestarts() {
+// Plugged in with the switch off, then switched on: CHARGE_ONLY.
+static void testBatteryWaitSwitchOnCharges() {
   RunStateMachine m(kBattery);
   m.boot(false, true, false);
   assert(stays(m.power(1000, false, true, false)));
-  assert(restarts(m.power(1050, true, true, false), RestartReason::SwitchOn));
+  assert(stays(m.power(1050, true, true, false)));  // on has to hold first
+  assert(enters(switchOnFor(m, 1100, 600), RunState::ChargeOnly));
 }
 
-static void testChargeOnlyGestureAndExits() {
+static void testChargeOnlyEntryAndExits() {
   RunStateMachine m = running();
   assert(enters(switchOffFor(m, 1000, 600), RunState::BatteryWait));
-  // Back on within the 2 s window from first going off: CHARGE_ONLY.
-  assert(enters(m.power(1700, true, true, false), RunState::ChargeOnly));
+  // Back on, however long after: CHARGE_ONLY.
+  assert(enters(switchOnFor(m, 5000, 600), RunState::ChargeOnly));
   assert(m.state() == RunState::ChargeOnly);
   // Unplugging USB there reboots onto battery.
-  assert(restarts(m.power(1750, true, false, false), RestartReason::UsbRemoved));
+  assert(restarts(m.power(5600, true, false, false), RestartReason::UsbRemoved));
 
   RunStateMachine m2 = running();
   switchOffFor(m2, 1000, 600);
-  m2.power(1700, true, true, false);
-  // Switch off again from CHARGE_ONLY waits; on again reboots.
-  assert(enters(switchOffFor(m2, 2000, 600), RunState::BatteryWait));
-  assert(restarts(m2.power(3000, true, true, false), RestartReason::SwitchOn));
+  switchOnFor(m2, 1700, 600);
+  // Switch off again from CHARGE_ONLY waits; on again reboots into RUNNING.
+  assert(enters(switchOffFor(m2, 2400, 600), RunState::BatteryWait));
+  assert(restarts(switchOnFor(m2, 3000, 600), RestartReason::SwitchOn));
+}
+
+// On battery an OFF reading is noise: the run carries on, and it's counted.
+static void testSwitchOffOnBatteryIsNoise() {
+  RunStateMachine m(kBattery);
+  assert(enters(m.boot(false, false, false), RunState::Starting));
+  m.started(FaultReason::None);
+  assert(stays(switchOffFor(m, 1000, 3000, false)));
+  assert(m.state() == RunState::Running);
+  assert(m.switchNoise() == 1);  // one unbroken run, from the boot reading on
+  m.clearSwitchNoise();
+  assert(m.switchNoise() == 0);
 }
 
 static void testNoPowerTransitionsWithoutBattery() {
   RunStateMachine m(kNoBattery);
   m.boot(true, true, false);
-  m.gnssStarted(true);
+  m.started(FaultReason::None);
   assert(stays(m.power(1000, false, false, true)));
   assert(stays(switchOffFor(m, 1000, 2000, false)));
   assert(m.state() == RunState::Running);
@@ -177,7 +212,7 @@ static void testLedMapping() {
 
 static void testText() {
   assert(strcmp(stateName(RunState::Running), "Running") == 0);
-  assert(strcmp(stateName(RunState::Fault), "GNSS fault - console only") == 0);
+  assert(strcmp(stateName(RunState::Fault), "Fault - console only") == 0);
   assert(strcmp(stateName(RunState::BatteryWait), "BATTERY_WAIT - waiting for switch on") == 0);
   assert(strcmp(stateName(RunState::ChargeOnly), "CHARGE_ONLY - charging, everything else off") == 0);
   assert(strcmp(faultMessage(FaultReason::GnssMissing),
@@ -185,13 +220,15 @@ static void testText() {
   assert(strcmp(entryMessage(RunState::BatteryWait),
                 "Power: switch off on USB - BATTERY_WAIT, waiting for switch on") == 0);
   assert(strcmp(entryMessage(RunState::ChargeOnly),
-                "Power: quick switch cycle - CHARGE_ONLY, charging with everything else off") == 0);
+                "Power: switch on with USB - CHARGE_ONLY, charging with everything else off") == 0);
   assert(entryMessage(RunState::Running) == nullptr);
   assert(strcmp(restartReasonText(RestartReason::SwitchOn), "Power: switch on") == 0);
   assert(strcmp(restartReasonText(RestartReason::UsbRemoved), "Power: USB removed") == 0);
   assert(strcmp(restartReasonText(RestartReason::GnssSilent), "GNSS: epochs stopped") == 0);
   assert(strcmp(faultMessage(FaultReason::GnssNoData),
                 "GNSS detected but sending no data. Check its power supply. Everything else stopped.") == 0);
+  assert(strcmp(faultMessage(FaultReason::BleFailed),
+                "BLE failed to start. Power-cycle to retry. Everything else stopped.") == 0);
 }
 
 static void testGnssLivenessInRunning() {
@@ -214,7 +251,7 @@ static void testGnssLivenessIgnoredOutsideRunning() {
 
   RunStateMachine fault(kBattery);
   fault.boot(true, true, false);
-  fault.gnssStarted(false);
+  fault.started(FaultReason::GnssMissing);
   assert(stays(fault.gnssLiveness(GnssLiveness::Stopped)));
   assert(fault.fault() == FaultReason::GnssMissing);  // the first reason stands
 
@@ -225,13 +262,15 @@ static void testGnssLivenessIgnoredOutsideRunning() {
 
 int main() {
   testBootClassification();
-  testRunningOnlyThroughDetectedGnss();
-  testGnssStartedOutsideStartingStays();
+  testRunningOnlyWhenEverythingStarted();
+  testBringUpFailureReasons();
+  testStartedOutsideStartingStays();
   testSwitchOffOnUsbWaits();
   testFaultCanStillWaitOrCutOff();
   testCutoffOnBattery();
-  testBatteryWaitSwitchOnRestarts();
-  testChargeOnlyGestureAndExits();
+  testBatteryWaitSwitchOnCharges();
+  testChargeOnlyEntryAndExits();
+  testSwitchOffOnBatteryIsNoise();
   testNoPowerTransitionsWithoutBattery();
   testJobsPerState();
   testLedMapping();

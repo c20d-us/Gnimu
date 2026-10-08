@@ -60,16 +60,16 @@ void onRxWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) { rxRi
 
 }  // namespace
 
-void BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
+bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
   log_ = &log;
-  if (started_) return;
+  if (started_) return true;
   if (!built_) {
     // Must precede Bluefruit.begin(): raises the ATT MTU ceiling to 247, so a
     // phone that asks for room gets an 88-byte frame in one notification.
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
     if (!Bluefruit.begin()) {
       log.log("BLE: stack failed to start \xE2\x9D\x8C");
-      return;
+      return false;
     }
     Bluefruit.setName(name);
     if (Bluefruit.setTxPower(config::kBleTxPowerDbm)) {
@@ -122,6 +122,7 @@ void BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Co
   Bluefruit.Advertising.restartOnDisconnect(true);
   const bool advertising = Bluefruit.Advertising.start(0);  // 0 = no timeout
   log.log("BLE: advertising as \"%s\" %s", name, advertising ? "\xE2\x9C\x85" : "\xE2\x9D\x8C");
+  return advertising;
 }
 
 void BleNrf::end() {

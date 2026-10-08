@@ -33,6 +33,7 @@ static void testReport() {
   const JobTable t = {jobs, stats, 1, 12345};
   DeviceStatus v = {};
   v.uptimeUs = 355400000;
+  v.reset = makeResetRecord(ResetCause::Software, restartCode(RestartReason::GnssSilent));
   v.gnss.epochs = &epochs;
   v.gnss.latest = &latest;
   v.imu.up = true;
@@ -51,6 +52,7 @@ static void testReport() {
   assert(strstr(buf, "| job  | runs | skipped | overruns | max \xCE\xBCs | mean \xCE\xBCs |\n"));
   assert(strstr(buf, "| gnss |    4 |       1 |        2 |    900 |     500 |\n"));
   assert(strstr(buf, "| RT:                 355s | Loops:             12345 |\n"));
+  assert(strstr(buf, "=\nReset: software (GNSS: epochs stopped)\nGNSS: epochs 0,"));
   assert(strstr(buf, "GNSS: epochs 0, missed 0, max gap 0\xCE\xBCs, time steps 0\n"));
   assert(strstr(buf, "GNSS: fix type 3, sv count 17, hAcc 210mm, tAcc 42ns, pDOP 1.05\n"));
   assert(strstr(buf, "IMU: up, Accel XYZ mG -12 3 998, Gyro XYZ c\xC2\xB0/s 5 -2 1\n"));
@@ -68,9 +70,10 @@ static void testReport() {
   b.chargerActive = true;
   v.power.battery = &b;
   v.power.usbPresent = true;
+  v.power.switchNoise = 3;
   formatReport(buf, sizeof(buf), t, v);
   assert(strstr(buf, "Battery: 3.90V (last peak 3.93V), 75%, USB 1, charging 1, full 0, "
-                     "warning 0, critical 0, cutoff 0\n"));
+                     "warning 0, critical 0, cutoff 0, switch noise 3\n"));
   v.power.battery = nullptr;
   v.power.usbPresent = false;
 

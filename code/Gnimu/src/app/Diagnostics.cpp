@@ -85,6 +85,7 @@ void Diagnostics::armStatus(uint32_t count) {
 DeviceStatus Diagnostics::snapshot(uint64_t nowUs) const {
   DeviceStatus s = {};
   s.uptimeUs = nowUs;
+  s.reset = reset_;
   s.gnss.epochs = &feed_.epochs();
   s.gnss.latest = feed_.latest();
   s.imu.up = imu_.up();
@@ -95,6 +96,7 @@ DeviceStatus Diagnostics::snapshot(uint64_t nowUs) const {
   s.ble.stats = ble_.stats();
   s.power.battery = battery_;
   s.power.usbPresent = BatteryPort::usbPresent();
+  s.power.switchNoise = machine_.switchNoise();
   s.consoleDropped = console_.dropped();
   return s;
 }

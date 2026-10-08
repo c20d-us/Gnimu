@@ -18,7 +18,9 @@ class BleEsp32 {
  public:
   // Starts advertising as `name`. The first call builds the stack and GATT
   // table; a call after end() just resumes advertising. Idempotent.
-  void begin(const BleProfile& profile, const char* name, const char* serial, Console& log);
+  // True once advertising; false if the stack or advertising failed to
+  // start, which leaves nothing for a client to connect to.
+  bool begin(const BleProfile& profile, const char* name, const char* serial, Console& log);
   // Stops advertising and drops any connection. Deliberately not a stack
   // teardown - on the ESP32 that can't be undone without a reboot - so begin()
   // can follow. Idempotent.

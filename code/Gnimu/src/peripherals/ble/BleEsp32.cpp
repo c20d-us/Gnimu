@@ -65,11 +65,15 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 
 }  // namespace
 
-void BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
+bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
   log_ = &log;
-  if (started_) return;
+  if (started_) return true;
   if (!built_) {
-    BLEDevice::init(name);
+    // Nothing below works on a stack that didn't start.
+    if (!BLEDevice::init(name)) {
+      log.log("BLE: stack failed to start \xE2\x9D\x8C");
+      return false;
+    }
     // Set both: ESP_BLE_PWR_TYPE_DEFAULT reaches connections but not
     // advertising, which would otherwise stay at the controller's +9 dBm.
     BLEDevice::setPower(kTxPower, ESP_BLE_PWR_TYPE_ADV);
@@ -123,6 +127,7 @@ void BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, 
   server->advertiseOnDisconnect(true);
   const bool advertising = BLEDevice::getAdvertising()->start();
   log.log("BLE: advertising as \"%s\" %s", name, advertising ? "\xE2\x9C\x85" : "\xE2\x9D\x8C");
+  return advertising;
 }
 
 void BleEsp32::end() {

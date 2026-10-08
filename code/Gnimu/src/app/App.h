@@ -2,6 +2,7 @@
 
 #include "../core/BatteryMonitor.h"
 #include "../core/GnssFeed.h"
+#include "../core/ResetReason.h"
 #include "../core/RunStateMachine.h"
 #include "../core/Scheduler.h"
 #include "../core/StatusLed.h"
@@ -61,8 +62,9 @@ class App {
   // nothing was started (a boot straight into waiting).
   void stopPeripherals();
   // Back to RUNNING always goes through a fresh boot (NG's choice): it reruns
-  // the verified bring-up instead of restarting peripherals in place.
-  [[noreturn]] void restart(const char* why);
+  // the verified bring-up instead of restarting peripherals in place. The
+  // reason is kept across the reset for the next boot's "Reset:" line.
+  [[noreturn]] void restart(RestartReason why);
   [[noreturn]] void enterSystemOff();
   // Console C: the counters App owns. Diagnostics re-baselines its own rate
   // trackers when it sees the same command.
@@ -81,6 +83,7 @@ class App {
   BatteryMonitor battery_;
   RunStateMachine machine_;
   uint32_t loops_ = 0;
+  ResetRecord reset_ = {};  // set first thing in begin()
   // Last: it references most of the members above.
   Diagnostics diagnostics_;
 };

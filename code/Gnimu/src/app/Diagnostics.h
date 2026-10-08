@@ -6,6 +6,8 @@
 #include "../core/BatteryMonitor.h"
 #include "../core/GnssFeed.h"
 #include "../core/RateTracker.h"
+#include "../core/ResetReason.h"
+#include "../core/RunStateMachine.h"
 #include "../core/Scheduler.h"
 #include "../peripherals/ble/BleTransport.h"
 #include "../peripherals/imu/ImuDevice.h"
@@ -23,7 +25,8 @@ class Diagnostics {
   // `battery` is nullptr on boards without one.
   Diagnostics(Console& console, const Job* jobs, const JobStats* stats, size_t jobCount,
               const uint32_t& loops, const GnssFeed& feed, const ImuDevice& imu,
-              const BleTransport& ble, const BatteryStatus* battery, const char* deviceId)
+              const BleTransport& ble, const BatteryStatus* battery,
+              const RunStateMachine& machine, const char* deviceId, const ResetRecord& reset)
       : console_(console),
         jobs_(jobs),
         stats_(stats),
@@ -33,7 +36,9 @@ class Diagnostics {
         imu_(imu),
         ble_(ble),
         battery_(battery),
-        deviceId_(deviceId) {}
+        machine_(machine),
+        deviceId_(deviceId),
+        reset_(reset) {}
 
   // One poll's result: Report, Version, ToggleStatus and a count act here;
   // Clear re-baselines the status line's rate trackers (App clears the
@@ -64,7 +69,9 @@ class Diagnostics {
   const ImuDevice& imu_;
   const BleTransport& ble_;
   const BatteryStatus* battery_;
+  const RunStateMachine& machine_;
   const char* deviceId_;
+  const ResetRecord& reset_;
 
   RateTracker gnssRate_;  // status line: epochs/s
   RateTracker bleRate_;   // status line: packets sent/s

@@ -10,6 +10,7 @@
 #include <tusb.h>
 
 #include "../ConsolePort.h"
+#include "../Watchdog.h"
 
 namespace gnimu {
 
@@ -21,6 +22,7 @@ void consoleOpen() {
   if ((NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk) == 0) return;
   const uint32_t start = millis();
   while (!Serial && millis() - start < 3000) {
+    Watchdog::feed();
   }
 }
 

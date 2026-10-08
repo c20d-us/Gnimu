@@ -8,7 +8,9 @@
 #include "../platform/Board.h"
 #include "../platform/HardwareId.h"
 #include "../platform/PeripheralPower.h"
+#include "../platform/ResetInfo.h"
 #include "../platform/StatusLedPort.h"
+#include "../platform/Watchdog.h"
 
 namespace gnimu {
 
@@ -21,7 +23,7 @@ uint32_t nowMs() { return static_cast<uint32_t>(PlatformClock::nowUs() / 1000); 
 
 // What this board and protocol can do, for the state machine and its job sets.
 constexpr RunConfig kRunConfig = {board::kHasBattery, Protocol::kUsesImu,
-                                  {config::kSwitchOffDebounceMs, config::kChargeOnlyWindowMs}};
+                                  {config::kSwitchDebounceMs}};
 
 }  // namespace
 
@@ -37,7 +39,8 @@ App::App()
                 config::kBatteryChargeFullV, config::kBatteryChargeFullDebounceMs}),
       machine_(kRunConfig),
       diagnostics_(console_, scheduler_.jobs(), scheduler_.allStats(), kJobs, loops_, feed_, imu_,
-                   ble_, board::kHasBattery ? &battery_.status() : nullptr, deviceId_) {
+                   ble_, board::kHasBattery ? &battery_.status() : nullptr, machine_, deviceId_,
+                   reset_) {
   // Here, not in the class: GCC only evaluates it once App is complete.
   static_assert(jobSpecsValid(kJobSpecs), "job specs out of id order, unnamed, or with a zero period");
 }
@@ -47,21 +50,37 @@ void App::begin() {
   // stays off until a state decides otherwise (the nRF's console can wait
   // seconds for USB, and nothing should draw power meanwhile).
   PeripheralPower::holdAllOff();
+  // Next, so boot is covered too: a hang anywhere from here on resets the
+  // chip. Each boot step below feeds it.
+  const bool watchdog = Watchdog::start();
+  reset_ = makeResetRecord(ResetInfo::cause(), ResetInfo::takeRestartCode());
+  // Before the console: its write wait is timed with nowUs(), which on the
+  // nRF stands still until this runs - a host that stops reading would hold
+  // that wait forever.
+  PlatformClock::begin();
   StatusLedPort::begin();
   console_.begin();
+  Watchdog::feed();
   decimalDeviceId(hardwareId(), deviceId_);
   diagnostics_.printBuild();
   diagnostics_.printDeviceId();
   console_.log("Gnimu starting");
+  char reset[64];
+  formatReset(reset, sizeof(reset), reset_);
+  console_.log("Reset: %s", reset);
+  if (watchdog) {
+    console_.log("Watchdog: %lu ms \xE2\x9C\x85", static_cast<unsigned long>(config::kWatchdogMs));
+  } else {
+    console_.log("Watchdog: not started \xE2\x9D\x8C");
+  }
   if (board::kHasSwitchedPower) console_.log("Power: GNSS rail, IMU and LED held off \xE2\x9C\x85");
-
-  PlatformClock::begin();
   console_.log("Clock started");
 
   // The state machine decides before anything starts: a switched-off or
   // flat-battery boot never powers the GNSS at all.
   Transition first = Transition::stay();
   if (board::kHasBattery) {
+    Watchdog::feed();
     BatteryPort::begin();
     primeBattery();
     const bool switchOn = BatteryPort::switchOn();
@@ -114,29 +133,39 @@ void App::primeBattery() {
 void App::apply(Transition t) {
   // Only Starting produces a follow-up, so this runs at most twice.
   while (t.kind == Transition::Kind::Enter) {
+    // Entering a state can be a boot step: Starting brings up every
+    // peripheral.
+    Watchdog::feed();
     setJobs(jobsFor(t.to, kRunConfig));
     t = enter(t.to);
   }
-  if (t.kind == Transition::Kind::Restart) restart(restartReasonText(t.why));
+  if (t.kind == Transition::Kind::Restart) restart(t.why);
   if (t.kind == Transition::Kind::SystemOff) enterSystemOff();
 }
 
 Transition App::enter(RunState s) {
   switch (s) {
-    case RunState::Starting:
+    case RunState::Starting: {
       // Peripherals start only once a run is decided (the nRF holds them off
-      // until then). The detection result picks Running or Fault.
+      // until then), and all of them start here: Running is only ever
+      // entered from this boot-time bring-up. The first failure picks Fault.
       PeripheralPower::gnssRailOn();
       if (board::kHasSwitchedPower) console_.log("Power: GNSS rail on");
-      return machine_.gnssStarted(gnss_.begin(console_));
-    case RunState::Running:
+      if (!gnss_.begin(console_)) return machine_.started(FaultReason::GnssMissing);
+      Watchdog::feed();
       if (Protocol::kUsesImu) imu_.begin(console_);
-      {
-        // Last: advertise only once there's something to stream.
-        char name[32];
-        snprintf(name, sizeof(name), "%s %s", Protocol::profile().model, deviceId_);
-        ble_.begin(Protocol::profile(), name, deviceId_, console_);
-      }
+      Watchdog::feed();
+      // Last: advertise only once there's something to stream.
+      char name[32];
+      snprintf(name, sizeof(name), "%s %s", Protocol::profile().model, deviceId_);
+      const bool advertising = ble_.begin(Protocol::profile(), name, deviceId_, console_);
+      // After BLE: once the nRF's SoftDevice runs, the clock request has to
+      // go through it. Boot until here runs on whatever clock is up.
+      console_.log("Clock: crystal %s",
+                   PlatformClock::useCrystal() ? "\xE2\x9C\x85" : "\xE2\x9D\x8C");
+      return machine_.started(advertising ? FaultReason::None : FaultReason::BleFailed);
+    }
+    case RunState::Running:
       break;
     case RunState::Fault:
       // Fatal: log it and start nothing else. The console job stays up so
@@ -171,8 +200,9 @@ void App::stopPeripherals() {
   imu_.end();
 }
 
-void App::restart(const char* why) {
-  console_.log("%s - restarting into RUNNING", why);
+void App::restart(RestartReason why) {
+  console_.log("%s - restarting into RUNNING", restartReasonText(why));
+  ResetInfo::storeRestartCode(restartCode(why));
   console_.flush();
   PeripheralPower::reset();
 }
@@ -187,6 +217,8 @@ void App::enterSystemOff() {
 }
 
 void App::tick() {
+  // Every pass, in every state: a job that never returns stops the feeding.
+  Watchdog::feed();
   loops_++;
   PlatformClock::sleepUntilUs(scheduler_.tick());
 }
@@ -268,6 +300,7 @@ void App::clearStats() {
   feed_.clear();
   loops_ = 0;
   ble_.clearMaxSend();
+  machine_.clearSwitchNoise();
 }
 
 }  // namespace gnimu

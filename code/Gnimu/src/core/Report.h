@@ -7,6 +7,7 @@
 #include "BleStats.h"
 #include "DeviceStatus.h"
 #include "GnssEpoch.h"
+#include "ResetReason.h"
 #include "Scheduler.h"
 #include "TextOut.h"
 
@@ -105,6 +106,9 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
   o.fill('=', width);
   o.put("\n");
 
+  char reset[64];
+  formatReset(reset, sizeof(reset), d.reset);
+  o.put("Reset: %s\n", reset);
   o.put("GNSS: epochs %lu, missed %lu, max gap %luμs, time steps %lu\n",
         static_cast<unsigned long>(d.gnss.epochs->epochs()),
         static_cast<unsigned long>(d.gnss.epochs->missed()),
@@ -148,11 +152,11 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
     const unsigned long centiV = static_cast<unsigned long>(b.voltage * 100.0f + 0.5f);
     const unsigned long peakCentiV = static_cast<unsigned long>(b.freshVoltage * 100.0f + 0.5f);
     o.put("Battery: %lu.%02luV (last peak %lu.%02luV), %u%%, USB %u, charging %u, full %u, "
-          "warning %u, critical %u, cutoff %u\n",
+          "warning %u, critical %u, cutoff %u, switch noise %lu\n",
           centiV / 100, centiV % 100, peakCentiV / 100, peakCentiV % 100,
           static_cast<unsigned>(b.percent), d.power.usbPresent ? 1u : 0u, b.chargerActive ? 1u : 0u,
           b.chargeFull ? 1u : 0u, b.warning ? 1u : 0u, b.critical ? 1u : 0u,
-          b.cutoffRequested ? 1u : 0u);
+          b.cutoffRequested ? 1u : 0u, static_cast<unsigned long>(d.power.switchNoise));
   } else if (d.power.battery) {
     o.put("Battery: no reading yet\n");
   }

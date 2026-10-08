@@ -18,6 +18,9 @@ namespace gnimu {
 
 void PlatformClock::begin() {}
 
+// esp_timer already runs from the 40 MHz crystal.
+bool PlatformClock::useCrystal() { return true; }
+
 uint64_t PlatformClock::nowUs() { return static_cast<uint64_t>(esp_timer_get_time()); }
 
 void PlatformClock::sleepUntilUs(uint64_t deadlineUs) {

@@ -335,6 +335,10 @@ After R6, Phase 2 starts, adding its events to the state machine with tests firs
 - **R5:** the snapshot carries raw IMU units, and the formatters convert through `toDisplayUnits()` in core (host-tested). The status line's rates are a separate `StatusRates` argument rather than snapshot fields. Pointers were kept (open question 5).
 - **Order changed after R3** (owner, 2026-10-05): R6, then Phase 2's GNSS items, then R4 and R5.
 
+- **REL-7 (Phase 2, 2026-10-08) changed the Starting/Running split described in section 1.** `gnssStarted(bool)` became `started(FaultReason failure)`: `None` enters Running, and any other reason enters Fault with that reason. All bring-up (GNSS, then the IMU, then BLE) now happens in Starting's entry, and Running has no entry effects. This is safe because Running is only ever entered from Starting; every other route back goes through a reset. A BLE stack or advertising failure gives `FaultReason::BleFailed`, and Phase 3's `GnssConfigFailed` will use the same path. The apply loop's "at most twice" bound still holds. The section 1 tables above show the original design.
+
+- **PWR-1 (Phase 2, 2026-10-08) dropped `chargeOnlyWindowMs`.** `RunConfig`'s power config is now `{switchDebounceMs}`. Switch-on from BATTERY_WAIT on USB enters CHARGE_ONLY (owner's choice), except straight after CHARGE_ONLY, where it reboots into RUNNING, so there's no timed gesture any more.
+
 ## Revision notes
 
 Changes from the first draft, made after re-reading it against the code:

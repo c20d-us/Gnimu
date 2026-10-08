@@ -14,8 +14,10 @@ namespace gnimu {
 // nothing is ever sent, and the boot log says so plainly.
 class BleStub {
  public:
-  void begin(const BleProfile&, const char*, const char*, Console& log) {
+  // True: there's no stack to fail, and a board without BLE still runs.
+  bool begin(const BleProfile&, const char*, const char*, Console& log) {
     log.log("BLE: not implemented on this board yet - no telemetry will be sent");
+    return true;
   }
   void end() {}
   void update() {}

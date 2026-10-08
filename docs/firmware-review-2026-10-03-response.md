@@ -41,7 +41,7 @@ Confirmed as stated:
 | Topic | Decision |
 |---|---|
 | PWR-1 hardware | On battery, switch OFF means the board is fully unpowered. A switch-OFF reading without USB can only be noise. |
-| REL-5, GnssFault on battery | **Blink rapid red (10 Hz) indefinitely.** Drop the 30 s window that let the LED go dark. Do not enter System OFF and do not retry. A visibly faulted device prompts the user to power-cycle it, and the low-voltage cutoff still protects the cell. |
+| REL-5, GnssFault on battery | **Blink rapid red indefinitely** (10 Hz at first; 5 Hz since 2026-10-08, owner). Drop the 30 s window that let the LED go dark. Do not enter System OFF and do not retry. A visibly faulted device prompts the user to power-cycle it, and the low-voltage cutoff still protects the cell. |
 | REL-2, GNSS liveness | In RUNNING, **no NAV-PVT epoch for 2 s → log and restart.** Boot re-runs the full config, and on nRF boot also power-cycles the GNSS rail. A receiver that is really gone then lands in GnssFault. |
 | BUG-1 approach | Hand re-advertising to the library (`advertiseOnDisconnect(true)`), replacing our delayed re-advertise. |
 | BUG-3 | `C` resets `max send`, as it resets the job table's max μs. The other BLE counters are not cleared. |
@@ -105,7 +105,7 @@ Confirmed as stated:
 **Finding:** in GnssFault, `StatusLed` blinked red at 10 Hz only for the first 30 s (`kLedFaultMs`), then turned the LED off. That was meant to keep a battery build quiet. A dark device with the switch on looks off, even though it stays awake until the low-voltage cutoff.
 
 **Fix (owner's decision, in place of the review's retry or System OFF suggestion):**
-- The Fault pattern blinks at `faultHalfMs` (10 Hz) for as long as the state lasts.
+- The Fault pattern blinks at `faultHalfMs` (10 Hz then; 5 Hz since 2026-10-08, see REL-7) for as long as the state lasts.
 - `faultMs` is removed from `LedTiming`, and `kLedFaultMs` from `Config.h`.
 - The ESP32 shows the same pattern in blue (single-colour LED).
 
@@ -700,16 +700,153 @@ Considered and left out: templating every module on its hardware types for host 
 - The boot ends with the state line, then the command line, in full.
 - `L⏎` starts lines, and `L⏎` again stops them.
 
+#### Phase 2 item 3 (REL-1): hardware watchdog and reset reason. Done (boot verified)
+
+**Finding confirmed:**
+- Neither board ran a watchdog on the loop. The ESP32 core starts its task watchdog (5 s, panic) but only watches the idle tasks: `loopTaskWDTEnabled` is false and the loop task is never added. Nothing starts `NRF_WDT` on the nRF.
+- The boot log never said why the chip started, so a watchdog reset would have looked like a power cycle. The nRF core already latches and clears `RESETREAS` before `setup()` (`readResetReason()`).
+
+**Fix (owner approved after two refinement rounds):**
+- **`platform/Watchdog.h`:** `start()` and `feed()`, `config::kWatchdogMs` = **5000**.
+  - nRF: `NRF_WDT`, keeps running while the CPU sleeps, pauses under a debugger.
+  - ESP32: the existing task watchdog retimed to ours (same idle-task checks, panic kept, so a hang prints the stuck task's backtrace), and the loop task added.
+- **Started on every boot, right after `holdAllOff()`,** so a hang during boot is caught too. On the nRF a soft reset doesn't stop the watchdog, and its registers lock once it runs. Starting it again with the same settings is harmless, so there's no "already running" special case.
+- **One feed rule: anything that can block for over a second feeds first.**
+  - `App::tick()` (every pass, in every state).
+  - Between boot steps (console, battery, each state entry in `apply()`) and inside the nRF's 3 s USB wait.
+  - In `Gnss.cpp`, before every library call that waits for a reply: detection, baud switch and save, the PVT pause attempts, each flash-read attempt, each write, and the callback registration.
+- **Why not "feed only if GNSS ran recently" (the review's rule):** every hang it lists blocks inside a job, which already stops the per-pass feed. "Loop runs but no data" is the REL-2 liveness check's job. The GNSS job is off in Fault, BatteryWait and ChargeOnly, so the rule would need per-state exceptions.
+- **Timeout 5 s, not the 4 s first discussed:** the longest unfed stretch is detection on a silent port. The library's `begin()` tries three times at its 1.1 s timeout, between `tryBaud()`'s 100 ms pauses: about 3.5 s. `Gnss.cpp` asserts `3 × kUBLOXGNSSDefaultMaxWait + 1000 ≤ kWatchdogMs`, so lowering the watchdog or a library timeout increase fails the build.
+- **Reset reason:** `Reset: <cause>` at boot (after `Gnimu starting`) and as the first line under the D report's RT/Loops table, so it can be read any time later, not only with a terminal open at boot.
+  - nRF: watchdog, CPU lockup, software, reset pin, wake from System OFF (USB or pin). No bit set prints `power-on or brownout`: the nRF can't tell them apart.
+  - ESP32: from `esp_reset_reason()`, including brownout and crash.
+- **Our own restart reason is kept across the reset:** one byte, `RestartReason + 1`. nRF `GPREGRET2` (through the SoftDevice when it's running; `GPREGRET` is the bootloader's). ESP32 an `RTC_NOINIT_ATTR` byte. `restart()` stores it before resetting.
+  - Read and cleared at boot. Shown only when the hardware cause is "software", e.g. `Reset: software (GNSS: epochs stopped)`. The byte also survives watchdog and pin resets, and the ESP32's copy is garbage after power-on.
+  - A software reset with nothing stored (an upload) stays plain `software`.
+- **Boot log also prints** `Watchdog: 5000 ms ✅`, or `❌` if it didn't start.
+
+**Considered and dropped:** a reset counter (one reason plus RT answers "did it, why, when"); saving the hung PC from the nRF's pre-reset interrupt (about 61 µs).
+
+**Files:** `platform/Watchdog.h`, `platform/ResetInfo.h`, `platform/{nrf52840,esp32}/{Watchdog,ResetInfo}.cpp` (all new); `core/ResetReason.h` (new); `core/RunStateMachine.h` (`kRestartReasonCount`); `core/DeviceStatus.h`, `core/Report.h`; `app/App.{h,cpp}` (`restart(RestartReason)`), `app/Diagnostics.{h,cpp}`, `app/Config.h`; `peripherals/gnss/Gnss.cpp`; `platform/nrf52840/ConsolePort.cpp`; `tests/test_resetreason.cpp` (new), `tests/test_report.cpp`.
+
+**Tests:** `test_resetreason.cpp`: each restart reason shown after a software reset; nothing stored → plain `software`; a stale reason ignored after watchdog, pin and power-on resets; out-of-range codes ignored; every in-range code names a real reason; cause texts; truncation. `test_report.cpp` checks the `Reset:` line's position and text.
+
+**Checks:** host suites pass (plain and sanitized). Every changed firmware file is clean against both cores (`-fsyntax-only`, with injected-error probes confirming each check really compiles).
+
+**Verified 2026-10-08:** owner accepted the 5 s timeout; compiled, flashed and booted on both boards, working. Uploads onto the running new firmware (watchdog already running) complete normally on both boards, so the nRF bootloader copes with a running watchdog. Forced hang (a temporary `for (;;)` under `V`, since removed) reset both boards after about 5 s, and the next boot reported `Reset: watchdog`.
+
+**Still to verify, both boards:**
+- A power-on prints `Reset: power-on or brownout` (nRF) / `Reset: power-on` (ESP32) and `Watchdog: 5000 ms ✅`. **If every nRF reset shows `power-on or brownout`, the bootloader is clearing `RESETREAS` first.**
+- Restart paths still boot cleanly with the watchdog inherited, and say why: switch on from BatteryWait (`software (Power: switch on)`), USB removed in ChargeOnly, GNSS unplugged mid-run (`software (GNSS: epochs stopped)`).
+- `D` shows the same `Reset:` line under the RT/Loops table.
+
+#### Phase 2 item 4 (REL-7): BLE start failure → Fault. Done (forced failure verified)
+
+**Finding confirmed, and worse on ESP32:**
+- nRF: a failed `Bluefruit.begin()` was logged ❌, and the device entered Running anyway with the LED blinking "advertising". A failed first `Advertising.start(0)` was also log-only.
+- ESP32: `BLEDevice::init()` returns `bool` in this core, and it was ignored. The code then built the server and services on a stack that wasn't running, which would likely crash (since REL-1, a crash/reboot loop). A failed `advertising->start()` was log-only too.
+- Never seen on the bench. It can only happen at boot.
+
+**Fix (owner approved after one simplification round):**
+- **`begin()` returns `bool`** on both transports: true only once advertising. It returns false if the stack fails to start, stopping right there, or if the first advertising start fails. Both mean nothing can connect. `BleStub::begin()` returns true, since there's no stack to fail.
+- **All bring-up moved into Starting.** It runs GNSS, then the IMU, then BLE, and ends in one event: `gnssStarted(bool)` became `started(FaultReason failure)`. `None` enters Running; any other reason enters Fault with that reason. Running has no entry effects any more, which is safe because it's only ever entered from Starting. The apply loop's "at most twice" bound is unchanged.
+- **`FaultReason::BleFailed`**, with the message `BLE failed to start. Power-cycle to retry. Everything else stopped.` Fault itself is unchanged: peripherals stopped, console only, rapid red blink (fast blue on ESP32). `stateName(Fault)` is now `Fault - console only`, no longer GNSS-specific.
+- **No retry,** matching the owner's GNSS-fault decision (a person power-cycles). One automatic retry through the REL-1 retained restart reason was considered and dropped. Both stacks fail to start only for causes a reboot doesn't fix (memory, NVS, SoftDevice configuration).
+- **Watchdog:** Starting feeds before the IMU and before BLE, keeping the one-feed-per-boot-step rule.
+- **Checked:** a failed advertising start leaves `started_` true, so Fault's `stopPeripherals()` still runs `ble_.end()`. Battery updates, `connected()` and `send()` all check `built_`/`started_`, so nothing touches a half-started stack in Fault.
+
+**Files:** `core/RunStateMachine.h`, `app/App.cpp`, `peripherals/ble/BleNrf.{h,cpp}`, `peripherals/ble/BleEsp32.{h,cpp}`, `peripherals/ble/BleStub.h`, `tests/test_runstatemachine.cpp`, `docs/app-restructure-design.md` (implementation note).
+
+**Tests:** the `gnssStarted` cases moved to `started(GnssMissing)` / `started(None)`. New cases: `started(BleFailed)` faults with `BleFailed` (battery and no-battery boards); `started()` of every kind is ignored outside Starting and leaves no fault reason behind; the new message text and state name.
+
+**Checks:** host suites pass (plain and sanitized). `App.cpp`, `BleNrf.cpp` and `BleEsp32.cpp` are clean against both cores.
+
+**Fault blink slowed (owner, 2026-10-08):** after seeing it on the bench, `kLedFaultHalfMs` went from 50 to 100 ms: 5 Hz instead of 10 Hz. It's still twice BATTERY_WAIT's 2.5 Hz, and a whole multiple of the 25 ms LED job period. Applies to every fault. `test_statusled.cpp` keeps its own 50 ms test timing, since it checks the blink logic, not the configured rate.
+
+**Verified 2026-10-08, both boards:** forced failure (a temporary override of `begin()`'s result after the stack and advertising had started, since removed) gave the Fault message, `Fault - console only.`, the fault blink, D and V still answering, and BLE gone from a scan. That also exercises Fault's `ble_.end()` teardown of a started stack.
+
+**Still to verify, both boards:**
+- A normal boot is unchanged: `BLE: advertising as ... ✅`, then `Running.`, and a client connects.
+- No GNSS (unplugged) still gives the GnssMissing fault, with no BLE started.
+
+#### Phase 2 item 5 (PWR-1): switch-sense noise. Done (bench verified)
+
+**Finding confirmed (`core/PowerPolicy.h`):**
+- A switch-OFF reading was debounced (500 ms) and acted on even without USB. On battery, switching off cuts the MCU's power, so such a reading can only be noise. It stopped the GNSS and IMU mid-session and went to BatteryWait, then the next ON reading rebooted. The class comment claimed every switch-off happens with USB, but nothing enforced it.
+- **The same hole at boot (missed by the review):** `begin()` acts on one reading, so a single noisy OFF at power-up on battery meant BatteryWait, then a reboot.
+- Switch-ON from BatteryWait was not debounced: one ghost reading rebooted.
+- Already fine: the ADC acquisition time is 40 µs (`BatteryPort::begin()`), within the nRF spec for the divider's ~255 kΩ source, and the first conversion after a channel switch is already discarded.
+
+**Fix (owner approved after one simplification round, with the noise counter):**
+- **The USB rule applied to the reading, once:** "OFF and no USB" reads as ON, at the top of both `begin()` and `update()`. Nothing downstream needs to know about USB. At boot it means a normal start, or System OFF if the battery is below cutoff.
+- **One stable switch state, debounced on both edges:** a small `Debounced` helper in `PowerPolicy.h`. A new reading becomes the stable value only after holding for `kSwitchDebounceMs` (renamed from `kSwitchOffDebounceMs`, still 500 ms). The policy acts only on stable edges, which removed its own pending-off tracking.
+- **Gesture timing preserved without extra code:** both edges are delayed alike, so the time between the confirmed OFF and the confirmed ON equals the real OFF time. "Back on within 2 s" means the same as before. Switch-on (reboot, or entering CHARGE_ONLY) now takes effect 500 ms after the switch moves.
+- **Noise counter:** `PowerPolicy::switchNoise()` counts glitches (runs of differing readings shorter than the debounce) plus runs of OFF readings without USB, each run once. It's shown as `switch noise N` at the end of the D report's Battery line, and `C` clears it. A car session that ends at 0 says the sense line needs no RC filter.
+- **Hardware RC filter:** left to the owner as a PCB decision. The noise counter gives the field data for it.
+- **Considered and dropped:** several readings at boot. With the USB rule, the only case left is a ghost OFF at boot on USB: one extra reboot on the bench, never in the car. Waiting out a debounce at boot would add 500 ms to every boot.
+
+**Files:** `core/PowerPolicy.h`, `core/RunStateMachine.h` (`switchNoise()`, `clearSwitchNoise()`), `core/DeviceStatus.h`, `core/Report.h`, `app/Config.h`, `app/App.cpp`, `app/Diagnostics.{h,cpp}`, `tests/test_powerpolicy.cpp`, `tests/test_runstatemachine.cpp`, `tests/test_report.cpp`.
+
+**Tests:**
+- `test_powerpolicy.cpp`: boot OFF without USB is a normal boot (or System OFF below cutoff) and counts as noise. OFF without USB is ignored however long, each run counted once, and C clears it. A short flick counts one glitch. A single ON ghost in the wait is ignored, and a held ON reboots 500 ms later. Gesture at 1950 ms is confirmed 500 ms later and enters CHARGE_ONLY; 2000 ms reboots. Leaving CHARGE_ONLY, and USB removal (not debounced, a digital VBUS detect). `Debounced` on its own.
+- `test_runstatemachine.cpp`: switch-on transitions held through the debounce, and switch-OFF on battery leaves Running and counts as noise.
+- `test_report.cpp`: the Battery line ends with `switch noise 3`.
+
+**Checks:** host suites pass (plain and sanitized). `App.cpp` and `Diagnostics.cpp` are clean against both cores.
+
+**Bench finding, and the owner's change (2026-10-08): CHARGE_ONLY from BATTERY_WAIT.**
+- On the bench the gesture worked from Running but not from BATTERY_WAIT, as designed: the gesture was only armed from Running, before and after PWR-1. The owner's use case is a device that's already off, gets plugged in (booting into BATTERY_WAIT), and should then charge.
+- In BATTERY_WAIT the switch is off, so the battery is disconnected and any route to charging has to start with switch-on, which meant "run". Options were a quick on → off → on from BATTERY_WAIT (every normal start from there 1.5 s slower), switch-on from BATTERY_WAIT means CHARGE_ONLY, or no change.
+- **Owner chose: switch-on from BATTERY_WAIT means CHARGE_ONLY.** The normal state is battery power in the car, where the MCU only ever sees the switch on. A plugged-in, switched-off device is on a charger.
+- **New rule (`PowerPolicy`):** on USB, switch off waits (BATTERY_WAIT); switch on from there enters CHARGE_ONLY, except straight after CHARGE_ONLY, where off/on reboots into RUNNING (the way to run while plugged in). Unplugging USB in CHARGE_ONLY still reboots into RUNNING on battery.
+- **The 2 s gesture window is gone** (`kChargeOnlyWindowMs`, its `static_assert`, the config field and the timestamp): from Running on USB, off then on enters CHARGE_ONLY however long it was off. Before, an off longer than 2 s rebooted into Running.
+- The CHARGE_ONLY entry message is now `Power: switch on with USB - CHARGE_ONLY, charging with everything else off`.
+- The temporary switch-voltage logging used for the investigation is removed; `BatteryPort` is back to its committed state.
+- **Tests:** off then on from Running enters CHARGE_ONLY for 0.5 s, 1.95 s and 10 s offs; boot into the wait then on enters CHARGE_ONLY; an ON ghost in the wait does nothing; off/on from CHARGE_ONLY reboots into RUNNING (quick or not); USB removal from CHARGE_ONLY; the machine's BatteryWait and CHARGE_ONLY transitions and message text.
+
+**Verified 2026-10-08 (owner):** all the checks below pass on the nRF.
+
+**Checks, nRF:**
+- On battery, normal use is unchanged, and D shows `switch noise 0` (or a small number).
+- On USB, from Running: switch off goes to BATTERY_WAIT after about 0.5 s; switch on (after any delay) enters CHARGE_ONLY about 0.5 s later.
+- Plugged in with the switch off (boot into BATTERY_WAIT), then switch on: CHARGE_ONLY.
+- From CHARGE_ONLY: off/on reboots into RUNNING; unplugging USB reboots into RUNNING.
+- `C` resets `switch noise` to 0.
+
+#### Phase 2 item 6 (CLK-1): the nRF clock. Done (boot verified; battery run pending)
+
+**Findings:**
+- **New, and the most serious: the clock was used before it started.** `App::begin()` logged about six lines before `PlatformClock::begin()`. `Console::emit()` times its "wait at most 2 ms for room" loop with `nowUs()`, which on the nRF stands still until TIMER4 starts. A USB host holding the port open without reading, filling the 256-byte buffer during those lines, would have hung the boot (since REL-1, a watchdog reset loop for as long as the host stayed stuck). ESP32 unaffected: its timer runs from power-up.
+- **Accuracy (the review's point):** TIMER4 and the UART baud generators run from HFCLK. Nothing requested the crystal, so on battery they most likely ran on the internal RC oscillator (about ±1.5%). On USB the USB stack requests the crystal, which is why the 512 s bench run agreed to about 0.2%. On battery, RT, status-line Hz, `max gap` and IMU sample spacing drift by that much (harmless), and a 115200-baud UART on a clock 1.5% off is closer to the receiver's tolerance (unmeasured).
+- **Reentrancy (the review's other point):** `nowUs()`'s capture and `last`/`wraps` update aren't safe against a second task. Every caller was checked and runs on the loop task: the scheduler and jobs, Diagnostics, Console, BLE `send()`, and the GNSS PVT callback (inside `Gnss::poll()`). No BLE stack callback uses it.
+
+**Fix (owner approved after one simplification round):**
+- `PlatformClock::begin()` moved to the top of `App::begin()`, before the console (only register writes). The `Clock started` log line stays where it was.
+- New `PlatformClock::useCrystal()`, called once at the end of Starting, right after BLE begins. On the nRF it goes through the SoftDevice (`sd_clock_hfclk_request()`) when that's running, else starts HFXO directly (the `systemOff()` pattern). The SoftDevice then holds the crystal until a reset or System OFF. One call after the SoftDevice is up avoids depending on whether enabling it keeps an earlier app-started crystal. ESP32: returns true (its timer already runs from the 40 MHz crystal). Logs `Clock: crystal ✅/❌` on both boards.
+- Boot (GNSS detection and configuration) and the Fault states stay on whatever clock is running, as on battery today. The earlier PVT-pause ACK losses were on USB, where the crystal already ran, so they weren't this.
+- `nowUs()` documented as loop-only in `Clock.h`, with the caller list. No runtime check: thousands of calls a second, and making it fully safe would add code for a caller that doesn't exist.
+- Cost: about 0.25 mA for the crystal, negligible next to the GNSS.
+
+**Files:** `app/App.cpp`, `platform/Clock.h`, `platform/nrf52840/Clock.cpp`, `platform/esp32/Clock.cpp`.
+
+**Checks:** host suites pass; `App.cpp` and both `Clock.cpp` files are clean against their cores.
+
+**Verified 2026-10-08 (owner):** both boards boot normally with `Clock: crystal ✅`.
+
+**Still to verify:**
+- Both boards: the boot shows `Clock: crystal ✅` after the BLE line, and is otherwise unchanged. (Done.) On USB this only shows the request was accepted: USB already runs the crystal.
+- **nRF on battery, the real check:** about 10 minutes on battery with a fix, then plug in USB and type `D` straight away. `epochs ÷ 20` should match `RT` to within about a second, with `missed` near 0. (On the internal oscillator, 1.5% would be about 9 s over 10 minutes.) No new code needed: the D counters already compare GNSS time with the MCU clock.
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
 |---|---|
-| REL-1 | Hardware watchdog on both boards, fed from the loop; reset reason printed at boot. Also converts REL-3's nRF I2C hang into a reboot. Consider carrying the restart reason across the reset (a retention register) so the next boot logs e.g. `previous restart: GNSS epochs stopped`. |
+| REL-1 | **Done (boot verified)**, see Restructure progress → "Phase 2 item 3". Also converts REL-3's nRF I2C hang into a reboot. |
 | REL-2 | **Done**, see Restructure progress → "Phase 2, GNSS item 1" |
 | REL-4 | If enabling PVT fails, go to GnssFault. The liveness check catches any other "configured but silent" case. |
-| REL-7 | If `Bluefruit.begin()` fails, go to the fault state, not a blinking "advertising" LED |
-| PWR-1 | Accept switch-off only while USB is present; debounce switch-on out of BATTERY_WAIT |
-| CLK-1 | `sd_clock_hfclk_request()` once the SoftDevice is up (battery accuracy); document `nowUs()` as loop-only (nothing outside the loop calls it today) |
+| REL-7 | **Done (forced failure verified)**, see Restructure progress → "Phase 2 item 4". |
+| PWR-1 | **Done (bench verified)**, see Restructure progress → "Phase 2 item 5". |
+| CLK-1 | **Done (boot verified; battery run pending)**, see Restructure progress → "Phase 2 item 6". Also fixed the clock being used before it started. |
 
 **Field finding (2026-10-05), input to REL-2 and REL-4: a back-fed GNSS receiver.**
 
@@ -737,7 +874,7 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 
 | Finding | Planned fix |
 |---|---|
-| BUG-2 | **Also decides REL-4 (owner's option C):** a setting wrong in RAM → Fault `GnssConfigFailed`; right in RAM but not saved to flash → warning only. Use `Gnss::configured()` plumbing. Also read the RAM (effective) layer. Write all layers if RAM or flash differs. Keep the per-key ✅ log. **Note from REL-2:** `NAV_PVT_UART1` deliberately reads 0 in RAM during configuration (quiet-config pause), so it must be verified against flash only. |
+| BUG-2 | **Also decides REL-4 (owner's option C):** a setting wrong in RAM → Fault `GnssConfigFailed`; right in RAM but not saved to flash → warning only. Use `Gnss::configured()` plumbing: since REL-7 it's one line in Starting, `if (!gnss_.configured()) return machine_.started(FaultReason::GnssConfigFailed);`, plus the enum value and its message. Also read the RAM (effective) layer. Write all layers if RAM or flash differs. Keep the per-key ✅ log. **Note from REL-1:** every new library round trip (RAM reads, extra writes) needs a `Watchdog::feed()` before it, as the existing ones have. **Note from REL-2:** `NAV_PVT_UART1` deliberately reads 0 in RAM during configuration (quiet-config pause), so it must be verified against flash only. |
 | CPLX-6 | Deferred. Batch the transactions only if the extra reads make boot noticeably slower. |
 
 ### Phase 4: measure, then fix the structure
@@ -769,7 +906,9 @@ Hardware checks that decisions above depend on.
 
 | Check | Why it matters |
 |---|---|
-| **System OFF test** (temporarily raise `kBatteryCutoffV` and the warning thresholds): confirm entry into System OFF, the low current, and that **plugging in USB wakes the nRF** into a normal boot | HW-1's decline relies on USB wake. If USB does *not* wake it, a charger could raise the cell towards 4.2 V with P0.14 still HIGH. Then HW-1 flips to "leave `VBAT_ENABLE` LOW in System OFF" (~2.3 µA). |
+| **Battery run, then `D` (CLK-1):** about 10 minutes on battery with a fix, then plug in USB and type `D`. `epochs ÷ 20` should match `RT` to within about a second, `missed` near 0. Can be part of the weak-link BLE soak. | Confirms the crystal request works on battery, where USB isn't running it. |
+| **REL-1 restart reasons and the D `Reset:` line:** e.g. unplug the GNSS mid-run → `Reset: software (GNSS: epochs stopped)`. | The retained restart reason is only bench-tested through the forced hang so far. |
+| **System OFF test** (temporarily raise `kBatteryCutoffV` and the warning thresholds): confirm entry into System OFF, the low current, and that **plugging in USB wakes the nRF** into a normal boot (since REL-1, the boot's `Reset:` line should read `wake from System OFF (USB)`) | HW-1's decline relies on USB wake. If USB does *not* wake it, a charger could raise the cell towards 4.2 V with P0.14 still HIGH. Then HW-1 flips to "leave `VBAT_ENABLE` LOW in System OFF" (~2.3 µA). |
 
 ---
 

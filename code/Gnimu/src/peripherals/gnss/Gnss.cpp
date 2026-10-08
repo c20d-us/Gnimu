@@ -6,6 +6,7 @@
 #include "../../app/Config.h"
 #include "../../platform/Clock.h"
 #include "../../platform/GnssUart.h"
+#include "../../platform/Watchdog.h"
 
 namespace gnimu {
 
@@ -14,6 +15,13 @@ namespace {
 SFE_UBLOX_GNSS_SERIAL receiver;
 GnssEpoch latestEpoch;
 bool epochPending = false;
+
+// Every library call that waits for a reply feeds the watchdog first, so even
+// a receiver that answers nothing never lets it expire. The longest such call
+// is detection on a silent port: begin() tries three times, each waiting out
+// the full timeout, between tryBaud()'s 100 ms pauses.
+static_assert(3 * kUBLOXGNSSDefaultMaxWait + 1000 <= config::kWatchdogMs,
+              "watchdog shorter than one GNSS detection attempt plus margin");
 
 // A setting the receiver must hold, and its human name for the log line.
 struct KeyVal {
@@ -90,9 +98,11 @@ bool setAll(uint32_t key, uint16_t val) {
 constexpr int kFlashReadAttempts = 3;
 
 template <typename T> bool readFlash(uint32_t key, T *val) {
-  for (int attempt = 0; attempt < kFlashReadAttempts; attempt++)
+  for (int attempt = 0; attempt < kFlashReadAttempts; attempt++) {
+    Watchdog::feed();
     if (getFlash(key, val))
       return true;
+  }
   return false;
 }
 
@@ -104,6 +114,7 @@ bool Gnss::tryBaud(uint32_t baud) {
   log_->log("GNSS: trying %lu baud", static_cast<unsigned long>(baud));
   GnssUart::begin(baud);
   delay(100);
+  Watchdog::feed();
   if (receiver.begin(GnssUart::stream())) {
     log_->log("GNSS: detected at %lu baud ✅",
               static_cast<unsigned long>(baud));
@@ -122,16 +133,19 @@ bool Gnss::switchToTargetBaud() {
   // The result is ignored on purpose: the receiver switches baud before its
   // ACK goes out, so the library can't report success (its own note). The
   // reconnect at the new rate below is the real check.
+  Watchdog::feed();
   receiver.setSerialRate(config::kGnssBaud);
   delay(100);
   GnssUart::end();
   delay(100);
   GnssUart::begin(config::kGnssBaud);
   delay(100);
+  Watchdog::feed();
   if (!receiver.begin(GnssUart::stream())) {
     log_->log("GNSS: could not verify the new baud rate ❌");
     return false;
   }
+  Watchdog::feed();
   if (receiver.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT)) {
     log_->log("GNSS: new baud rate saved to flash ✅");
   } else {
@@ -171,6 +185,7 @@ bool Gnss::ensureVal(uint32_t key, T desired, const char *name) {
   }
   // Judged by the flash readback alone: a write whose ACK got lost can still
   // have landed, and the readback (retried) is the real test either way.
+  Watchdog::feed();
   setAll(key, desired);
   const bool verified = readFlash(key, &current) && current == desired;
   log_->log(verified ? "GNSS: %s=%u written to flash ⏬"
@@ -205,6 +220,7 @@ bool Gnss::configure() {
   bool paused = false;
   for (; attempt <= kPauseAttempts; attempt++) {
     if (attempt > 1) drainUart();
+    Watchdog::feed();
     paused = receiver.setVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 0, VAL_LAYER_RAM);
     if (paused) break;
   }
@@ -295,6 +311,7 @@ bool Gnss::configure() {
   // (above). The callback itself is local firmware state, so there's nothing
   // to read back and compare.
   log_->log("GNSS: Configuring PVT callback and auto PVT output");
+  Watchdog::feed();
   const bool pvtOk = receiver.setAutoPVTcallbackPtr(&onPvt, VAL_LAYER_RAM);
   if (pvtOk) {
     log_->log("GNSS: PVT callback and auto PVT output enabled ✅");

@@ -6,6 +6,7 @@
 #include "BleStats.h"
 #include "GnssEpoch.h"
 #include "ImuSample.h"
+#include "ResetReason.h"
 
 namespace gnimu {
 
@@ -18,6 +19,7 @@ namespace gnimu {
 // {};` zeroes everything and callers (and tests) set fields by name.
 struct DeviceStatus {
   uint64_t uptimeUs;
+  ResetRecord reset;  // how this boot started; fixed for the whole run
   struct Gnss {
     const EpochTracker* epochs;  // always set
     const GnssEpoch* latest;     // nullptr until the first epoch
@@ -35,6 +37,7 @@ struct DeviceStatus {
   struct Power {
     const BatteryStatus* battery;  // nullptr on boards without one (the ESP32)
     bool usbPresent;
+    uint32_t switchNoise;  // switch readings rejected as noise (battery boards)
   } power;
   uint32_t consoleDropped;  // console bytes lost to a host that stopped reading
 };

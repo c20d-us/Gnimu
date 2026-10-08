@@ -24,6 +24,19 @@ void PlatformClock::begin() {
   NRF_TIMER4->TASKS_START = 1;
 }
 
+// TIMER4 and the UART baud generators run from HFCLK, which is the internal RC
+// oscillator (about +-1.5%) unless something asks for the crystal. USB does,
+// so on USB it's already running; on battery nothing else would. With the
+// SoftDevice enabled, CLOCK is its peripheral and the request goes through
+// it; it then holds the crystal until a reset or System OFF.
+bool PlatformClock::useCrystal() {
+  uint8_t sdEnabled = 0;
+  (void)sd_softdevice_is_enabled(&sdEnabled);
+  if (sdEnabled) return sd_clock_hfclk_request() == NRF_SUCCESS;
+  NRF_CLOCK->TASKS_HFCLKSTART = 1;
+  return true;
+}
+
 uint64_t PlatformClock::nowUs() {
   static uint32_t last = 0;
   static uint32_t wraps = 0;

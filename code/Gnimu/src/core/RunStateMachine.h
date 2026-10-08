@@ -8,14 +8,17 @@
 
 namespace gnimu {
 
-// Starting: GNSS bring-up at boot, before the scheduler runs. Running: normal
-// operation. Fault: fatal at boot (no receiver) - nothing else starts, the
-// console stays up. BatteryWait: switch off while USB holds the MCU up.
-// ChargeOnly: charging with everything else off (NG's switch gesture). A
+// Starting: peripheral bring-up at boot, before the scheduler runs. Running:
+// normal operation. Fault: fatal (no receiver, no data, no BLE) - everything
+// else stops, the console stays up. BatteryWait: switch off while USB holds the MCU up.
+// ChargeOnly: charging with everything else off (switch on with USB). A
 // reset or System OFF leaves the run altogether rather than being a state.
 enum class RunState : uint8_t { Starting, Running, Fault, BatteryWait, ChargeOnly };
-enum class FaultReason : uint8_t { None, GnssMissing, GnssNoData };
+enum class FaultReason : uint8_t { None, GnssMissing, GnssNoData, BleFailed };
 enum class RestartReason : uint8_t { SwitchOn, UsbRemoved, GnssSilent };
+// One past the last RestartReason; update it when adding one. Bounds the
+// reason kept across a restart (core/ResetReason.h).
+constexpr uint8_t kRestartReasonCount = static_cast<uint8_t>(RestartReason::GnssSilent) + 1;
 
 // What an event leads to. App carries it out: entering a state runs that
 // state's fixed entry effects; Restart and SystemOff never return.
@@ -57,11 +60,12 @@ class RunStateMachine {
     }
   }
 
-  // The result of GNSS bring-up. The only way into Running.
-  Transition gnssStarted(bool detected) {
+  // The result of peripheral bring-up: `failure` is the first thing that
+  // failed, or None if everything started. The only way into Running.
+  Transition started(FaultReason failure) {
     if (state_ != RunState::Starting) return Transition::stay();
-    if (detected) return enter(RunState::Running);
-    fault_ = FaultReason::GnssMissing;
+    if (failure == FaultReason::None) return enter(RunState::Running);
+    fault_ = failure;
     return enter(RunState::Fault);
   }
 
@@ -81,7 +85,7 @@ class RunStateMachine {
   }
 
   // The power job's inputs. The policy is updated on every call, whatever it
-  // returns, so its debounce and gesture timing keep running.
+  // returns, so its debounce keeps running.
   Transition power(uint32_t nowMs, bool switchOn, bool usbPresent, bool cutoffRequested) {
     if (!c_.hasBattery) return Transition::stay();
     const PowerAction a = policy_.update(nowMs, switchOn, usbPresent, cutoffRequested);
@@ -108,6 +112,9 @@ class RunStateMachine {
 
   RunState state() const { return state_; }
   FaultReason fault() const { return fault_; }
+  // Switch readings the power policy rejected as noise (D report); C clears.
+  uint32_t switchNoise() const { return policy_.switchNoise(); }
+  void clearSwitchNoise() { policy_.clearSwitchNoise(); }
 
  private:
   Transition enter(RunState s) {
@@ -177,7 +184,7 @@ inline const char* stateName(RunState s) {
     case RunState::Running:
       return "Running";
     case RunState::Fault:
-      return "GNSS fault - console only";
+      return "Fault - console only";
     case RunState::BatteryWait:
       return "BATTERY_WAIT - waiting for switch on";
     case RunState::ChargeOnly:
@@ -192,6 +199,8 @@ inline const char* faultMessage(FaultReason r) {
       return "GNSS not detected at any standard baud rate. Check wiring. Nothing else will start.";
     case FaultReason::GnssNoData:
       return "GNSS detected but sending no data. Check its power supply. Everything else stopped.";
+    case FaultReason::BleFailed:
+      return "BLE failed to start. Power-cycle to retry. Everything else stopped.";
     case FaultReason::None:
       break;
   }
@@ -204,7 +213,7 @@ inline const char* entryMessage(RunState s) {
     case RunState::BatteryWait:
       return "Power: switch off on USB - BATTERY_WAIT, waiting for switch on";
     case RunState::ChargeOnly:
-      return "Power: quick switch cycle - CHARGE_ONLY, charging with everything else off";
+      return "Power: switch on with USB - CHARGE_ONLY, charging with everything else off";
     case RunState::Starting:
     case RunState::Running:
     case RunState::Fault:

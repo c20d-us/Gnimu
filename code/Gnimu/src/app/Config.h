@@ -46,6 +46,10 @@ constexpr uint32_t kGnssSilenceMs = 2000;
 // Includes the per-epoch BLE send, which occasionally takes the pass just past
 // 3 ms while streaming (measured max 3.2 ms); harmless against the RX ring.
 constexpr uint32_t kGnssDrainBudgetUs = 4000;
+// Hardware watchdog: fed every loop pass, and between the boot steps and the
+// GNSS library's round trips. The longest of those, a detection attempt on a
+// silent port (three 1.1 s tries), is checked against it in Gnss.cpp.
+constexpr uint32_t kWatchdogMs = 5000;
 constexpr uint32_t kConsolePeriodUs = 10000;
 constexpr uint32_t kConsoleBudgetUs = 2000;
 // Longest one console line waits for room in the output buffer before it's
@@ -63,12 +67,14 @@ constexpr uint32_t kBleBudgetUs = 2000;
 constexpr int kBleTxPowerDbm = -12;
 
 // Status LED. core/StatusLed.h decides the patterns; these set their timing.
-constexpr uint32_t kLedPeriodUs = 25000;  // fine enough to render the 10 Hz fault blink cleanly
+constexpr uint32_t kLedPeriodUs = 25000;  // fine enough to render the 5 Hz fault blink cleanly
 constexpr uint32_t kLedBudgetUs = 500;
 // The standard blink - advertising, battery warning/critical, charging -
 // Classic's 1 s on, 1 s off.
 constexpr uint32_t kLedBlinkHalfMs = 1000;
-constexpr uint32_t kLedFaultHalfMs = 50;          // 10 Hz
+// Fault: 5 Hz. Urgent, and twice BATTERY_WAIT's rate so the two can't be
+// confused; 10 Hz looked a bit too fast on the bench.
+constexpr uint32_t kLedFaultHalfMs = 100;
 // BATTERY_WAIT: amber, fast enough to read as "not running" next to the 1 s
 // battery-warning amber. Only ever on USB power, so it costs nothing.
 constexpr uint32_t kLedBatteryWaitHalfMs = 200;
@@ -93,11 +99,9 @@ constexpr uint32_t kBatteryChargeFullDebounceMs = 5000;
 // ADC read; 50 ms is Classic's switch poll rate.
 constexpr uint32_t kPowerPeriodUs = 50000;
 constexpr uint32_t kPowerBudgetUs = 1000;
-// A switch OFF must last this long to count (noise, EMI, a brushed switch).
-constexpr uint32_t kSwitchOffDebounceMs = 500;
-// Back ON within this of first going OFF, while running on USB, enters
-// CHARGE_ONLY (NG's gesture); longer reboots into RUNNING.
-constexpr uint32_t kChargeOnlyWindowMs = 2000;
+// A switch change, OFF or ON, must last this long to count (noise, EMI, a
+// brushed switch).
+constexpr uint32_t kSwitchDebounceMs = 500;
 
 // Periodic status line cadence ('L' toggle or an N+Enter report count); fired
 // from the console job's own tick, not a separate scheduler job.
@@ -214,10 +218,8 @@ static_assert(kBatterySamplesPerRun >= 1 &&
 static_assert(kBatteryCutoffDebounceMs >= kBatteryRunIntervalMs,
               "cutoff debounce shorter than one sampling run");
 static_assert(kBatteryEmaAlpha > 0.0f && kBatteryEmaAlpha <= 1.0f, "alpha must be in (0, 1]");
-static_assert(kSwitchOffDebounceMs >= 2 * (kPowerPeriodUs / 1000),
+static_assert(kSwitchDebounceMs >= 2 * (kPowerPeriodUs / 1000),
               "switch debounce must span more than one switch reading");
-static_assert(kChargeOnlyWindowMs > kSwitchOffDebounceMs,
-              "the CHARGE_ONLY window must be longer than the switch-off debounce, or the gesture is impossible");
 static_assert(kLedPeriodUs / 1000 <= kLedFaultHalfMs,
               "LED job must run at least once per fault half-period or the blink aliases");
 
