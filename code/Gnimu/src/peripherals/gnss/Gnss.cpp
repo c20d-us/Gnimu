@@ -119,6 +119,9 @@ bool Gnss::tryBaud(uint32_t baud) {
 bool Gnss::switchToTargetBaud() {
   log_->log("GNSS: switching to %lu baud",
             static_cast<unsigned long>(config::kGnssBaud));
+  // The result is ignored on purpose: the receiver switches baud before its
+  // ACK goes out, so the library can't report success (its own note). The
+  // reconnect at the new rate below is the real check.
   receiver.setSerialRate(config::kGnssBaud);
   delay(100);
   GnssUart::end();
@@ -166,8 +169,10 @@ bool Gnss::ensureVal(uint32_t key, T desired, const char *name) {
     log_->log("GNSS: %s=%u ✅", name, static_cast<unsigned>(desired));
     return true;
   }
-  const bool wrote = setAll(key, desired);
-  const bool verified = wrote && readFlash(key, &current) && current == desired;
+  // Judged by the flash readback alone: a write whose ACK got lost can still
+  // have landed, and the readback (retried) is the real test either way.
+  setAll(key, desired);
+  const bool verified = readFlash(key, &current) && current == desired;
   log_->log(verified ? "GNSS: %s=%u written to flash ⏬"
                       : "GNSS: %s=%u write to flash failed - value not set ❌",
             name, static_cast<unsigned>(desired));
@@ -182,10 +187,32 @@ bool Gnss::ensureVal16(uint32_t key, uint16_t desired, const char *name) {
   return ensureVal<uint16_t>(key, desired, name);
 }
 
-void Gnss::configure() {
+bool Gnss::configure() {
   // Let the receiver settle and then clear any bytes left from the baud
   // handshake so the first configuration reads/ACKs parse cleanly.
   delay(500);
+  drainUart();
+
+  // NAV-PVT output is stored on in flash (below), so a receiver that resets
+  // mid-session resumes on its own - but that also starts it at power-up.
+  // Paused in RAM only for the reads and writes below, so they run on a quiet
+  // line; the callback registration at the end turns it back on.
+  // This first write is the one that competes with the traffic it stops, so
+  // its ACK can be lost among PVT frames; retried, each try on a freshly
+  // drained line. Repeating a 0 is harmless if an earlier try took.
+  constexpr int kPauseAttempts = 3;
+  int attempt = 1;
+  bool paused = false;
+  for (; attempt <= kPauseAttempts; attempt++) {
+    if (attempt > 1) drainUart();
+    paused = receiver.setVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 0, VAL_LAYER_RAM);
+    if (paused) break;
+  }
+  if (paused && attempt > 1) {
+    log_->log("GNSS: NAV-PVT output paused for configuration \xE2\x9C\x85 (attempt %d)", attempt);
+  } else {
+    log_->log("GNSS: NAV-PVT output paused for configuration %s", paused ? "\xE2\x9C\x85" : "\xE2\x9D\x8C");
+  }
   drainUart();
 
   bool selected[4] = {};
@@ -255,27 +282,34 @@ void Gnss::configure() {
   allOk &= ensureVal16(UBLOX_CFG_RATE_NAV, 1, "nav ratio"); // always 1
   allOk &= ensureVal16(UBLOX_CFG_RATE_MEAS, 1000 / config::kGnssNavRateHz,
                        "nav rate");
+  // Last: on a first-ever write this also turns output on in RAM (the write
+  // goes to every layer), so nothing after it competes with the traffic.
+  allOk &= ensureVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 1, "NAV-PVT output rate");
   if (!allOk)
     log_->log(
         "GNSS: configuration did not complete successfully - performance may "
         "be degraded ❌");
 
-  // Callback is registered last, once the receiver is fully configured. This
-  // also turns on automatic PVT output. This is local firmware state, not a
-  // value stored on the receiver, so there's nothing to read back and compare.
+  // Callback is registered last, once the receiver is fully configured. It
+  // also turns PVT output back on - in RAM only, since flash already holds it
+  // (above). The callback itself is local firmware state, so there's nothing
+  // to read back and compare.
   log_->log("GNSS: Configuring PVT callback and auto PVT output");
-  if (receiver.setAutoPVTcallbackPtr(&onPvt)) {
+  const bool pvtOk = receiver.setAutoPVTcallbackPtr(&onPvt, VAL_LAYER_RAM);
+  if (pvtOk) {
     log_->log("GNSS: PVT callback and auto PVT output enabled ✅");
   } else {
     log_->log("GNSS: PVT callback and auto PVT output not enabled ❌");
   }
+  return allOk && pvtOk;
 }
 
 bool Gnss::begin(Console &log) {
   log_ = &log;
+  configured_ = false;
   if (!connectAtBaud())
     return false;
-  configure();
+  configured_ = configure();
   return true;
 }
 

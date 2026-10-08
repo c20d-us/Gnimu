@@ -90,6 +90,15 @@ static void testChargeFullNeedsInactiveChargerAndPlausibleVoltage() {
   assert(!low.status().chargeFull);
 }
 
+// "Charging" is the CHG pin, and only with USB present.
+static void testIsChargingNeedsThePinAndUsb() {
+  BatteryStatus b;
+  assert(!isCharging(b, true));
+  b.chargerActive = true;
+  assert(isCharging(b, true));
+  assert(!isCharging(b, false));
+}
+
 int main() {
   testFirstRunStartsImmediatelyAndUsesThePeak();
   testRunsArePacedByTheInterval();
@@ -97,6 +106,7 @@ int main() {
   testPercentIsAStraightLine();
   testCutoffNeedsFiveSecondsOfLowPeaks();
   testChargeFullNeedsInactiveChargerAndPlausibleVoltage();
+  testIsChargingNeedsThePinAndUsb();
   puts("batterymonitor: all tests passed");
   return 0;
 }

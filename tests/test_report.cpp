@@ -27,7 +27,15 @@ static void testReport() {
   latest.pDop = 105;
 
   char buf[1024];
-  ReportView v{jobs, stats, 1, 12345, 355400000, &epochs, &latest, true, {-12, 3, 998}, {5, -2, 1}, true, 1234, true, {42, 5, 2, 850, 7, 3}, nullptr, false, 0};
+  ReportView v{jobs, stats, 1, 12345, 355400000, &epochs, &latest, true, {-12, 3, 998}, {5, -2, 1}, true, 1234, true, {}, nullptr, false, 0};
+  // By field: BleStats has default member values, so it isn't an aggregate in
+  // C++11 (the nRF core's standard) and can't take a positional list.
+  v.ble.sent = 42;
+  v.ble.failed = 5;
+  v.ble.refused = 2;
+  v.ble.maxSendUs = 850;
+  v.ble.rxBytes = 7;
+  v.ble.rxDropped = 3;
   const size_t n = formatReport(buf, sizeof(buf), v);
   assert(n == strlen(buf));
   assert(strstr(buf, "| job  | runs | skipped | overruns | max \xCE\xBCs | mean \xCE\xBCs |\n"));

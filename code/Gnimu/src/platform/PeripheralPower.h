@@ -8,9 +8,9 @@ namespace gnimu {
 struct PeripheralPower {
   // Every peripheral power control to its safe off state, through plain pin
   // drives only - no peripheral library - so it's safe as the very first
-  // thing at boot. False where nothing is switchable, so the boot log only
-  // claims what actually happened.
-  static bool holdAllOff();
+  // thing at boot. A no-op where nothing is switchable
+  // (board::kHasSwitchedPower false).
+  static void holdAllOff();
   // GNSS rail on, ahead of detection.
   static void gnssRailOn();
   // GNSS rail off. The GNSS UART must already be closed: its TX pin is taken

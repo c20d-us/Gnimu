@@ -1,10 +1,9 @@
 #pragma once
 
 #include "../core/BatteryMonitor.h"
-#include "../core/GnssEpoch.h"
-#include "../core/GnssSpeedGate.h"
-#include "../core/PowerPolicy.h"
+#include "../core/GnssFeed.h"
 #include "../core/RateTracker.h"
+#include "../core/RunStateMachine.h"
 #include "../core/Scheduler.h"
 #include "../core/StatusLed.h"
 #include "../platform/Clock.h"
@@ -13,6 +12,7 @@
 #include "../peripherals/imu/ImuDevice.h"
 #include "Config.h"
 #include "Console.h"
+#include "protocol/Protocol.h"
 
 namespace gnimu {
 
@@ -23,41 +23,47 @@ class App {
   void tick();
 
  private:
-  // Running: normal operation. GnssFault: no receiver at boot - fatal, so
-  // nothing else starts. BatteryWait: switch off while USB holds the MCU up.
-  // ChargeOnly: charging with everything else off (NG's switch gesture). In
-  // all but Running only the console, battery and power jobs run. System OFF
-  // is a one-way exit, not a state.
-  enum class RunState : uint8_t { Running, GnssFault, BatteryWait, ChargeOnly };
-  // Indices into jobs_, in table (priority) order.
+  // Job ids: indices into kJobSpecs and the scheduler, in priority order.
   enum : size_t { kGnssJob, kImuJob, kBatteryJob, kPowerJob, kBleJob, kLedJob, kConsoleJob, kJobs };
 
-  static void gnssJob(void* self);
-  static void imuJob(void* self);
-  static void batteryJob(void* self);
-  static void powerJob(void* self);
-  static void bleJob(void* self);
-  static void ledJob(void* self);
-  static void consoleJob(void* self);
-  // Encodes one epoch in the selected protocol and hands it to BLE.
-  void sendTelemetry(const GnssEpoch& epoch);
-  // Bit 7 charging, bits 0-6 percent; Classic's fixed 100 without a battery.
-  uint8_t raceBoxBatteryByte() const;
+  void gnssJob();
+  void imuJob();
+  void batteryJob();
+  void powerJob();
+  void bleJob();
+  void ledJob();
+  void consoleJob();
+  // One line per job, each naming its id; the constructor checks the table at
+  // compile time (id order, names, positive periods).
+  static constexpr JobSpec<App> kJobSpecs[kJobs] = {
+      {kGnssJob, "gnss", config::kGnssDrainPeriodUs, config::kGnssDrainBudgetUs, &App::gnssJob},
+      {kImuJob, "imu", config::kImuSamplePeriodUs, config::kImuSampleBudgetUs, &App::imuJob},
+      {kBatteryJob, "battery", config::kBatteryPeriodUs, config::kBatteryBudgetUs, &App::batteryJob},
+      {kPowerJob, "power", config::kPowerPeriodUs, config::kPowerBudgetUs, &App::powerJob},
+      {kBleJob, "ble", config::kBlePeriodUs, config::kBleBudgetUs, &App::bleJob},
+      {kLedJob, "led", config::kLedPeriodUs, config::kLedBudgetUs, &App::ledJob},
+      {kConsoleJob, "console", config::kConsolePeriodUs, config::kConsoleBudgetUs, &App::consoleJob},
+  };
   // One blocking sampling run (~50 ms) at boot, before the GNSS starts.
   void primeBattery();
-  const BatteryStatus* batteryStatus() const { return haveBattery_ ? &battery_.status() : nullptr; }
-  // Applies a state's effects - which peripherals start, which jobs run. The
-  // one place a state's side effects live, so later transitions extend this
-  // rather than scattering begin/end calls.
-  void enterState(RunState s);
-  // GNSS, IMU and BLE off in hardware-safe order, their jobs disabled.
-  // Idempotent: safe when nothing was started (a boot straight into waiting).
+  // nullptr on boards without a battery.
+  const BatteryStatus* batteryStatus() const;
+  // Carries out a state-machine Transition: entering a state sets its jobs and
+  // runs its entry effects, following Starting's GNSS result on into Running
+  // or Fault. Restart and SystemOff don't return.
+  void apply(Transition t);
+  // One state's fixed entry effects - the only place peripherals start or
+  // stop. Returns the follow-up transition (Starting reports the GNSS
+  // result); Stay for the others.
+  Transition enter(RunState s);
+  void setJobs(const JobSet& j);
+  // GNSS, IMU and BLE off in hardware-safe order. Idempotent: safe when
+  // nothing was started (a boot straight into waiting).
   void stopPeripherals();
   // Back to RUNNING always goes through a fresh boot (NG's choice): it reruns
   // the verified bring-up instead of restarting peripherals in place.
   [[noreturn]] void restart(const char* why);
   [[noreturn]] void enterSystemOff();
-  const char* stateName() const;
   void clearStats();
   void printBuild();
   void printDeviceId();
@@ -72,25 +78,20 @@ class App {
   // report and the status line so the conversion lives in exactly one place.
   static void toDisplayUnits(const ImuSample& imu, int32_t accelMg[3], int32_t gyroCdegS[3]);
 
-  Job jobs_[kJobs];
+  MemberJobs<App, kJobs> jobs_;
   Scheduler<kJobs, PlatformClock> scheduler_;
   Gnss gnss_;
   ImuDevice imu_;
   BleTransport ble_;
   Console console_;
   char deviceId_[11] = {};  // 10 digits; also the BLE name suffix and DIS serial
-  EpochTracker epochs_;
-  GnssSpeedGate speedGate_;
+  GnssFeed feed_;
+  Protocol protocol_;
   RateTracker gnssRate_;  // status line: epochs/s
   RateTracker bleRate_;   // status line: packets sent/s
   StatusLed statusLed_;
   BatteryMonitor battery_;
-  PowerPolicy policy_;
-  GnssEpoch latest_;
-  RunState state_ = RunState::Running;
-  bool switchedPower_ = false;  // this board has peripheral power to switch (nRF)
-  bool haveBattery_ = false;    // this board has a battery to monitor (nRF)
-  bool haveEpoch_ = false;
+  RunStateMachine machine_;
   uint32_t loops_ = 0;
   // -1 = continuous (until 'L' or a 0-count stops it), 0 = off, >0 = reports
   // remaining before it auto-stops.

@@ -13,8 +13,12 @@ namespace gnimu {
 class Gnss {
 public:
   // Detects and configures the receiver, logging each step to `log`. Returns
-  // false if the receiver was not found at any baud rate.
+  // false if the receiver was not found at any baud rate; a found receiver
+  // returns true even if configuration failed (see configured()).
   bool begin(Console &log);
+  // Whether the last begin() verified every setting and enabled PVT output.
+  // Logged today; Phase 3 decides what a failure means once RAM is verified.
+  bool configured() const { return configured_; }
   // Drains the UART and parses; call at least every drain period.
   void poll();
   // Returns true and fills `out` once per new epoch.
@@ -27,7 +31,8 @@ private:
   bool tryBaud(uint32_t baud);
   bool switchToTargetBaud();
   bool connectAtBaud();
-  void configure();
+  // True when every setting verified and PVT output was enabled.
+  bool configure();
   // Reads the key from the FLASH layer and logs one line either way: that it
   // already matched `desired`, or that it had to be written (to VAL_LAYER_ALL)
   // and read back from flash to confirm. Flash persistence means the write
@@ -41,6 +46,7 @@ private:
   bool ensureVal16(uint32_t key, uint16_t desired, const char *name);
 
   Console *log_ = nullptr;
+  bool configured_ = false;
 };
 
 } // namespace gnimu

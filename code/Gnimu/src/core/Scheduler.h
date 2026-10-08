@@ -26,7 +26,8 @@ struct Job {
 // sleeps: tick() returns the next deadline and the caller decides how to wait.
 // Every job starts enabled; the app disables the ones its current state
 // doesn't run. At least one job must stay enabled. Every periodUs must be
-// positive (the skipped count divides by it); Config.h asserts the app's.
+// positive (the skipped count divides by it); jobSpecsValid() below checks a
+// JobSpec table for that at compile time.
 template <size_t N, class Clock>
 class Scheduler {
  public:
@@ -93,6 +94,60 @@ class Scheduler {
   uint64_t nextDue_[N] = {};
   bool enabled_[N];
   JobStats stats_[N] = {};
+};
+
+// A job declared against a member function of T. Entries carry their own id
+// so a table can be checked, at compile time, to sit in id order.
+template <class T>
+struct JobSpec {
+  size_t id;  // must equal the entry's position in its table
+  const char* name;
+  uint32_t periodUs;
+  uint32_t budgetUs;
+  void (T::*run)();
+};
+
+// True when every entry sits at its own id and has a name and a positive
+// period (tick() divides by it). One return, recursive: the nRF core builds as
+// C++11. `run` isn't checked: GCC 9 (the nRF toolchain) can't compare a
+// member-function pointer in a constant expression.
+template <class T, size_t N>
+constexpr bool jobSpecsValid(const JobSpec<T> (&s)[N], size_t i = 0) {
+  return i == N || (s[i].id == i && s[i].name != nullptr && s[i].periodUs > 0 &&
+                    jobSpecsValid(s, i + 1));
+}
+
+// Binds a JobSpec table to one object: builds the scheduler's Job table and
+// routes each run to the right member function. Not copyable - each Job's
+// context points into this object.
+template <class T, size_t N>
+class MemberJobs {
+ public:
+  using Table = Job[N];
+
+  MemberJobs(T* self, const JobSpec<T> (&specs)[N]) {
+    for (size_t i = 0; i < N; i++) {
+      bindings_[i] = {self, specs[i].run};
+      jobs_[i] = {specs[i].name, specs[i].periodUs, specs[i].budgetUs, &dispatch, &bindings_[i]};
+    }
+  }
+  MemberJobs(const MemberJobs&) = delete;
+  MemberJobs& operator=(const MemberJobs&) = delete;
+
+  const Table& table() const { return jobs_; }
+
+ private:
+  struct Binding {
+    T* self;
+    void (T::*run)();
+  };
+  static void dispatch(void* ctx) {
+    Binding* b = static_cast<Binding*>(ctx);
+    (b->self->*b->run)();
+  }
+
+  Binding bindings_[N];
+  Job jobs_[N];
 };
 
 }  // namespace gnimu

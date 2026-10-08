@@ -62,9 +62,7 @@ inline size_t formatStatus(char *buf, size_t cap, const StatusView &v) {
     // Volts to hundredths, integer-only like everything else here.
     const unsigned long centiV =
         static_cast<unsigned long>(v.battery->voltage * 100.0f + 0.5f);
-    // The charger also reads active only with USB present, but the explicit
-    // check keeps a floating status line from ever claiming a charge.
-    const bool charging = v.usbPresent && v.battery->chargerActive;
+    const bool charging = isCharging(*v.battery, v.usbPresent);
     o.put("Batt: %lu.%02luV %u%%%s | ", centiV / 100, centiV % 100,
           static_cast<unsigned>(v.battery->percent),
           charging ? " \xE2\x9A\xA1" : "");

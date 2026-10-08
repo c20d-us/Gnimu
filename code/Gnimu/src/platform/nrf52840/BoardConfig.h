@@ -5,6 +5,11 @@
 namespace gnimu {
 namespace board {
 
+// What this board has, fixed at compile time: a LiPo with charger and slide
+// switch, and switched power for the GNSS rail and the IMU.
+constexpr bool kHasBattery = true;
+constexpr bool kHasSwitchedPower = true;
+
 // Drives HIGH to power the onboard LSM6DS3TR-C. Defined identically in every
 // XIAO nRF52840 variant.h (even ones without the chip populated), so this
 // compiles the same everywhere; only Sense/Sense Plus actually have the chip.

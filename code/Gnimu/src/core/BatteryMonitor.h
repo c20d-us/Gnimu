@@ -25,9 +25,15 @@ struct BatteryStatus {
   bool warning = false;
   bool critical = false;
   bool cutoffRequested = false;
-  bool chargerActive = false;
+  bool chargerActive = false;  // the charger's CHG pin, as last read
   bool chargeFull = false;
 };
+
+// The one definition of "charging" for everything shown or sent: the CHG pin
+// says the charger is charging, and USB is present. The charger can't charge
+// without USB, so the USB check only guards against a floating or noisy pin
+// on battery ever claiming a charge.
+inline bool isCharging(const BatteryStatus& b, bool usbPresent) { return usbPresent && b.chargerActive; }
 
 // Classic's g_battery sampler, as NG ported it. Each run keeps the PEAK of
 // its readings: load sag (GNSS acquisition current, the TPS) only ever pulls

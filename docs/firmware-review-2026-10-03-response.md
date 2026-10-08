@@ -2,7 +2,7 @@
 
 Tracks what is being done about each finding in [firmware-review-2026-10-03.md](firmware-review-2026-10-03.md): the decision, the reasoning, and, once it is built, what changed and how it was verified. Finding IDs match the review.
 
-**Bench status (2026-10-04):** BUG-1, BUG-3, REL-5 (LED), MIN-6, the console item, CPLX-4, MIN-1, MIN-2 and MIN-3 have compiled and passed bench checks (both boards; MIN-3 is nRF only). HW-1 was declined (comments only).
+**Bench status (2026-10-04):** BUG-1, BUG-3, REL-5 (LED), MIN-6, the console item, CPLX-4, MIN-1, MIN-2, MIN-3, MIN-4 and the powerJob breaks have compiled and passed bench checks (both boards; MIN-3 is nRF only). TEST-2 passes in CI. **Phase 1 complete.** HW-1 was declined (comments only).
 
 **Process:** each finding is taken one at a time. The finding and a proposed fix are described, the owner confirms or adjusts it, and only then is the code changed. Nothing here is committed until the owner commits it.
 
@@ -271,7 +271,7 @@ Confirmed as stated:
 
 **Verified 2026-10-04:** nRF boot shows `IMU: LSM6DS3TR-C detected ✅` and `IMU: configured, 4g 500deg/s ✅`, so the readback matched `4B 44 44` on hardware.
 
-### MIN-4 (P3): table header width counted in bytes. Done (unverified)
+### MIN-4 (P3): table header width counted in bytes. Done
 
 **Finding confirmed:**
 - `Out::left()`/`right()` in `core/TextOut.h` padded text cells by `strlen()`. `μ` is 2 bytes, so `"max μs"` and `"mean μs"` measured one byte too wide.
@@ -297,7 +297,7 @@ Confirmed as stated:
 
 **To verify:** none on hardware. The table renders the same until a job takes ≥ 1 s.
 
-### powerJob fall-through (P3, from MIN section). Done (unverified)
+### powerJob fall-through (P3, from MIN section). Done
 
 **Finding confirmed:**
 - `App::powerJob` had no `break` after `restart()` (×2) or `enterSystemOff()`. It relied on their `[[noreturn]]` to avoid falling through.
@@ -308,9 +308,9 @@ Confirmed as stated:
 
 **Files:** `app/App.cpp`.
 
-**To verify:** both boards compile.
+**Verified 2026-10-04:** both boards build, flash and boot.
 
-### TEST-2 (P3): no sanitizers in host tests. Done (unverified in CI)
+### TEST-2 (P3): no sanitizers in host tests. Done
 
 **Finding confirmed:** `tests/run.sh` built each test once at `-O1` without sanitizers.
 
@@ -328,13 +328,13 @@ Confirmed as stated:
 
 **Files:** `tests/run.sh`.
 
-**To verify:** local run passes (exit 0). The first CI run on the Ubuntu runner (gcc, where ASan also enables leak checking) should pass too.
+**Verified 2026-10-04:** local run passes, and CI's `host-tests` job passes on the Ubuntu runner (gcc, with ASan leak checking).
 
 ---
 
 ## Remaining plan
 
-### Phase 1: small, low-risk fixes (complete; MIN-4, powerJob and TEST-2 awaiting build/CI confirmation)
+### Phase 1: small, low-risk fixes (complete, all verified)
 
 | Finding | Status | Planned fix |
 |---|---|---|
@@ -348,9 +348,9 @@ Confirmed as stated:
 | MIN-1 | Done | See above |
 | MIN-2 | Done | See above |
 | MIN-3 | Done | See above (now verifies all three control registers) |
-| MIN-4 | Done (unverified) | See above |
-| powerJob | Done (unverified) | See above |
-| TEST-2 | Done (unverified in CI) | See above |
+| MIN-4 | Done | See above |
+| powerJob | Done | See above |
+| TEST-2 | Done | See above |
 
 ### Between Phases 1 and 2: restructure App.cpp (proposed, to be discussed in detail)
 
@@ -376,22 +376,274 @@ Additional parts of the same restructure (all five accepted by the owner for the
 
 Considered and left out: templating every module on its hardware types for host testing (the state machine is where tests pay off), and splitting `Config.h` by module (reasonable, separate effort).
 
+### Restructure progress
+
+**Order changed (owner, 2026-10-05), after the back-fed GNSS finding:** R0–R3 done → **R6** (GnssFeed + protocol module) → **Phase 2's GNSS items** (REL-2 liveness with the restart-or-fault refinement, REL-4) → **R4, R5** (Diagnostics move, status snapshot) → the rest of Phase 2. R6 doesn't depend on R4/R5, and this fixes the user-visible "healthy but silent" failure sooner, with the liveness check written once in its final home.
+
+#### R0: host tests build as C++11. Done
+
+**Why:** the Seeed nRF core compiles with `-std=gnu++11`, but host tests used `-std=c++17`, so C++14-and-later code in `core/` would only fail in a firmware build.
+
+**Change:**
+- `tests/run.sh` uses `-std=gnu++11` for both passes.
+- `test_report.cpp` sets `BleStats` fields by name. A struct with default member values isn't an aggregate in C++11, so the positional `{…}` was the one C++14-only construct found.
+
+**Verified:** all 17 suites pass, plain and sanitized.
+
+#### R1: member-function jobs and a compile-time job table. Done
+
+**Change:**
+- `core/Scheduler.h` adds:
+  - `JobSpec<T>` (`{id, name, periodUs, budgetUs, void (T::*run)()}`)
+  - `jobSpecsValid()`, a recursive `constexpr` check that every entry sits at its id with a name and a positive period
+  - `MemberJobs<T, N>`, which builds the `Job[]` table and dispatches each run to its member function; non-copyable
+- App's seven jobs are now ordinary member functions (bodies unchanged apart from dropping `app->`), declared in `App::kJobSpecs[kJobs]`, one line per job.
+- The check runs as a `static_assert` in App's constructor: GCC rejects it in the class body, where App is incomplete.
+- MIN-2's hand-maintained period assert in `Config.h` is removed, since the table check covers it.
+- The boot log's job lines read from the same table.
+
+**Toolchain findings:**
+- Checked with the boards' own compilers (arm-none-eabi-g++ 9 and xtensa g++, `-std=gnu++11 -Wall -Wextra`).
+- A well-formed table compiles; a swapped table and a zero-period table are rejected.
+- GCC 9 can't compare a member-function pointer in a constant expression, so `run` isn't checked at compile time.
+
+**Files:** `core/Scheduler.h`, `app/App.h`, `app/App.cpp`, `app/Config.h`, `tests/test_scheduler.cpp`.
+
+**Tests:**
+- `testMemberJobsDispatchToTheRightMember` covers names, periods and budgets carried into the built table, and per-member dispatch at different periods.
+- `static_assert`s cover a good table and three bad tables: swapped, zero period, no name.
+
+**Verified 2026-10-04:** both boards compile, flash, boot and run as before.
+
+#### R2: board capabilities as compile-time constants. Done
+
+**Change:**
+- `board::kHasBattery` and `board::kHasSwitchedPower` in each `BoardConfig.h` (ESP32 false/false, nRF true/true).
+- New `platform/Board.h` picks the board's `BoardConfig.h` using the existing guards: the ESP32 two-layer chip check and the four XIAO nRF52840 macros. It's an `#error` otherwise.
+- App's runtime `haveBattery_` and `switchedPower_` members are removed. Their uses are ordinary `if (board::k…)` checks, C++11-safe.
+- `batteryStatus()` moves to App.cpp.
+- `PeripheralPower::holdAllOff()` and `BatteryPort::begin()` become `void`. Their return values were constant per board, and the headers now say "a no-op where the board lacks it".
+
+**Behaviour change:** none.
+
+**Checks:**
+- `App.h` syntax-checked with arm-none-eabi-g++ 9 and xtensa g++ (`-std=gnu++11`).
+- `Board.h` checked on xtensa against the ESP32's real `sdkconfig.h`, asserting both capabilities false.
+- Host suites pass.
+
+**Files:** `platform/Board.h` (new), `platform/esp32/BoardConfig.h`, `platform/nrf52840/BoardConfig.h`, `platform/PeripheralPower.h`, `platform/BatteryPort.h`, `platform/{esp32,nrf52840}/PeripheralPower.cpp`, `platform/{esp32,nrf52840}/BatteryPort.cpp`, `app/App.{h,cpp}`.
+
+**Verified 2026-10-04:** both boards compile, flash and boot as expected.
+
+#### R3: run-state machine. Done
+
+**Owner's choices:** `Fault` with a reason (replacing `GnssFault`); the machine owns `PowerPolicy`; state and reason text lives in core.
+
+**Change:**
+- **New pure `core/RunStateMachine.h`:**
+  - States `Starting, Running, Fault, BatteryWait, ChargeOnly`; `FaultReason::GnssMissing`; `RestartReason::SwitchOn/UsbRemoved`.
+  - Events `boot()`, `gnssStarted()`, `power()`, each returning a `Transition` (Stay, Enter, Restart, SystemOff).
+  - It owns `PowerPolicy`, which is updated on every `power()` call so its debounce keeps running. An event that doesn't apply returns Stay.
+  - Also: `jobsFor()` (named per-job flags), `ledStateFor()`, and text lookups (`stateName`, `faultMessage`, `entryMessage`, `restartReasonText`).
+- **App:**
+  - `enterState()` (with its recursive call), `stateName()`, the private `RunState`, both `PowerAction` switches, `ledJob`'s mapping and the scattered `setEnabled()` calls are removed.
+  - `apply(Transition)` loops: set the entered state's jobs, then run its entry effects. Only Starting produces a follow-up (the GNSS result), so the loop runs at most twice. Restart and SystemOff go to the existing `restart()` and `enterSystemOff()`.
+  - `enter(RunState)` holds the fixed per-state entry effects:
+    - Starting: rail on, log, `gnss_.begin()`
+    - Running: IMU, then BLE
+    - Fault: log, stop, rail-off log
+    - BatteryWait / ChargeOnly: stop, then log
+  - `stopPeripherals()` no longer touches jobs.
+  - `powerJob` and `ledJob` are a few lines each. One `constexpr RunConfig kRunConfig` (board and protocol capabilities plus the policy timings) feeds both the machine and `jobsFor()`.
+
+**Behaviour change:** none intended. Log lines, their order, jobs per state, LED patterns and power transitions are unchanged. Boot now passes through `Starting` internally, which isn't visible because the final boot line prints once the final state is reached.
+
+**Checks:**
+- Host suites pass, plain and sanitized, as C++11.
+- `test_runstatemachine.cpp` also compiles with arm-none-eabi-g++ 9 and xtensa g++ (`-Werror`).
+- `App.h` syntax-checks on both.
+- `App.cpp` syntax-checks clean (`-Wall -Wextra`) against the full ESP32 core.
+
+**Files:** `core/RunStateMachine.h` (new), `tests/test_runstatemachine.cpp` (new), `app/App.h`, `app/App.cpp`.
+
+**Tests (12):**
+- boot classification, battery and battery-less
+- Running only via `gnssStarted(true)`, and a late "detected" after Fault stays
+- `gnssStarted()` outside Starting stays
+- switch-off on USB → BatteryWait (debounced)
+- Fault can still wait or cut off
+- cutoff only on battery
+- BatteryWait switch-on → Restart(SwitchOn)
+- the CHARGE_ONLY gesture and its exits (USB removed → Restart(UsbRemoved); off again → BatteryWait; then on → Restart(SwitchOn))
+- no power transitions without a battery
+- jobs per state (battery, battery-less, no-IMU protocol)
+- LED priorities
+- every text lookup
+
+**Verified 2026-10-05:**
+- ESP32 normal and GNSS-unplugged boots match pre-R3 output.
+- nRF clean boot is identical.
+- All nRF power transitions pass: BATTERY_WAIT, switch-on restart, CHARGE_ONLY, USB removal in CHARGE_ONLY.
+- The GNSS-missing boot shows the fault line, `Power: GNSS rail off`, only battery, power, LED and console jobs running, and `GNSS fault - console only`.
+
+#### R6: GnssFeed, the RaceBox protocol module and one definition of "charging". Done
+
+**Owner's choices:** an `app/protocol/` subfolder; a shared `isCharging()` helper that uses the charger's CHG pin, guarded by USB presence.
+
+**Change:**
+- **New `core/GnssFeed.h`** (pure, host-tested), an improvement on the design doc's `app/` version.
+  - Owns the epoch tracker, the latest epoch and the speed gate.
+  - It's fed epochs (`add()`) rather than polling the receiver, so the Phase 2 liveness rule can live here with host tests.
+  - Accessors `epochs()`, `latest()` (nullptr until the first epoch), `speedMps()`, `speedValid(nowUs)`, `clear()`.
+- **New `app/protocol/RaceBox.h`** (pure):
+  - `profile()` and `kUsesImu`.
+  - `encode()`, which wraps `encodeRaceBoxData`. It absorbs App's battery-byte logic as `batteryByte()` and doesn't send.
+  - `onRx()`, empty for now: the home of the future command decoder.
+- **New `app/protocol/Protocol.h`:** picks the class from `config::kProtocol` by template specialisation. An unhandled protocol fails the build.
+- **`isCharging(const BatteryStatus&, bool usbPresent)`** in `core/BatteryMonitor.h` is the one definition: the CHG pin says the charger is charging, and USB is present. It's used by the boot battery line, the status line's ⚡ and the RaceBox charging bit. The D report's `charging 0/1` stays the raw pin, by the owner's earlier choice.
+- **App:**
+  - `gnssJob` polls the receiver, calls `feed_.add()`, and if connected encodes with the protocol and sends.
+  - `bleJob` passes reads to `protocol_.onRx()`.
+  - `imuJob` reads speed from the feed.
+  - The console code reads `feed_`.
+  - `activeProfile()`, `sendTelemetry()`, `raceBoxBatteryByte()` and the four GNSS members are gone. `kRunConfig` takes `Protocol::kUsesImu`.
+  - `App.cpp` is down to 342 lines.
+- **`Config.h`:** `protocolUsesImu()` and `kProtocolUsesImu` removed.
+
+**Behaviour change:** none intended. BLE packets, name, D report and status line are unchanged.
+
+**Checks:**
+- 19 host suites pass, plain and sanitized, as C++11.
+- The new tests also compile with arm-none-eabi-g++ 9 and xtensa g++ (`-Werror`).
+- `App.h` syntax-checks on both.
+- `App.cpp` is clean against the full ESP32 core.
+
+**Files:** `core/GnssFeed.h` (new), `app/protocol/RaceBox.h` (new), `app/protocol/Protocol.h` (new), `core/BatteryMonitor.h`, `core/StatusLine.h`, `app/App.{h,cpp}`, `app/Config.h`, `tests/test_gnssfeed.cpp` (new), `tests/test_raceboxprotocol.cpp` (new), `tests/test_batterymonitor.cpp`.
+
+**Tests:**
+- GnssFeed: empty before the first epoch; `add()` updates the count, latest epoch, speed and staleness; `clear()` resets only the statistics.
+- RaceBox battery byte: no battery or no reading → 100; percent; charging bit only with the pin *and* USB; percent masked to 7 bits.
+- The protocol's `encode()` is byte-identical to calling the encoder directly.
+- `isCharging()` needs both the pin and USB.
+
+**Verified 2026-10-05:** both boards compile, flash and stream to the app. On the nRF, every boot line is ✅, the status line shows ⚡ while charging, trim locks (🔒 at about 25 s), and `D` shows 0 missed epochs.
+
+#### Phase 2, GNSS item 1 (REL-2): persistent PVT output and liveness. Done
+
+**Finding confirmed:**
+- NAV-PVT output was the one setting not ensured in flash. `setAutoPVTcallbackPtr()` defaulted to RAM+BBR, so a receiver reset without backup power came back with output off.
+- Nothing watched epoch arrival.
+- The back-feed finding added a third case: epochs that never start.
+
+**Fix (owner approved after two refinement passes):**
+- **Persisted:** `UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1 = 1` is ensured in flash, last in the list (`GNSS: NAV-PVT output rate=1 ✅`). A receiver reset now resumes output by itself. Where V_BCKP holds BBR this already worked; this covers the loss of backup power too.
+- **Quiet configuration:** `configure()` first sets PVT output to 0 in **RAM only** (`GNSS: NAV-PVT output paused for configuration ✅`), so the config reads and writes still run on a quiet line even though flash now starts output at power-up. The callback is registered with `VAL_LAYER_RAM`, which turns it back on.
+- **Liveness in `core/GnssFeed.h`:**
+  - `liveness(nowUs)` returns `Ok`, `NeverStarted` (no epoch within `kGnssSilenceMs` of the first check) or `Stopped` (epochs, then none for `kGnssSilenceMs`).
+  - The window is armed on the first check, i.e. the first GNSS job run, so boot time before the scheduler doesn't count.
+  - One constant, `kGnssSilenceMs = 2000`, asserted to span a 1 Hz period and at least 10 nav periods.
+- **State machine:** `gnssLiveness()`, effective in Running only.
+  - Stopped → Restart (`GnssSilent`), logged `GNSS: epochs stopped - restarting into RUNNING`.
+  - NeverStarted → Fault (`GnssNoData`), logged `GNSS detected but sending no data. Check its power supply. Everything else stopped.`
+  - That's at most one restart per failure: a receiver still silent after the restart faults.
+- **Restart log:** the line is now `<reason> - restarting into RUNNING`, with each reason carrying its prefix. The existing power lines are unchanged ("Power: switch on", "Power: USB removed").
+- **App:** `gnssJob` checks liveness after each poll (two comparisons per run).
+
+**nRF bench (2026-10-05):**
+- A normal boot is good.
+- A mid-session GNSS disconnect → one restart, then the GNSS-missing fault.
+- A back-fed boot → Running, then about 2 s later the no-data fault with the peripherals stopped. The paused-output write also fails (❌), an early sign of an unhealthy receiver.
+- The no-data message was reworded from "Nothing else will start" to "Everything else stopped", since the IMU and BLE had already started by then (owner's choice).
+- ESP32: a normal boot with epochs flowing.
+
+**Files:** `peripherals/gnss/Gnss.cpp`, `core/GnssFeed.h`, `core/RunStateMachine.h`, `app/Config.h`, `app/App.cpp`, `tests/test_gnssfeed.cpp`, `tests/test_runstatemachine.cpp`.
+
+**Checks:**
+- 19 host suites pass, plain and sanitized.
+- The new tests compile with both board compilers (`-Werror`).
+- `App.cpp` and `Gnss.cpp` are clean against the full ESP32 core and the SparkFun library.
+
+**Tests:**
+- GnssFeed: NeverStarted counts from the first check, not from boot; an epoch keeps it Ok; 2 s of silence → Stopped; a fresh epoch recovers; `clear()` doesn't affect liveness.
+- State machine: each liveness result in Running; ignored in Starting, Fault and BatteryWait (a Fault's first reason stands); the new text.
+
+**To verify:**
+1. A normal boot shows the two new ✅ lines, every setting ✅, and epochs flowing.
+2. Unplug the GNSS mid-session → `GNSS: epochs stopped - restarting into RUNNING` after about 2 s, then the boot faults (receiver missing).
+3. The back-fed boot (TPS feed off) → Fault with the "sending no data" line and the red blink, about 2 s after the scheduler starts, instead of a silent Running.
+
+#### Phase 2, GNSS item 2 (REL-4): configuration failures. Partly done (unverified); the fatal/warning decision moves to Phase 3
+
+**Owner's decision (option C):** decide in Phase 3, alongside BUG-2's RAM-layer check.
+- **Fatal** (Fault `GnssConfigFailed`, red blink): a setting that is wrong *in RAM*, i.e. actually in effect.
+- **Warning only** (⚠️ in the log, a line in `D`): a setting that's right in RAM but couldn't be saved to flash.
+
+**Why not fatal now:**
+- REL-2's liveness already faults the user-visible case (PVT enable fails, or the back-fed receiver sends nothing) within 2 s.
+- A ❌ today only means "didn't verify in flash". Each write goes to RAM+BBR+flash, so a receiver with worn flash may still run correctly. Making that fatal would brick a working device.
+
+**Done now (plumbing only, no behaviour change):**
+- `Gnss::configure()` returns whether every setting verified and PVT output was enabled. `Gnss::begin()` stores it, and `Gnss::configured()` exposes it for Phase 3. `begin()` still returns false only when no receiver is found.
+
+**Review claim corrected:**
+- The review suggested `switchToTargetBaud()` should check `setSerialRate()`'s result.
+- The SparkFun library documents that it "can't return success/fail" because the receiver's ACK is lost in the baud change, so a check would log false failures on successful switches.
+- The existing reconnect-and-verify at the new rate is the correct check. A comment now says so.
+
+**Files:** `peripherals/gnss/Gnss.{h,cpp}`.
+
+**Checks:** host suites pass. `Gnss.cpp` and `App.cpp` are clean against the full ESP32 core and the SparkFun library.
+
+**Verified 2026-10-05:** both boards compile, flash and boot as before.
+
+**Follow-up from that bench run:**
+- **Symptom:** on a few consecutive nRF boots the quiet-config pause (REL-2) logged ❌, and on one boot another setting also failed.
+- **Cause:** once flash holds PVT output on, the receiver streams 20 Hz PVT from power-up. The pause is the first command into that stream, and its ACK can be lost among PVT frames on the 64-byte RX ring. With the pause missed, later ACKs face the same traffic.
+- **Fixes (owner approved, `peripherals/gnss/Gnss.cpp`):**
+  1. The pause is retried up to 3 times, draining the UART before each retry. It logs `(attempt N)` when a retry was needed.
+  2. `ensureVal()` judges a written setting by its (already retried) flash readback alone, not by the write's ACK, so a lost ACK on a write that landed no longer logs `write to flash failed ❌`.
+- `Gnss.cpp` is clean against the full ESP32 core and the SparkFun library.
+- **To verify:** several nRF boots in a row. The pause should be ✅ (occasionally with an attempt number), and every setting ✅.
+
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
 |---|---|
-| REL-1 | Hardware watchdog on both boards, fed from the loop; reset reason printed at boot. Also converts REL-3's nRF I2C hang into a reboot. |
-| REL-2 | Add `UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1` to the flash-ensured list and register the PVT callback with RAM only. 2 s liveness check → log and restart. |
+| REL-1 | Hardware watchdog on both boards, fed from the loop; reset reason printed at boot. Also converts REL-3's nRF I2C hang into a reboot. Consider carrying the restart reason across the reset (a retention register) so the next boot logs e.g. `previous restart: GNSS epochs stopped`. |
+| REL-2 | **Done**, see Restructure progress → "Phase 2, GNSS item 1" |
 | REL-4 | If enabling PVT fails, go to GnssFault. The liveness check catches any other "configured but silent" case. |
 | REL-7 | If `Bluefruit.begin()` fails, go to the fault state, not a blinking "advertising" LED |
 | PWR-1 | Accept switch-off only while USB is present; debounce switch-on out of BATTERY_WAIT |
 | CLK-1 | `sd_clock_hfclk_request()` once the SoftDevice is up (battery accuracy); document `nowUs()` as loop-only (nothing outside the loop calls it today) |
 
+**Field finding (2026-10-05), input to REL-2 and REL-4: a back-fed GNSS receiver.**
+
+With the receiver's primary feed (the TPS rail) disconnected, the nRF's UART TX line idling high back-feeds it through its RX pin. That's enough to run the UART and nothing else. The boot log shows:
+- detection ✅ at 115200
+- about a third of config reads succeed (✅ where flash already matched)
+- every flash write fails ❌, and the configuration summary ❌ changes nothing (REL-4)
+- PVT enable ✅ (a RAM/BBR write is still ACKed)
+- the device enters Running with the LED showing advertising
+- **zero epochs** over two minutes
+
+**Consequence for the agreed liveness rule:** "no epoch for 2 s → restart" would loop forever in this case, because each boot re-detects the half-powered receiver.
+
+**Proposed refinement, to decide in Phase 2:**
+- *Epochs flowed, then stopped for 2 s* → Restart (mid-session loss, where a reboot and rail cycle can help).
+- *No epoch ever since entering Running*, within a few seconds → Fault (never worked; restarting can't help).
+
+Confirmed on battery (no USB): the LED shows the normal advertising blink, a phone connects, and no data arrives. Nothing tells the user the GNSS isn't working.
+
+**Aftermath:** after these tests the receiver didn't answer at any baud, even with its feed restored. It recovered fully after sitting unpowered for a while. That fits either a back-feed latch-up or state held in BBR/backup decaying; the two can't be told apart from here. Either way it adds weight to removing the back-feed in hardware. It also shows that every boot's baud sweep with the rail down re-feeds a receiver through TX.
+
+That allows at most one restart per failure. REL-4 ("configuration failed → Fault") would catch this case even earlier. The hardware fix for the back-feed itself (a series resistor on TX, or confirming the rail is up before opening the UART) is an owner/PCB decision.
+
 ### Phase 3: GNSS configuration verification
 
 | Finding | Planned fix |
 |---|---|
-| BUG-2 | Also read the RAM (effective) layer. Write all layers if RAM or flash differs. Keep the per-key ✅ log. |
+| BUG-2 | **Also decides REL-4 (owner's option C):** a setting wrong in RAM → Fault `GnssConfigFailed`; right in RAM but not saved to flash → warning only. Use `Gnss::configured()` plumbing. Also read the RAM (effective) layer. Write all layers if RAM or flash differs. Keep the per-key ✅ log. **Note from REL-2:** `NAV_PVT_UART1` deliberately reads 0 in RAM during configuration (quiet-config pause), so it must be verified against flash only. |
 | CPLX-6 | Deferred. Batch the transactions only if the extra reads make boot noticeably slower. |
 
 ### Phase 4: measure, then fix the structure

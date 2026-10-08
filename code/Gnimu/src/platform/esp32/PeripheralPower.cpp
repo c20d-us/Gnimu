@@ -13,7 +13,7 @@ namespace gnimu {
 
 // The GNSS module and MPU-6050 run straight off the dev board's 3.3 V, and
 // it's USB-powered: there's nothing to switch.
-bool PeripheralPower::holdAllOff() { return false; }
+void PeripheralPower::holdAllOff() {}
 void PeripheralPower::gnssRailOn() {}
 void PeripheralPower::gnssRailOff() {}
 

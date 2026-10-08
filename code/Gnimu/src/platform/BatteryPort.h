@@ -9,9 +9,9 @@ namespace gnimu {
 // Implemented once per platform. core/BatteryMonitor decides what the
 // readings mean; this only reads them.
 struct BatteryPort {
-  // Configures the ADC and the charger pins. False where the board has no
-  // battery, in which case nothing else here is meaningful.
-  static bool begin();
+  // Configures the ADC and the charger pins. Where the board has no battery
+  // (board::kHasBattery false) everything here is a stub; begin() is a no-op.
+  static void begin();
   static uint16_t readCellMv();
   static bool chargerActive();
   static bool usbPresent();

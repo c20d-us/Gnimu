@@ -9,7 +9,7 @@
 namespace gnimu {
 
 // USB-powered dev board, no battery.
-bool BatteryPort::begin() { return false; }
+void BatteryPort::begin() {}
 uint16_t BatteryPort::readCellMv() { return 0; }
 bool BatteryPort::chargerActive() { return false; }
 bool BatteryPort::usbPresent() { return true; }

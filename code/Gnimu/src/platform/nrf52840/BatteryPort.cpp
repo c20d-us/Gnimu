@@ -24,7 +24,7 @@ constexpr float kDividerRatio = (1000000.0f + 510000.0f) / 510000.0f;
 
 }  // namespace
 
-bool BatteryPort::begin() {
+void BatteryPort::begin() {
   analogReadResolution(12);
   analogReference(AR_INTERNAL_3_0);
   // Long acquisition time for the high-impedance divider (Classic/NG).
@@ -38,7 +38,6 @@ bool BatteryPort::begin() {
   digitalWrite(PIN_CHARGING_CURRENT, LOW);
   pinMode(kChargeStatusPin, INPUT_PULLUP);
   pinMode(board::kSwitchSensePin, INPUT);
-  return true;
 }
 
 uint16_t BatteryPort::readCellMv() {

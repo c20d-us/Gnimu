@@ -7,12 +7,11 @@ namespace gnimu {
 namespace config {
 
 // Which BLE protocol this build speaks. Compile-time, like the board: one
-// binary per protocol. The protocol, not the board, decides whether the IMU
-// is sampled at all - a RaceChrono build ignores even an onboard IMU.
+// binary per protocol (app/protocol/Protocol.h picks the class). The
+// protocol, not the board, decides whether the IMU is sampled at all - a
+// RaceChrono build ignores even an onboard IMU.
 enum class Protocol : uint8_t { RaceBox };
 constexpr Protocol kProtocol = Protocol::RaceBox;
-constexpr bool protocolUsesImu(Protocol p) { return p == Protocol::RaceBox; }
-constexpr bool kProtocolUsesImu = protocolUsesImu(kProtocol);
 
 constexpr uint32_t kGnssBaud = 115200;
 // Every rate a receiver could be saved at, in the order the sweep tries them.
@@ -40,6 +39,10 @@ constexpr unsigned kConstellationCount = 2;
 // The drain period is also the longest the loop ever sleeps. The UART RX ring
 // must hold more than one period of data, with plenty of margin.
 constexpr uint32_t kGnssDrainPeriodUs = 1000;
+// Liveness: no epoch for this long once the GNSS job is running faults the
+// device if none ever arrived, or restarts it if they stopped mid-run. Even a
+// receiver that fell back to 1 Hz is caught well inside it.
+constexpr uint32_t kGnssSilenceMs = 2000;
 // Includes the per-epoch BLE send, which occasionally takes the pass just past
 // 3 ms while streaming (measured max 3.2 ms); harmless against the RX ring.
 constexpr uint32_t kGnssDrainBudgetUs = 4000;
@@ -193,12 +196,9 @@ static_assert(kConstellationPriority[0] != kConstellationPriority[1] &&
                   kConstellationPriority[1] != kConstellationPriority[3] &&
                   kConstellationPriority[2] != kConstellationPriority[3],
               "constellation priority must list each system exactly once");
-// The scheduler divides by every job period. A job added to App's table
-// with a new period constant belongs here too.
-static_assert(kGnssDrainPeriodUs > 0 && kImuSamplePeriodUs > 0 && kBatteryPeriodUs > 0 &&
-                  kPowerPeriodUs > 0 && kBlePeriodUs > 0 && kLedPeriodUs > 0 && kConsolePeriodUs > 0,
-              "every job period must be positive");
 static_assert(kStatusPeriodUs > 0, "status period must be positive");
+static_assert(kGnssSilenceMs > 1000 && kGnssSilenceMs >= 10 * (1000 / kGnssNavRateHz),
+              "silence window must span a 1 Hz period and many nav periods");
 static_assert(kLedBlinkHalfMs > 0 && kLedFaultHalfMs > 0 && kLedBatteryWaitHalfMs > 0,
               "LED half-periods must be positive");
 static_assert(kLedPeriodUs / 1000 <= kLedBatteryWaitHalfMs,

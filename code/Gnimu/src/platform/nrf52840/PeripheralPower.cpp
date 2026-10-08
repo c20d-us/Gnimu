@@ -29,12 +29,11 @@ void gnssTxIdleLow() {
 
 }  // namespace
 
-bool PeripheralPower::holdAllOff() {
+void PeripheralPower::holdAllOff() {
   gnssRailDisable();
   gnssTxIdleLow();
   pinMode(board::kImuPowerPin, OUTPUT);
   digitalWrite(board::kImuPowerPin, LOW);
-  return true;
 }
 
 // Released, not driven HIGH: Classic's proven sequence, and the regulator's

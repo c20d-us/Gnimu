@@ -140,6 +140,57 @@ static void testReenableRestartsGridWithoutSkips() {
   assert(s.enabled(1));
 }
 
+// Member-function jobs: a JobSpec table bound to one object.
+struct Owner {
+  int a = 0;
+  int b = 0;
+  void runA() { a++; }
+  void runB() { b++; }
+};
+
+constexpr JobSpec<Owner> kGoodSpecs[] = {
+    {0, "a", 1000, 0, &Owner::runA},
+    {1, "b", 3000, 500, &Owner::runB},
+};
+static_assert(jobSpecsValid(kGoodSpecs), "a well-formed table passes");
+
+constexpr JobSpec<Owner> kSwappedSpecs[] = {
+    {1, "b", 3000, 0, &Owner::runB},
+    {0, "a", 1000, 0, &Owner::runA},
+};
+static_assert(!jobSpecsValid(kSwappedSpecs), "entries out of id order fail");
+
+constexpr JobSpec<Owner> kZeroPeriodSpecs[] = {
+    {0, "a", 1000, 0, &Owner::runA},
+    {1, "b", 0, 0, &Owner::runB},
+};
+static_assert(!jobSpecsValid(kZeroPeriodSpecs), "a zero period fails");
+
+constexpr JobSpec<Owner> kUnnamedSpecs[] = {
+    {0, nullptr, 1000, 0, &Owner::runA},
+};
+static_assert(!jobSpecsValid(kUnnamedSpecs), "a missing name fails");
+
+static void testMemberJobsDispatchToTheRightMember() {
+  reset();
+  Owner o;
+  MemberJobs<Owner, 2> jobs(&o, kGoodSpecs);
+  // The built table carries each spec's name, period and budget.
+  assert(jobs.table()[1].name == kGoodSpecs[1].name);
+  assert(jobs.table()[1].periodUs == 3000 && jobs.table()[1].budgetUs == 500);
+
+  Scheduler<2, FakeClock> s(jobs.table());
+  s.start();
+  s.tick();
+  assert(o.a == 1 && o.b == 1);
+  FakeClock::now += 1000;  // only "a" is due again
+  s.tick();
+  assert(o.a == 2 && o.b == 1);
+  FakeClock::now += 2000;  // both due
+  s.tick();
+  assert(o.a == 3 && o.b == 2);
+}
+
 int main() {
   testFixedRateNoDrift();
   testNotRunEarly();
@@ -149,6 +200,7 @@ int main() {
   testDisabledJobNeverRuns();
   testDisabledJobIgnoredForDeadline();
   testReenableRestartsGridWithoutSkips();
+  testMemberJobsDispatchToTheRightMember();
   puts("scheduler: all tests passed");
   return 0;
 }
