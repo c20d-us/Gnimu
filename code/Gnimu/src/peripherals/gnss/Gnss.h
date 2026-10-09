@@ -6,18 +6,20 @@
 namespace gnimu {
 
 // u-blox receiver: baud detection, startup configuration, and epoch capture.
-// Every setting is read first and only written (to flash, via ensureVal8/16)
-// if it doesn't already match - so a normal boot writes nothing, though every
-// setting still logs whether it was already correct or had to be written.
-// The risky write-and-ACK path only has to succeed once per receiver, ever.
+// Every setting is read first (from RAM, the layer the receiver runs on) and
+// only written, to every layer, if it doesn't already match - so a normal
+// boot writes nothing, though every setting still logs whether it was
+// already correct or had to be written. Because the write includes flash, it
+// only has to succeed once per receiver.
 class Gnss {
 public:
   // Detects and configures the receiver, logging each step to `log`. Returns
   // false if the receiver was not found at any baud rate; a found receiver
   // returns true even if configuration failed (see configured()).
   bool begin(Console &log);
-  // Whether the last begin() verified every setting and enabled PVT output.
-  // Logged today; Phase 3 decides what a failure means once RAM is verified.
+  // False if the last begin() left a setting wrong in RAM: the receiver
+  // isn't running the configuration, which is fatal (GnssConfigFailed).
+  // Settings that are right but not saved to flash are only warnings.
   bool configured() const { return configured_; }
   // Drains the UART and parses; call at least every drain period.
   void poll();
@@ -31,22 +33,25 @@ private:
   bool tryBaud(uint32_t baud);
   bool switchToTargetBaud();
   bool connectAtBaud();
-  // True when every setting verified and PVT output was enabled.
+  // False when a setting is left wrong in RAM (see configured()).
   bool configure();
-  // Reads the key from the FLASH layer and logs one line either way: that it
-  // already matched `desired`, or that it had to be written (to VAL_LAYER_ALL)
-  // and read back from flash to confirm. Flash persistence means the write
-  // only has to succeed once per receiver, ever. ensureVal8/16 are thin
-  // wrappers so call sites don't need to name the template argument; the
-  // shared logic lives once in ensureVal<T>, defined in Gnss.cpp and used
-  // only there, so it never needs to appear in this header.
+  // Which layer a key is checked in: RAM, or flash for the one key
+  // configure() deliberately holds off in RAM while it works.
+  enum class Check : uint8_t { Ram, FlashOnly };
+  // Checks one key and logs one line: already right, written, set but not
+  // saved to flash (a warning), or could not be set (returns false). The
+  // rules are in Gnss.cpp. ensureVal8/16 are thin wrappers so call sites
+  // don't need to name the template argument; the shared logic lives once
+  // in ensureVal<T>, defined in Gnss.cpp and used only there, so it never
+  // needs to appear in this header.
   template <typename T>
-  bool ensureVal(uint32_t key, T desired, const char *name);
-  bool ensureVal8(uint32_t key, uint8_t desired, const char *name);
+  bool ensureVal(uint32_t key, T desired, const char *name, Check check);
+  bool ensureVal8(uint32_t key, uint8_t desired, const char *name, Check check = Check::Ram);
   bool ensureVal16(uint32_t key, uint16_t desired, const char *name);
 
   Console *log_ = nullptr;
   bool configured_ = false;
+  unsigned flashWarnings_ = 0;  // this configure()'s "not saved to flash" keys
 };
 
 } // namespace gnimu

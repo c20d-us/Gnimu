@@ -152,6 +152,7 @@ Transition App::enter(RunState s) {
       PeripheralPower::gnssRailOn();
       if (board::kHasSwitchedPower) console_.log("Power: GNSS rail on");
       if (!gnss_.begin(console_)) return machine_.started(FaultReason::GnssMissing);
+      if (!gnss_.configured()) return machine_.started(FaultReason::GnssConfigFailed);
       Watchdog::feed();
       if (Protocol::kUsesImu) imu_.begin(console_);
       Watchdog::feed();

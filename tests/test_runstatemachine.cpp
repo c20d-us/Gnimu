@@ -73,6 +73,11 @@ static void testRunningOnlyWhenEverythingStarted() {
 
 // Each bring-up failure faults with its own reason, for its own message.
 static void testBringUpFailureReasons() {
+  RunStateMachine config(kBattery);
+  config.boot(true, true, false);
+  assert(enters(config.started(FaultReason::GnssConfigFailed), RunState::Fault));
+  assert(config.fault() == FaultReason::GnssConfigFailed);
+
   RunStateMachine ble(kBattery);
   ble.boot(true, true, false);
   assert(enters(ble.started(FaultReason::BleFailed), RunState::Fault));
@@ -227,6 +232,8 @@ static void testText() {
   assert(strcmp(restartReasonText(RestartReason::GnssSilent), "GNSS: epochs stopped") == 0);
   assert(strcmp(faultMessage(FaultReason::GnssNoData),
                 "GNSS detected but sending no data. Check its power supply. Everything else stopped.") == 0);
+  assert(strcmp(faultMessage(FaultReason::GnssConfigFailed),
+                "GNSS settings could not be applied. Power-cycle to retry. Everything else stopped.") == 0);
   assert(strcmp(faultMessage(FaultReason::BleFailed),
                 "BLE failed to start. Power-cycle to retry. Everything else stopped.") == 0);
 }

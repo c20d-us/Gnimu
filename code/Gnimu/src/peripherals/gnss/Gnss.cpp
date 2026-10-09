@@ -75,11 +75,11 @@ void onPvt(UBX_NAV_PVT_data_t *pvt) {
 // pair through ordinary overload resolution, without an if-constexpr (not
 // worth risking on a C++ standard we haven't confirmed either core compiles
 // with).
-bool getFlash(uint32_t key, uint8_t *val) {
-  return receiver.getVal8(key, val, VAL_LAYER_FLASH);
+bool getVal(uint32_t key, uint8_t *val, uint8_t layer) {
+  return receiver.getVal8(key, val, layer);
 }
-bool getFlash(uint32_t key, uint16_t *val) {
-  return receiver.getVal16(key, val, VAL_LAYER_FLASH);
+bool getVal(uint32_t key, uint16_t *val, uint8_t layer) {
+  return receiver.getVal16(key, val, layer);
 }
 bool setAll(uint32_t key, uint8_t val) {
   return receiver.setVal8(key, val, VAL_LAYER_ALL);
@@ -90,17 +90,17 @@ bool setAll(uint32_t key, uint16_t val) {
 
 // A lost or corrupted reply fails the same way as a key that's absent from
 // flash, so a single failed read can't tell "never stored" from "reply got
-// mangled" - and treating the latter as absent means a needless flash write
-// plus a false failure line. Retrying sorts them apart: a mangled reply is
+// mangled" - and treating the latter as absent means a needless write plus a
+// false failure line. Retrying sorts them apart: a mangled reply is
 // transient, while an absent key NAKs every time, in milliseconds, so the
 // retries cost almost nothing on a first-ever configuration. No pause between
 // attempts: a lost reply already waits out the library's full timeout.
-constexpr int kFlashReadAttempts = 3;
+constexpr int kReadAttempts = 3;
 
-template <typename T> bool readFlash(uint32_t key, T *val) {
-  for (int attempt = 0; attempt < kFlashReadAttempts; attempt++) {
+template <typename T> bool readLayer(uint32_t key, T *val, uint8_t layer) {
+  for (int attempt = 0; attempt < kReadAttempts; attempt++) {
     Watchdog::feed();
-    if (getFlash(key, val))
+    if (getVal(key, val, layer))
       return true;
   }
   return false;
@@ -167,39 +167,61 @@ bool Gnss::connectAtBaud() {
   return false;
 }
 
-// Reads `key` from the FLASH layer. Flash is the layer that answers "did this
-// setting already get persisted" and is absent (NACKs) for a key that was never
-// stored there. Every key logs a line, so the boot log is a complete record of
-// what the receiver's flash held versus what had to be written: a simple check
-// mark if it already matched, "written to flash" if it had to be pushed to
-// VAL_LAYER_ALL (RAM+BBR+flash together) and read back from flash to confirm.
-// Persisting to flash means a given key's write only ever has to succeed once
-// per receiver: every later boot's flash read already reflects it, so there's
-// nothing to write.
+// The receiver runs on its RAM layer, built at startup from defaults, then
+// flash, then BBR (battery-backed RAM, which overrides flash). So RAM is
+// what's checked: a stale BBR value shows up there even when flash looks
+// right. A matching RAM value is all a normal boot reads. Anything else is
+// written to every layer (RAM, BBR and flash together, so a stale BBR value
+// is overwritten too) and then judged by readback alone - a write whose ACK
+// got lost can still have landed:
+//   RAM still wrong (or no reply)  -> "could not be set" X, fatal (false)
+//   RAM right, flash right         -> "written"
+//   RAM right, flash wrong         -> "not saved to flash", a warning: right
+//                                     for this run, rewritten next boot
+// Flash wrong while BBR holds the right value isn't visible here, and needn't
+// be: it's harmless while BBR lasts, and once BBR is lost that boot's RAM is
+// wrong, so it gets caught and fixed then.
+//
+// Check::FlashOnly is for the NAV-PVT output key, which configure() holds at
+// 0 in RAM on purpose while it works. Its persisted value is what's checked,
+// and failing to persist it is only a warning: whether output actually flows
+// is the liveness check's job.
+//
+// Every key logs one line, so the boot log is a complete record of what the
+// receiver held and what had to be written.
 template <typename T>
-bool Gnss::ensureVal(uint32_t key, T desired, const char *name) {
+bool Gnss::ensureVal(uint32_t key, T desired, const char *name, Check check) {
+  const uint8_t layer = check == Check::Ram ? VAL_LAYER_RAM : VAL_LAYER_FLASH;
   T current = 0;
-  if (readFlash(key, &current) && current == desired) {
+  if (readLayer(key, &current, layer) && current == desired) {
     log_->log("GNSS: %s=%u ✅", name, static_cast<unsigned>(desired));
     return true;
   }
-  // Judged by the flash readback alone: a write whose ACK got lost can still
-  // have landed, and the readback (retried) is the real test either way.
   Watchdog::feed();
   setAll(key, desired);
-  const bool verified = readFlash(key, &current) && current == desired;
-  log_->log(verified ? "GNSS: %s=%u written to flash ⏬"
-                      : "GNSS: %s=%u write to flash failed - value not set ❌",
-            name, static_cast<unsigned>(desired));
-  return verified;
+  const bool set = readLayer(key, &current, layer) && current == desired;
+  if (!set && check == Check::Ram) {
+    log_->log("GNSS: %s=%u could not be set ❌", name, static_cast<unsigned>(desired));
+    return false;
+  }
+  const bool saved = check == Check::Ram
+                         ? readLayer(key, &current, VAL_LAYER_FLASH) && current == desired
+                         : set;
+  if (saved) {
+    log_->log("GNSS: %s=%u written ⏬", name, static_cast<unsigned>(desired));
+  } else {
+    log_->log("GNSS: %s=%u set, not saved to flash ⚠️", name, static_cast<unsigned>(desired));
+    flashWarnings_++;
+  }
+  return true;
 }
 
-bool Gnss::ensureVal8(uint32_t key, uint8_t desired, const char *name) {
-  return ensureVal<uint8_t>(key, desired, name);
+bool Gnss::ensureVal8(uint32_t key, uint8_t desired, const char *name, Check check) {
+  return ensureVal<uint8_t>(key, desired, name, check);
 }
 
 bool Gnss::ensureVal16(uint32_t key, uint16_t desired, const char *name) {
-  return ensureVal<uint16_t>(key, desired, name);
+  return ensureVal<uint16_t>(key, desired, name, Check::Ram);
 }
 
 bool Gnss::configure() {
@@ -288,6 +310,7 @@ bool Gnss::configure() {
   };
 
   bool allOk = true;
+  flashWarnings_ = 0;
   for (const auto &s : settings)
     allOk &= ensureVal8(s.key, s.desired, s.name);
   // Output rate is measurement interval x nav ratio. There's no single "nav
@@ -300,25 +323,28 @@ bool Gnss::configure() {
                        "nav rate");
   // Last: on a first-ever write this also turns output on in RAM (the write
   // goes to every layer), so nothing after it competes with the traffic.
-  allOk &= ensureVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 1, "NAV-PVT output rate");
-  if (!allOk)
-    log_->log(
-        "GNSS: configuration did not complete successfully - performance may "
-        "be degraded ❌");
+  ensureVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 1, "NAV-PVT output rate", Check::FlashOnly);
+  if (!allOk) {
+    log_->log("GNSS: configuration failed - a setting could not be applied ❌");
+  } else if (flashWarnings_ > 0) {
+    log_->log("GNSS: %u setting(s) not saved to flash - in effect now, rewritten next boot ⚠️",
+              flashWarnings_);
+  }
 
   // Callback is registered last, once the receiver is fully configured. It
   // also turns PVT output back on - in RAM only, since flash already holds it
   // (above). The callback itself is local firmware state, so there's nothing
-  // to read back and compare.
+  // to read back and compare. A missing ACK is only a warning: it can be lost
+  // among the very PVT traffic it just enabled, and the liveness check is the
+  // real test that epochs flow.
   log_->log("GNSS: Configuring PVT callback and auto PVT output");
   Watchdog::feed();
-  const bool pvtOk = receiver.setAutoPVTcallbackPtr(&onPvt, VAL_LAYER_RAM);
-  if (pvtOk) {
+  if (receiver.setAutoPVTcallbackPtr(&onPvt, VAL_LAYER_RAM)) {
     log_->log("GNSS: PVT callback and auto PVT output enabled ✅");
   } else {
-    log_->log("GNSS: PVT callback and auto PVT output not enabled ❌");
+    log_->log("GNSS: PVT output enable not acknowledged - the liveness check will tell ⚠️");
   }
-  return allOk && pvtOk;
+  return allOk;
 }
 
 bool Gnss::begin(Console &log) {

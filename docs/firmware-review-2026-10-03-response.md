@@ -837,13 +837,46 @@ Considered and left out: templating every module on its hardware types for host 
 - Both boards: the boot shows `Clock: crystal ✅` after the BLE line, and is otherwise unchanged. (Done.) On USB this only shows the request was accepted: USB already runs the crystal.
 - **nRF on battery, the real check:** about 10 minutes on battery with a fix, then plug in USB and type `D` straight away. `epochs ÷ 20` should match `RT` to within about a second, with `missed` near 0. (On the internal oscillator, 1.5% would be about 9 s over 10 minutes.) No new code needed: the D counters already compare GNSS time with the MCU clock.
 
+#### Phase 3 (BUG-2 + REL-4): GNSS settings checked in RAM; a setting not applied is fatal. Done (bench verified)
+
+**Finding confirmed (`Gnss.cpp`, `ensureVal()`):** the receiver runs on its RAM layer, built at startup from defaults, then flash, then BBR (which overrides flash). Only flash was read, so a stale BBR value (left by u-center, Classic or an earlier firmware) passed as ✅ while the receiver ran something else. This matters most on the ESP32, where the GNSS stays powered across MCU resets. On the nRF, BBR survives the GNSS rail power-cycle only if the module's backup supply is powered.
+
+**Fix (owner approved after one simplification round):**
+- **RAM checked per key; flash read only after a write.** A normal boot reads RAM once per key (the same number of reads as before, so boot time is unchanged and CPLX-6 batching stays unneeded). A mismatch is written to all layers (RAM, BBR and flash, so a stale BBR value is overwritten too), then judged by readback:
+
+  | After the write | Log | Result |
+  |---|---|---|
+  | RAM still wrong, or no reply | `could not be set ❌` | **fatal** |
+  | RAM right, flash right | `written ⏬` | fixed |
+  | RAM right, flash wrong | `set, not saved to flash ⚠️` | warning: in effect now, rewritten next boot |
+
+- **Why flash needn't be read on a normal boot:** RAM is what the receiver runs, so checking it catches the BBR case and any other effective mismatch. Flash is written whenever RAM was wrong (e.g. a first-ever configuration), and each later boot's RAM comes from it. Flash wrong while BBR holds the right value is invisible but harmless while BBR lasts; once BBR is lost, that boot's RAM is wrong and gets fixed.
+- **NAV-PVT output key:** still checked against flash only (`Check::FlashOnly`), because configure() holds it at 0 in RAM. Failing to persist it is a warning.
+- **The PVT callback's missing ACK is now a warning,** not a failure: it can be lost among the PVT traffic it just enabled. REL-2 liveness is the real check (`GnssNoData` after 2 s).
+- **REL-4 (owner's option C):** `configure()` returns false only for a setting left wrong in RAM. Starting then returns `started(FaultReason::GnssConfigFailed)`, message `GNSS settings could not be applied. Power-cycle to retry. Everything else stopped.` Warnings are summarised (`N setting(s) not saved to flash - in effect now, rewritten next boot ⚠️`) and the device carries on.
+- `kFlashReadAttempts` became `kReadAttempts`; each attempt feeds the watchdog (REL-1), RAM reads included.
+- **Considered and dropped:** a separate host-tested `core/GnssKeyCheck.h` (three outcomes after a write; a comment covers it) and a `configuration took N ms` line (no extra reads on a normal boot).
+
+**Risk raised in review, to bench-check:** the `SIGNAL_*` keys have combination rules (BeiDou B1I/B1C exclusive; a system can't be enabled with all its signals off). A single-key write that passes through an invalid combination is NAKed for every layer. That used to be a ❌ line; under option C it leaves RAM wrong and is fatal. The key order avoids it, and the first-ever configuration went through, but it's exercised only when the constellation selection changes. If a NAK shows up, the fix is one transaction for the signal group (CPLX-6 batching limited to that group).
+
+**Files:** `peripherals/gnss/Gnss.{h,cpp}`, `core/RunStateMachine.h`, `app/App.cpp`, `tests/test_runstatemachine.cpp`.
+
+**Tests:** `started(GnssConfigFailed)` faults with that reason; its message text. (`Gnss.cpp` is library-bound and has no host tests.)
+
+**Checks:** host suites pass (plain and sanitized). `Gnss.cpp` and `App.cpp` are clean against both cores.
+
+**Verified 2026-10-08 (owner), both boards:** a normal boot shows every key ✅. Changing `kGnssMinElevDeg` showed `written ⏬`, and changing it back showed `written ⏬` again. **Boot is noticeably quicker** than with flash reads, which suggests the receiver answers RAM reads faster than flash reads. **Fatal path verified:** a temporary hack (since removed) made the dynamic model's RAM checks fail. It gave `could not be set ❌`, the configuration-failed line, the `GnssConfigFailed` message and the fault state, as expected. **Constellation swap verified in both directions:** the signal keys were written with no NAK, so the key order holds under option C and signal-group batching isn't needed.
+
+**Still to verify, both boards:**
+- Optional (ESP32, GNSS stays powered): write a different value to BBR only, then reset. Flash still matches but RAM doesn't; the boot should rewrite it.
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
 |---|---|
 | REL-1 | **Done (boot verified)**, see Restructure progress → "Phase 2 item 3". Also converts REL-3's nRF I2C hang into a reboot. |
 | REL-2 | **Done**, see Restructure progress → "Phase 2, GNSS item 1" |
-| REL-4 | If enabling PVT fails, go to GnssFault. The liveness check catches any other "configured but silent" case. |
+| REL-4 | **Done (bench verified)** with BUG-2, see Restructure progress → "Phase 3". A setting left wrong in RAM → Fault `GnssConfigFailed`; a lost PVT-enable ACK is a warning, and liveness catches a receiver that's configured but silent. |
 | REL-7 | **Done (forced failure verified)**, see Restructure progress → "Phase 2 item 4". |
 | PWR-1 | **Done (bench verified)**, see Restructure progress → "Phase 2 item 5". |
 | CLK-1 | **Done (boot verified; battery run pending)**, see Restructure progress → "Phase 2 item 6". Also fixed the clock being used before it started. |
@@ -874,8 +907,8 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 
 | Finding | Planned fix |
 |---|---|
-| BUG-2 | **Also decides REL-4 (owner's option C):** a setting wrong in RAM → Fault `GnssConfigFailed`; right in RAM but not saved to flash → warning only. Use `Gnss::configured()` plumbing: since REL-7 it's one line in Starting, `if (!gnss_.configured()) return machine_.started(FaultReason::GnssConfigFailed);`, plus the enum value and its message. Also read the RAM (effective) layer. Write all layers if RAM or flash differs. Keep the per-key ✅ log. **Note from REL-1:** every new library round trip (RAM reads, extra writes) needs a `Watchdog::feed()` before it, as the existing ones have. **Note from REL-2:** `NAV_PVT_UART1` deliberately reads 0 in RAM during configuration (quiet-config pause), so it must be verified against flash only. |
-| CPLX-6 | Deferred. Batch the transactions only if the extra reads make boot noticeably slower. |
+| BUG-2 | **Done (bench verified)**, see Restructure progress → "Phase 3". RAM checked per key, flash read only after a write; option C for REL-4. |
+| CPLX-6 | Not needed: BUG-2 adds no reads on a normal boot, and the constellation swap went through without a NAK. |
 
 ### Phase 4: measure, then fix the structure
 
@@ -897,6 +930,7 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 
 - D report GNSS lines: fix type as words (e.g. `3D fix`); `no epoch yet` instead of `fix none` before the first epoch.
 - D report Battery line: 0/1 flags as words, or list only the true ones.
+- D report: a `GNSS:` line showing the configured constellations and the target nav rate (owner, 2026-10-08), e.g. `GNSS: config GPS+Galileo, 20 Hz`.
 
 ---
 
