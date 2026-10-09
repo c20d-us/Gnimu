@@ -83,30 +83,22 @@ int16_t rawPair(const uint8_t *p) {
 } // namespace
 
 // One burst of the 14 data registers from ACCEL_XOUT_H: accel X/Y/Z,
-// temperature (skipped), gyro X/Y/Z. False on a short read, or if all three
-// accel axes are exactly zero - the chip's power-on state after a supply
-// glitch, which reads back cleanly but is not a measurement.
+// temperature (skipped), gyro X/Y/Z. False on a short or all-zero read.
 bool Mpu6050::read(ImuSample &out) {
   uint8_t raw[14];
   if (!readRegs(kRegAccelOut, raw, sizeof(raw)))
     return false;
 
-  const int16_t ax = rawPair(&raw[0]);
-  const int16_t ay = rawPair(&raw[2]);
-  const int16_t az = rawPair(&raw[4]);
-  if (ax == 0 && ay == 0 && az == 0)
-    return false;
-
-  out.accel[0] = (ax / kAccelCountsPerG) * kGravity;
-  out.accel[1] = (ay / kAccelCountsPerG) * kGravity;
-  out.accel[2] = (az / kAccelCountsPerG) * kGravity;
+  out.accel[0] = (rawPair(&raw[0]) / kAccelCountsPerG) * kGravity;
+  out.accel[1] = (rawPair(&raw[2]) / kAccelCountsPerG) * kGravity;
+  out.accel[2] = (rawPair(&raw[4]) / kAccelCountsPerG) * kGravity;
   out.gyro[0] = (rawPair(&raw[8]) / kGyroCountsPerDps) * kDegToRad;
   out.gyro[1] = (rawPair(&raw[10]) / kGyroCountsPerDps) * kDegToRad;
   out.gyro[2] = (rawPair(&raw[12]) / kGyroCountsPerDps) * kDegToRad;
 
   remapAxes(out.accel, kAxisMap);
   remapAxes(out.gyro, kAxisMap);
-  return true;
+  return !isZeroAccel(out);
 }
 
 bool Mpu6050::begin(Console &log, ImuSample &first) {

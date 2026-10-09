@@ -19,7 +19,7 @@ constexpr size_t kGnssRxBufferBytes = 512;
 constexpr int kImuSdaPin = 21;
 constexpr int kImuSclPin = 22;
 
-// The dev board's onboard LED (Classic's LED_ONBOARD_PIN): single color, blue.
+// The dev board's onboard LED: single color, blue.
 constexpr int kStatusLedPin = 2;
 
 }  // namespace board

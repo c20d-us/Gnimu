@@ -18,7 +18,7 @@ class Lsm6ds3 {
   // its configuration, or can't produce a sample.
   bool begin(Console& log, ImuSample& first);
   // One sample in physical units (m/s^2, rad/s), remapped to vehicle axes.
-  // False on a failed read.
+  // False on a failed or all-zero read.
   bool read(ImuSample& out);
   // Powers the chip back off, as at boot.
   void end();

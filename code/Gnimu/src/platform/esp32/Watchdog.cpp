@@ -1,4 +1,4 @@
-// Two-layer guard, same reasoning as Clock.cpp.
+// Two-layer guard: see Clock.cpp for why.
 #if defined(ARDUINO_ARCH_ESP32)
 #include "sdkconfig.h"
 #if CONFIG_IDF_TARGET_ESP32

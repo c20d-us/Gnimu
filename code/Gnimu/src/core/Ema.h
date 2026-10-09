@@ -2,9 +2,8 @@
 
 namespace gnimu {
 
-// A single-value exponential moving average. No transient/peak tracking: the
-// parked blend logic in Classic's ImuAxis never fired in practice (its
-// thresholds were sentinels), so this keeps only the part that did something.
+// A single-value exponential moving average, with no transient or peak
+// tracking.
 class Ema {
  public:
   explicit Ema(float alpha) : alpha_(alpha) {}

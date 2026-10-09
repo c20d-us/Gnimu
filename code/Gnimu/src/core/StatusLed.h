@@ -13,7 +13,7 @@ enum class LedState : uint8_t {
   Connected,        // RUNNING, client connected: solid blue
   BatteryWarning,   // RUNNING, low battery: amber blink, ahead of the BLE states
   BatteryCritical,  // RUNNING, critical battery: red blink, ahead of everything
-  Fault,            // GnssFault: fast red, for as long as the fault lasts
+  Fault,            // any fault: fast red, for as long as the fault lasts
   BatteryWait,      // switch off on USB: fast amber
   Charging,         // CHARGE_ONLY: green blink
   Charged,          // CHARGE_ONLY, full: solid green

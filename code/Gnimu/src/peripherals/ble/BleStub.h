@@ -9,9 +9,8 @@
 
 namespace gnimu {
 
-// Stand-in for boards whose BLE transport doesn't exist yet - the nRF's
-// Bluefruit port arrives with the nRF parity work. It never connects, so
-// nothing is ever sent, and the boot log says so plainly.
+// Stand-in for a board with no BLE transport. It never connects, so nothing
+// is ever sent, and the boot log says so plainly.
 class BleStub {
  public:
   // True: there's no stack to fail, and a board without BLE still runs.

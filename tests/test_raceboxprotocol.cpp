@@ -7,7 +7,7 @@
 using namespace gnimu;
 
 static void testBatteryByte() {
-  // No battery, or no reading yet: Classic's fixed 100, not charging.
+  // No battery, or no reading yet: a fixed 100, not charging.
   assert(RaceBoxProtocol::batteryByte(nullptr, true) == 100);
   BatteryStatus b;
   assert(RaceBoxProtocol::batteryByte(&b, true) == 100);

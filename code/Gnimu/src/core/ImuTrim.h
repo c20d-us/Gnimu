@@ -4,43 +4,15 @@
 
 namespace gnimu {
 
-// ============================================================================
-// IMU trim - runtime levelling and gyro de-biasing.
+// IMU trim: runtime levelling and gyro de-biasing. While the vehicle is
+// confirmed stationary it learns an accelerometer correction (a rotation onto
+// vehicle-up plus a residual that makes the resting magnitude exactly 1 g,
+// measured once per power cycle and then locked) and the gyro's per-axis zero
+// offsets (refined at every qualifying stop). Why each is handled that way is
+// in docs/imu-trim.md.
 //
-// Learns two corrections while the vehicle is confirmed stationary, and holds
-// them frozen while it moves:
-//
-//   * ACCELEROMETER: the rotation that carries the measured gravity vector
-//     back onto vehicle-up, correcting a slightly off-level mount, PLUS a
-//     residual along the corrected vertical so the resting magnitude comes
-//     out at exactly 1 g. Both are needed: a rotation preserves length, so it
-//     can straighten a tilted reading but can never fix one that is short. A
-//     rotation alone leaves a chip with a real zero-g bias reading (say)
-//     0.925 g forever.
-//
-//     Together these subsume the chip's own accelerometer zero-bias: it is
-//     indistinguishable from mounting tilt at rest, and one correction
-//     removes both.
-//
-//     Measured ONCE per power cycle and then LOCKED. A resting accelerometer
-//     cannot separate mount tilt from the slope of the ground under the
-//     vehicle, so every re-measurement is a chance to swap a good calibration
-//     for a worse one - and the worst-placed stop of a session, a sloped
-//     staging lane, is also the last one before the run that matters.
-//
-//   * GYROSCOPE: the per-axis zero offset. At rest the true rotation rate is
-//     exactly zero in every orientation, so whatever the gyro reads is bias.
-//
-//     Refined at EVERY qualifying stop, not locked. The slope problem above
-//     is purely an accelerometer problem - ground attitude does not appear on
-//     a rate gyro at all - so there is no reason to freeze it, and gyro bias
-//     drifts with temperature over a session in a way tilt does not.
-//
-// Ported from Gnimu Classic's g_imu_trim, unit-agnostic by design (no
-// Arduino, no config include - every tunable arrives via ImuTrimConfig, and
-// accel/gyro/speed are passed in by the caller) so it builds and can be
-// exercised against known inputs on a host.
-// ============================================================================
+// Pure and unit-agnostic - every tunable arrives through ImuTrimConfig - so it
+// builds and is tested on a host.
 
 // UNITS: unit-agnostic. accel values, gravityNative, and the variance ceilings
 // are all in whatever units the caller's accel/gyro samples use; they only

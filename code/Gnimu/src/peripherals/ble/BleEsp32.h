@@ -36,7 +36,7 @@ class BleEsp32 {
   bool send(const uint8_t* data, size_t len);
   // Bytes the peer wrote to RX, in arrival order.
   size_t read(uint8_t* out, size_t max);
-  // No Battery Service on the ESP32 (no battery; Classic had none either).
+  // No Battery Service on the ESP32: it has no battery.
   void setBatteryPercent(uint8_t) {}
   BleStats stats() const;
   void clearMaxSend() { link_.clearMaxSend(); }

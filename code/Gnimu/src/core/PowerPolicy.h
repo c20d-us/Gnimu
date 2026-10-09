@@ -55,7 +55,7 @@ class Debounced {
   uint32_t glitches_ = 0;
 };
 
-// NG's PowerState, decisions only: the app applies each action in hardware-safe
+// Power-state decisions only: the app applies each action in hardware-safe
 // order.
 //
 // The switch is a high-impedance analog reading, so it's cleaned up twice

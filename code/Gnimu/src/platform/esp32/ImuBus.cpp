@@ -1,5 +1,4 @@
-// Two-layer guard: see Clock.cpp for why CONFIG_IDF_TARGET_ESP32 needs
-// ARDUINO_ARCH_ESP32 and sdkconfig.h around it, not just a bare #if.
+// Two-layer guard: see Clock.cpp for why.
 #if defined(ARDUINO_ARCH_ESP32)
 #include "sdkconfig.h"
 #if CONFIG_IDF_TARGET_ESP32

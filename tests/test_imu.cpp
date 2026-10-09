@@ -36,6 +36,22 @@ static void testRemapDoesNotClobberDuringPermutation() {
   assert(near(v[0], 3.0f) && near(v[1], 1.0f) && near(v[2], 2.0f));
 }
 
+// Only all three accel axes at exactly zero is rejected. A negative zero from
+// a sign-flipping remap counts too: the drivers check after the remap.
+static void testZeroAccel() {
+  ImuSample s;
+  assert(isZeroAccel(s));
+  s.accel[0] = -0.0f;
+  assert(isZeroAccel(s));
+  s.gyro[1] = 0.5f;  // gyro doesn't count: a still IMU reads zero rate
+  assert(isZeroAccel(s));
+  s.accel[2] = 9.80665f;  // level and still: one axis carries gravity
+  assert(!isZeroAccel(s));
+  ImuSample partial;  // two axes zero, one not
+  partial.accel[0] = 0.01f;
+  assert(!isZeroAccel(partial));
+}
+
 static void testFilterSeedThenConverge() {
   ImuFilter f(0.5f, 0.5f);
   ImuSample seed;
@@ -92,6 +108,7 @@ int main() {
   testRemapIdentity();
   testRemapPermutationAndSign();
   testRemapDoesNotClobberDuringPermutation();
+  testZeroAccel();
   testFilterSeedThenConverge();
   testHealthStartsDownAndNeedsMarkUp();
   testHealthLatchesDownAfterFailures();

@@ -106,7 +106,7 @@ bool Lsm6ds3::read(ImuSample &out) {
 
   remapAxes(out.accel, kAxisMap);
   remapAxes(out.gyro, kAxisMap);
-  return true;
+  return !isZeroAccel(out);
 }
 
 // Powers the chip back off, as at boot. No restart path: leaving a stop goes

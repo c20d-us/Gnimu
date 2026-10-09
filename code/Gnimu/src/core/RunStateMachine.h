@@ -10,9 +10,10 @@ namespace gnimu {
 
 // Starting: peripheral bring-up at boot, before the scheduler runs. Running:
 // normal operation. Fault: fatal (no receiver, its settings not applied, no
-// data, no BLE) - everything else stops, the console stays up. BatteryWait: switch off while USB holds the MCU up.
-// ChargeOnly: charging with everything else off (switch on with USB). A
-// reset or System OFF leaves the run altogether rather than being a state.
+// data, no BLE) - everything else stops, the console stays up. BatteryWait:
+// switch off while USB holds the MCU up. ChargeOnly: charging with everything
+// else off (switch on with USB). A reset or System OFF leaves the run
+// altogether rather than being a state.
 enum class RunState : uint8_t { Starting, Running, Fault, BatteryWait, ChargeOnly };
 enum class FaultReason : uint8_t { None, GnssMissing, GnssConfigFailed, GnssNoData, BleFailed };
 enum class RestartReason : uint8_t { SwitchOn, UsbRemoved, GnssSilent };

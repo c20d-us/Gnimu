@@ -35,7 +35,7 @@ struct BatteryStatus {
 // on battery ever claiming a charge.
 inline bool isCharging(const BatteryStatus& b, bool usbPresent) { return usbPresent && b.chargerActive; }
 
-// Classic's g_battery sampler, as NG ported it. Each run keeps the PEAK of
+// The battery sampler. Each run keeps the PEAK of
 // its readings: load sag (GNSS acquisition current, the TPS) only ever pulls
 // a reading down, so the peak is the best estimate of the resting voltage.
 // Smoothing is display-only; the cutoff watches each run's unsmoothed peak,
@@ -63,7 +63,7 @@ class BatteryMonitor {
     if (++count_ >= c_.samplesPerRun) finishRun(nowMs);
   }
 
-  // NG's rule: the charger's status line alone can't say "full" - outside a
+  // The charger's status line alone can't say "full" - outside a
   // charge it reads inactive too - so it must stay inactive for a while AND
   // the cell must plausibly be near the top.
   void updateCharger(bool chargerActive, uint32_t nowMs) {
@@ -107,7 +107,7 @@ class BatteryMonitor {
   }
 
   // A deliberate straight line between cutoff and full-scale, not a real
-  // LiPo discharge curve (Classic's own choice).
+  // LiPo discharge curve.
   uint8_t percentFor(float v) const {
     if (v <= c_.cutoffV) return 0;
     if (v >= c_.fullScaleV) return 100;

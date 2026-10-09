@@ -64,8 +64,7 @@ void Console::printReport(const JobTable& jobs, const DeviceStatus& status) {
 
 void Console::printStatus(const DeviceStatus& status, const StatusRates& rates) {
   // A full line (Fix+SV+tAcc+hAcc+Lat+Long+Accel+Gyro+Trim) runs ~185 bytes;
-  // 160 silently truncated it before the trailing newline - exactly the kind
-  // of mistake Out's truncation guard hides instead of catching loudly.
+  // 256 leaves room so no line loses its newline.
   char buf[256];
   const size_t n = formatStatus(buf, sizeof(buf), status, rates);
   emit(buf, n);
@@ -74,13 +73,13 @@ void Console::printStatus(const DeviceStatus& status, const StatusRates& rates) 
 void Console::flush() {
   Serial.flush();
   // flush() hands the bytes to USB/UART; the short wait lets them actually
-  // leave before a reset cuts the link (Classic's 50 ms).
+  // leave before a reset cuts the link.
   delay(50);
 }
 
 void Console::log(const char* fmt, ...) {
-  // Formatted into the first 160 bytes, then the line ending println used to
-  // add, so the line goes out in one emit().
+  // Formatted into the first 160 bytes, then CR+LF, so the line goes out in
+  // one emit().
   char buf[162];
   va_list ap;
   va_start(ap, fmt);
@@ -96,12 +95,12 @@ void Console::log(const char* fmt, ...) {
 // room, so a host that holds the port open without reading can't stall the
 // loop. Every line is under the nRF's 256-byte USB buffer, so it always fits
 // once the host reads. With no host listening (no DTR on native USB) output is
-// discarded uncounted, as Serial.write already did; the ESP32's UART is
+// discarded uncounted; the ESP32's UART is
 // always "listening".
 void Console::emit(const char* p, size_t n) {
   if (n == 0 || !Serial) return;
   // PlatformClock, not micros(): the nRF core's micros() only advances once
-  // per 1 ms RTOS tick, which made the wait anywhere from 1 to 2 ms.
+  // per 1 ms RTOS tick, too coarse to time a 2 ms wait.
   const uint64_t start = PlatformClock::nowUs();
   while (static_cast<size_t>(Serial.availableForWrite()) < n) {
     if (PlatformClock::nowUs() - start >= config::kConsoleWaitUs) {

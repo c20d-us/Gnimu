@@ -21,7 +21,7 @@ void gnssRailDisable() {
 
 // With the GNSS unpowered, a UART TX idling HIGH leaks through the receiver's
 // RX protection diode into its supply, half-powering it. Idle it LOW as a
-// plain GPIO instead (Classic's fix).
+// plain GPIO instead.
 void gnssTxIdleLow() {
   pinMode(board::kGnssTxPin, OUTPUT);
   digitalWrite(board::kGnssTxPin, LOW);
@@ -36,8 +36,8 @@ void PeripheralPower::holdAllOff() {
   digitalWrite(board::kImuPowerPin, LOW);
 }
 
-// Released, not driven HIGH: Classic's proven sequence, and the regulator's
-// pull-up is what holds it enabled whenever the MCU isn't driving it.
+// Released, not driven HIGH: the regulator's pull-up is what holds it enabled
+// whenever the MCU isn't driving it.
 // GnssUart::begin() reclaims the TX pin as a UART pin.
 void PeripheralPower::gnssRailOn() { pinMode(board::kGnssEnablePin, INPUT); }
 
@@ -48,7 +48,7 @@ void PeripheralPower::gnssRailOff() {
 
 void PeripheralPower::reset() { NVIC_SystemReset(); }
 
-// Classic's sequence. GPIO state persists through System OFF, so everything
+// GPIO state persists through System OFF, so everything
 // is held off first: anything left driven keeps drawing until the next boot.
 void PeripheralPower::systemOff() {
   holdAllOff();

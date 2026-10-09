@@ -6,7 +6,7 @@
 
 using namespace gnimu;
 
-// Classic's/NG's values.
+// The firmware's own battery settings.
 static const BatteryConfig kCfg = {20, 250, 0.1f, 3.30f, 3.35f, 3.40f, 4.10f, 5000, 4.10f, 5000};
 
 static bool near(float a, float b) { return fabsf(a - b) < 0.0005f; }

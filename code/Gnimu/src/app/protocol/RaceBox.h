@@ -11,9 +11,9 @@
 
 namespace gnimu {
 
-// The RaceBox Mini protocol: its BLE layout, its 88-byte data packet, and
-// (later) its inbound commands. Pure - no hardware - so it's host-testable;
-// App hands the encoded packet to BLE.
+// The RaceBox Mini protocol: its BLE layout, its 88-byte data packet, and its
+// inbound commands (none handled yet). Pure - no hardware - so it's
+// host-testable; App hands the encoded packet to BLE.
 class RaceBoxProtocol {
  public:
   static constexpr bool kUsesImu = true;
@@ -28,8 +28,8 @@ class RaceBoxProtocol {
     encodeRaceBoxData(e, imu, batteryByte(battery, usbPresent), out);
   }
 
-  // Bit 7 charging, bits 0-6 percent. Classic's fixed 100 (not charging)
-  // without a battery or before the first reading.
+  // Bit 7 charging, bits 0-6 percent. A fixed 100 (not charging) without a
+  // battery or before the first reading.
   static uint8_t batteryByte(const BatteryStatus* b, bool usbPresent) {
     if (!b || !b->valid) return kNoBattery;
     return static_cast<uint8_t>((b->percent & 0x7F) | (isCharging(*b, usbPresent) ? 0x80 : 0));

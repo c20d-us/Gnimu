@@ -9,8 +9,8 @@
 namespace gnimu {
 
 // RaceBox Data Message: UBX-style framing (B5 62, class FF, id 01, length 80),
-// an 80-byte little-endian payload, and the UBX Fletcher checksum. Byte-for-
-// byte Classic's g_telemetry sendPacket().
+// an 80-byte little-endian payload, and the UBX Fletcher checksum, laid out as
+// the RaceBox BLE protocol's data message.
 constexpr size_t kRaceBoxPacketBytes = 88;
 
 namespace detail {

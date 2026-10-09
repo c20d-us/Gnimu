@@ -11,15 +11,22 @@ struct ImuSample {
   float gyro[3] = {0, 0, 0};
 };
 
+// All three accel axes exactly zero is not a measurement: a working IMU
+// always measures gravity. It's what a chip reads back after resetting
+// itself, so drivers treat it as a failed read.
+inline bool isZeroAccel(const ImuSample& s) {
+  return s.accel[0] == 0.0f && s.accel[1] == 0.0f && s.accel[2] == 0.0f;
+}
+
 // Physical units to the milli-g / centi-deg/s scale shared by the RaceBox
-// packet and the console - Classic's exact factors.
+// packet and the console.
 constexpr float kMps2ToMilliG = 1000.0f / 9.80665f;
 constexpr float kRadpsToCentiDeg = (180.0f / 3.14159265f) * 100.0f;
 
 // The console's integer display units, converted once where they're printed
 // so the formatters keep to integer printf formats. Truncated toward zero
-// (not rounded), as the console has always shown them. No int16 saturation:
-// these are debug prints, not a wire format (the RaceBox encoder has its own).
+// (not rounded). No int16 saturation: these are debug prints, not a wire
+// format (the RaceBox encoder has its own).
 struct ImuDisplay {
   int32_t accelMilliG[3];
   int32_t gyroCentiDegS[3];

@@ -35,7 +35,7 @@ class BleNrf {
   bool send(const uint8_t* data, size_t len);
   // Bytes the peer wrote to RX, in arrival order.
   size_t read(uint8_t* out, size_t max);
-  // The standard Battery Service (0x180F), as Classic and NG publish it.
+  // The standard Battery Service (0x180F).
   // Updated, and notified to a subscribed client, only when the value changes.
   void setBatteryPercent(uint8_t percent);
   BleStats stats() const;

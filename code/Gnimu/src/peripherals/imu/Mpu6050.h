@@ -14,7 +14,7 @@ class Mpu6050 {
   // found, won't take its configuration, or can't produce a sample.
   bool begin(Console& log, ImuSample& first);
   // One sample in physical units (m/s^2, rad/s), remapped to vehicle axes.
-  // False on a failed or implausible read.
+  // False on a failed or all-zero read.
   bool read(ImuSample& out);
   // Wired straight to the supply, so there's nothing to power off.
   void end() {}

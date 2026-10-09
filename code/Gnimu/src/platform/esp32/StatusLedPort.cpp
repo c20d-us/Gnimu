@@ -1,5 +1,4 @@
-// Two-layer guard, same reasoning as GnssUart.cpp: ARDUINO_ARCH_ESP32 is a raw
-// -D flag; CONFIG_IDF_TARGET_ESP32 only exists once sdkconfig.h is included.
+// Two-layer guard: see Clock.cpp for why.
 #if defined(ARDUINO_ARCH_ESP32)
 #include "sdkconfig.h"
 #if CONFIG_IDF_TARGET_ESP32

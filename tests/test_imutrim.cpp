@@ -56,8 +56,7 @@ static void testInitialStateIsNoop() {
   assert(near(gyro[0], 0.1f) && near(gyro[1], 0.2f) && near(gyro[2], 0.3f));
 }
 
-// A device pitched 10 degrees forward: gravity acquires a +X component,
-// derived the same way Classic's own hand-worked sign convention does.
+// A device pitched 10 degrees forward: gravity acquires a +X component.
 static void testConvergesAndCorrectsKnownTilt() {
   ImuTrim trim(baseConfig());
   const float theta = 10.0f * kDegToRad;

@@ -21,7 +21,7 @@ uint64_t nextStatusGridUs(uint64_t nowUs) {
 // The first line after arming lands on the first grid point a full period
 // away, so the first measurement window is 1-2 s long. Landing on the very
 // next grid point could leave a window of a few milliseconds, where a single
-// epoch more or less reads as tens of Hz (seen: "GNSS: 50Hz").
+// epoch more or less reads as tens of Hz.
 uint64_t firstStatusGridUs(uint64_t nowUs) {
   return nextStatusGridUs(nowUs + config::kStatusPeriodUs - 1);
 }

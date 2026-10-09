@@ -13,7 +13,7 @@ namespace config {
 enum class Protocol : uint8_t { RaceBox };
 constexpr Protocol kProtocol = Protocol::RaceBox;
 
-// The bad rate for GNSS communications. Higer than 115200 is not needed.
+// The baud rate for GNSS communications. Higher than 115200 is not needed.
 constexpr uint32_t kGnssBaud = 115200;
 // Every rate a receiver could be saved at, in the order the sweep tries them.
 // kGnssBaud is tried first and skipped here.
@@ -81,10 +81,10 @@ constexpr uint32_t kLedPeriodUs =
     25000; // fine enough to render the 5 Hz fault blink cleanly
 constexpr uint32_t kLedBudgetUs = 500;
 // The standard blink - advertising, battery warning/critical, charging -
-// Classic's 1 s on, 1 s off.
+// 1 s on, 1 s off.
 constexpr uint32_t kLedBlinkHalfMs = 1000;
 // Fault: 5 Hz. Urgent, and twice BATTERY_WAIT's rate so the two can't be
-// confused; 10 Hz looked a bit too fast on the bench.
+// confused.
 constexpr uint32_t kLedFaultHalfMs = 100;
 // BATTERY_WAIT: amber, fast enough to read as "not running" next to the 1 s
 // battery-warning amber. Only ever on USB power, so it costs nothing.
@@ -125,7 +125,9 @@ constexpr uint32_t kStatusMaxCount = 3600;
 
 // IMU sample rate, shared by both MPU-6050 and LSM6DS3.
 // 100 Hz, undecimated - a future encoder step picks its own transmit cadence
-// rather than this job deciding one.
+// rather than this job deciding one. The LSM6DS3 outputs at 104 Hz (100 isn't
+// one of its rates, and its clock isn't synced to ours), so about one sample
+// in 26 is never read; accepted, as the EMA below smooths over it.
 constexpr uint32_t kImuSamplePeriodUs = 10000;
 constexpr uint32_t kImuSampleBudgetUs = 1000;
 constexpr int kImuAccelRangeG = 4;    // 2, 4, 8 or 16 g; 4g is ample for auto-x
@@ -137,8 +139,14 @@ constexpr uint32_t kImuI2cClockHz = 400000;
 // 2 ms is ample, and an IMU that fails costs the GNSS ring (about 44 ms of
 // data on the ESP32) about 2 ms per read instead of 50.
 constexpr uint16_t kImuI2cTimeoutMs = 2;
-constexpr float kImuAccelAlpha = 0.09f; // EMA smoothing: 1.0 = raw, 0.1 = heavy
-constexpr float kImuGyroAlpha = 0.09f;  // EMA smoothing: 1.0 = raw, 0.1 = heavy
+// EMA smoothing, 1.0 = raw. Its delay is about (1 - alpha) / alpha samples:
+// 0.33 is about 20 ms at 100 Hz, so a packet's IMU value lands near the epoch
+// it's sent with, while still damping vibration that would alias into the
+// 20 Hz packets. Heavier smoothing trades lag for calm: 0.18 is about 45 ms,
+// and 0.09 about 100 ms, which shifts braking and turn-in by about 3 m at
+// 30 m/s.
+constexpr float kImuAccelAlpha = 0.33f;
+constexpr float kImuGyroAlpha = 0.33f;
 // Consecutive failed reads that mark the IMU down: ~100 ms at 100 Hz. With
 // the I2C timeout above, the failures cost the loop about 20 ms in all.
 constexpr uint8_t kImuDownAfterFailures = 10;
@@ -149,8 +157,8 @@ constexpr uint8_t kImuDlpfCfg = 4; // DLPF_CFG 0-6; 4 = 21Hz accel, 20Hz gyro
 
 // Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
 // is a builder/BOM choice (currently identity), while the Sense's onboard
-// LSM6DS3TR-C has a fixed orientation on that PCB (Classic's -1,-1,+1,
-// ported as-is). See core/ImuSample.h for how src/sign are applied.
+// LSM6DS3TR-C has a fixed orientation on that PCB (signs -1,-1,+1). See
+// core/ImuSample.h for how src/sign are applied.
 constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
 constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
 constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};

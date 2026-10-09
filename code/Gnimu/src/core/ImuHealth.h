@@ -6,7 +6,7 @@ namespace gnimu {
 
 // Tracks whether the IMU is answering. Starts down; markUp() moves it up once
 // bring-up succeeds. Once up, enough consecutive failed reads latch it back
-// down until the next reboot, by choice (owner, REL-6): the IMU is secondary.
+// down until the next reboot, by choice: the IMU is secondary.
 // GNSS keeps streaming without it, nothing else depends on its state, and a
 // down IMU's all-zero accel can't be mistaken for real data - a healthy one
 // always measures gravity.

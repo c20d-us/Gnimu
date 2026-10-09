@@ -170,7 +170,8 @@ Transition App::enter(RunState s) {
       break;
     case RunState::Fault:
       // Fatal: log it and start nothing else. The console job stays up so
-      // the device still answers D/V; a switch cycle on USB retries.
+      // the device still answers D/V. The switch works as in RUNNING: on USB,
+      // off/on leads to CHARGE_ONLY, and a second off/on restarts and retries.
       console_.log("%s", faultMessage(machine_.fault()));
       stopPeripherals();
       if (board::kHasSwitchedPower) console_.log("Power: GNSS rail off");

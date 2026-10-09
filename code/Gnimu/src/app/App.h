@@ -50,18 +50,18 @@ class App {
   // nullptr on boards without a battery.
   const BatteryStatus* batteryStatus() const;
   // Carries out a state-machine Transition: entering a state sets its jobs and
-  // runs its entry effects, following Starting's GNSS result on into Running
+  // runs its entry effects, following Starting's bring-up result on into Running
   // or Fault. Restart and SystemOff don't return.
   void apply(Transition t);
   // One state's fixed entry effects - the only place peripherals start or
-  // stop. Returns the follow-up transition (Starting reports the GNSS
-  // result); Stay for the others.
+  // stop. Returns the follow-up transition (Starting reports the
+  // bring-up result); Stay for the others.
   Transition enter(RunState s);
   void setJobs(const JobSet& j);
   // GNSS, IMU and BLE off in hardware-safe order. Idempotent: safe when
   // nothing was started (a boot straight into waiting).
   void stopPeripherals();
-  // Back to RUNNING always goes through a fresh boot (NG's choice): it reruns
+  // Back to RUNNING always goes through a fresh boot: it reruns
   // the verified bring-up instead of restarting peripherals in place. The
   // reason is kept across the reset for the next boot's "Reset:" line.
   [[noreturn]] void restart(RestartReason why);

@@ -1002,6 +1002,73 @@ Considered and left out: templating every module on its hardware types for host 
 
 **Verified 2026-10-09 (owner):** both boards compile, boot and work. **Checks were:** boot IMU lines as before (`detected ✅`, `configured, 4g 500deg/s ✅`); D's IMU readings normal (about 1000 mG on Z when level); trim reaches `locked`.
 
+#### DATA-1: IMU smoothing lag cut from ~100 ms to ~20 ms. Done (boot verified; track traces pending)
+
+**Finding confirmed:**
+- **Lag:** the EMA's α = 0.09 at 100 Hz delays each axis by about (1 − α)/α ≈ 10 samples, **~100 ms** (plus the chips' own low-pass: about 21 Hz on the MPU-6050, 50 Hz on the LSM6DS3). At 30 m/s that's about 3 m on braking points and turn-in plotted against position; g-g plots are barely affected.
+- **Pairing:** the packet takes the IMU value at PVT-parse time, after the receiver's solution latency plus ~8.7 ms of UART. With the ~100 ms lag, the IMU value probably described a moment ~50–70 ms *before* the epoch (an estimate: receiver latency unmeasured).
+- **LSM6DS3 at 104 Hz read at 100 Hz:** about one sample in 26 never read. Minor.
+- Filtering itself is needed: 20 Hz packets from a 100 Hz stream would otherwise alias vibration above 10 Hz into false G-force wobble.
+
+**Fix (owner, 2026-10-09; history: the original α was 0.8, earlier testing settled on 0.09):** `kImuAccelAlpha` and `kImuGyroAlpha` set to **0.33**, about 20 ms of delay. Config only: `ImuFilter`, `Ema` (host-tested), trim (still on raw samples), seeding, D and the status line are unchanged. The epoch pairing improves with it: ~20 ms of delay ending at the PVT arrival puts the IMU value near the epoch it's sent with.
+- **Considered on the way:** a 5-sample moving average (the same ~20 ms delay, exact cancellation at 20 and 40 Hz). Against broadband vibration it's about equal to α = 0.33 (at 30 Hz both pass ~¼; at 10 Hz ~65% vs ~55%), and it needed a new filter, so the config change won.
+- **Expected look:** white sensor noise left at about √(α/(2−α)): ~22% at 0.09, **~45% at 0.33**, ~82% at 0.8, so about twice today's fine jitter. Real motion at 2–10 Hz (bumps, kerbs, suspension) passes much more (at 5 Hz ~80% vs ~30%), so bumpy sections look livelier. **0.18** (~30% noise, ~45 ms) is the middle ground if 0.33 looks too busy.
+- **LSM6DS3 104 Hz vs 100 Hz:** accepted, noted in `Config.h`. Data-ready or FIFO reads would be the only real fix.
+
+**Files:** `app/Config.h` (constants and comments).
+
+**Checks:** host suites pass; `scripts/build.sh` passes for both boards with no project warnings.
+
+**Verified 2026-10-09 (owner):** both boards compile, boot and work. **Still to judge:** in RaceChrono, a tap or a sharp brake shows up sooner and crisper; the owner judges 0.33 against 0.18 on real traces.
+
+#### CPLX-7: comments explain purpose only. Done
+
+**Owner's rule (2026-10-09), for current and future comments:** explain purpose and intent, with no historical references. A reader may know nothing of "Classic", "NG", review IDs or past decisions. History lives in `docs/`.
+
+**Measured before:** 1,253 comment lines against 4,258 lines of code; 41 "Classic"/"NG"/"seen:" mentions in 21 files; the two-layer ESP32 guard explanation pasted in full into 4 files.
+
+**Done:**
+- **History references turned into reasons or removed,** in code and tests (e.g. "Classic's proven sequence" → the reason itself; "Classic had none either" → "it has no battery"). The only remaining "Classic" is the `Wiring::Classic` board option, now described as the earlier hardware revision's PCB.
+- **Review and decision references removed from code** (e.g. `ImuHealth.h`'s "(owner, REL-6)", `Config.h`'s "looked too fast on the bench" and the alpha history, now stated as the trade-off).
+- **Stale comments fixed:** `nrf52840/ImuBus.cpp` (described the old driver layout), `BleStub.h` (said the nRF BLE port was still to come), `StatusLed.h` (`GnssFault` → any fault), `RaceBox.h` ("(later)" commands → "none handled yet").
+- **The guard explanation is written once,** in `platform/esp32/Clock.cpp`. The other nine ESP32 files point to it with one line.
+- **The `ImuTrim` design write-up moved to `docs/imu-trim.md`.** The header keeps a short summary and a pointer.
+- **Left as is:** `Config.h`'s per-setting comments, and local "why" comments next to the code they explain.
+
+**Checks:** a comment-only pass. Both firmware images are **byte-for-byte the same size** before and after (ESP32 1,194,891 / 47,020 bytes, nRF 200,704 / 18,732 bytes). Host suites pass, and `scripts/build.sh` reports no project warnings. No bench test needed.
+
+#### Self-review before going back to the reviewer (2026-10-09). Done (bench check pending)
+
+**Scope:** the owner asked for a critical pass over the whole codebase as it now stands, looking for complexity, performance or bugs added by this review's changes. Firmware grew from 5,534 to 6,336 lines (+14%). Most of that is REL-1 (watchdog and reset reason, ~330 lines); the IMU and BLE consolidation removed about 270.
+
+**Found and fixed:**
+1. **Fault on USB: the comment was wrong.** `App.cpp` said "a switch cycle on USB retries". Fault handles the switch exactly as Running does, so on USB off/on leads to CHARGE_ONLY and a second off/on restarts (confirmed with a host simulation). Owner decision: keep the behaviour and fix the comment. Keeping it means the power policy needs no Fault special case.
+2. **All-zero accel was rejected only by the MPU-6050 driver.** An LSM6DS3 that reset itself mid-run would have stayed "up" reading zeros. One shared `isZeroAccel()` in `core/ImuSample.h` now holds the rule (a working IMU always measures gravity), and both drivers' `read()` use it after the remap. It sits in `read()` rather than the pipeline so it also covers the first sample in `begin()`. New host test `testZeroAccel`.
+3. **Stale or history-style comments CPLX-7 missed:**
+   - `App.h`: "Starting's GNSS result" → its bring-up result (BLE included).
+   - `Gnss.cpp`: the C++-standard note (now: `if constexpr` needs C++17; the nRF core is C++11), and the settings-table note that listed only ✅/written.
+   - `Console.cpp`: four past-tense phrasings ("used to", "already did", "made the wait").
+   - `ImuSample.h`: "as the console has always shown them".
+   - `RunStateMachine.h`: re-wrapped.
+   - `Config.h`: typos.
+
+**Checked and fine:**
+- Per-loop cost of the additions: one watchdog feed, one max-late compare per job, two clock reads per BLE send, and a liveness check plus a USB register read per GNSS pass.
+- Watchdog coverage of every blocking boot step.
+- At most one restart before a silent-GNSS Fault.
+- Safe teardown when booting straight into a waiting state.
+- BLE callbacks touch only atomics and the RX ring. The ESP32 `onStatus()` always runs synchronously inside `notify()` (checked in the 3.3.12 library source).
+
+**Noted, not changed:**
+- **Optional simplifications** (owner's call): drop the `ensureVal8`/`ensureVal16` wrappers in favour of calling `ensureVal<T>` directly; and remove `RateTracker`'s counter-went-backwards check, which is redundant with Diagnostics re-baselining on C.
+- **Biggest remaining performance risk:** the nRF `notify()` blocking up to 100 ms on a full queue. This predates the review and is what the weak-link soak decides.
+- ESP32 flash at 91%.
+
+**Checks:**
+- Host suites pass (plain and sanitized). `scripts/build.sh` reports no project warnings.
+- Images: ESP32 1,194,915 / 47,020 bytes (+24 flash), nRF 200,752 / 18,732 bytes (+48 flash).
+- **Bench check pending:** an ordinary boot on both boards, with `IMU: configured ✅` and live accel in `D`.
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
@@ -1087,11 +1154,13 @@ Hardware checks that decisions above depend on.
 | PERF-4 | Deferred | ESP32 is the secondary board. Same-size allocations; a long soak would show fragmentation. |
 | BAT-1 | Declined | Peak-hold is deliberate, to reject dips under radio and GNSS load. With the switch ON on battery, the only time the cutoff matters, the switch-sense pin sits near 0 V, so ADC carryover biases VBAT readings *down*, and peak-hold discards those. |
 | HW-1 | Declined (comment rewritten) | Seeed's wiki says don't drive P0.14 HIGH *while charging*. The divider's 510 kΩ leg returns to P0.14, so HIGH puts P0.31 at about 3.3 V + (VBAT − 3.3 V)/3, which is 3.60 V with a 4.2 V cell. The same page recommends HIGH after reading to save the divider's ~2.3 µA in sleep. The code holds P0.14 LOW whenever it's running or charging, and drives it HIGH only on System OFF entry, below the 3.30 V cutoff, where P0.31 stays around 3.3–3.4 V. USB plug-in should wake the chip into a boot that drives it LOW before the cell can charge, so this rests on USB wake from System OFF (see Open checks). The review's alternative (P0.31 as a disconnected input) wouldn't change the pin voltage. Sources: [Seeed XIAO nRF52840 wiki](https://wiki.seeedstudio.com/XIAO_BLE/), [quote of the wiki note](https://github.com/honvl/Seeed-Xiao-NRF52840-Battery/issues/1). Files: `platform/BatteryPort.h`, `platform/nrf52840/BatteryPort.cpp` (comments only). |
-| DATA-1 | Deferred | A real data-quality question (EMA lag, IMU/epoch alignment), but it changes what is sent. To be discussed separately after these phases. |
+| DATA-1 | Done (2026-10-09, boot verified; track traces pending) | IMU EMA α 0.09 → 0.33 (~100 ms → ~20 ms lag), which also improves the epoch pairing; LSM6DS3 104 Hz vs 100 Hz accepted. See Restructure progress → "DATA-1". |
 | SEC-1, SEC-2 | Declined | Outside the stated threat model. The owner previously decided to refuse oversized frames and not request a larger MTU. |
 | SEC-3 | Deferred | Input-handling rules will be written when the RaceBox command decoder is built. No code today. |
 | SEC-4 | Accepted risk | Already accepted. |
 | CPLX-1 | Declined | The SparkFun callback is a plain function pointer, so the state must be static. There is one receiver by design. |
 | CPLX-3 | Done (2026-10-09) | Shared BLE rules in `BleLink`. See Restructure progress → "CPLX-3". |
 | CPLX-5 (rest) | Declined (2026-10-09) | The clock part is done (one timebase). Wrapping portable Arduino calls (`delay`, `Serial`) is declined: `platform/` holds what differs per board. See Restructure progress → "CPLX-5 (rest)". |
-| CPLX-7, TEST-1 | Deferred | Later cleanup (TEST-3 done, see Restructure progress → "TEST-3") |
+| CPLX-7 | Done (2026-10-09) | Comments explain purpose only; see Restructure progress → "CPLX-7". |
+| TEST-1 | Deferred | Later cleanup (TEST-3 done, see Restructure progress → "TEST-3") |
+| Self-review | Done (2026-10-09, bench check pending) | Fault comment, shared zero-accel check, stale comments; see Restructure progress → "Self-review". |

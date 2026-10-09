@@ -15,7 +15,7 @@
 namespace gnimu {
 
 // Native USB CDC: wait for the host to enumerate the port, but only with USB
-// power present (Classic's rule) - on battery there's no host, and waiting
+// power present - on battery there's no host, and waiting
 // would only delay every power-on.
 void consoleOpen() {
   Serial.begin(115200);

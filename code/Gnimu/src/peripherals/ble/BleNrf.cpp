@@ -17,7 +17,7 @@ namespace gnimu {
 
 namespace {
 
-// The nRF52840 radio's exact levels (Classic's list).
+// The TX power levels the nRF52840 radio supports.
 constexpr bool isNrfTxPower(int dbm) {
   return dbm == -40 || dbm == -20 || dbm == -16 || dbm == -12 || dbm == -8 || dbm == -4 ||
          dbm == 0 || (dbm >= 2 && dbm <= 8);
@@ -25,7 +25,7 @@ constexpr bool isNrfTxPower(int dbm) {
 static_assert(isNrfTxPower(config::kBleTxPowerDbm),
               "nRF52840 BLE TX power must be -40, -20, -16, -12, -8, -4, 0 or 2..8 dBm");
 
-// Classic's advertising cadence, in 0.625 ms units: fast (20 ms) for the first
+// Advertising cadence, in 0.625 ms units: fast (20 ms) for the first
 // 30 s so a phone finds it quickly, then slow (152.5 ms) to save power.
 constexpr uint16_t kAdvFastInterval = 32;
 constexpr uint16_t kAdvSlowInterval = 244;
@@ -121,7 +121,7 @@ void BleNrf::end() {
   if (!started_) return;
   started_ = false;
   // Restart-on-disconnect goes off first, or the disconnect below makes
-  // Bluefruit restart advertising, racing the stop() (Classic's bleStop order).
+  // Bluefruit restart advertising, racing the stop().
   Bluefruit.Advertising.restartOnDisconnect(false);
   for (uint16_t h = 0; h < BLE_MAX_CONNECTION; h++) {
     BLEConnection* c = Bluefruit.Connection(h);

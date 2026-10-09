@@ -15,15 +15,15 @@ constexpr bool kHasSwitchedPower = true;
 // compiles the same everywhere; only Sense/Sense Plus actually have the chip.
 constexpr int kImuPowerPin = PIN_LSM6DS3TR_C_POWER;
 
-// Which wiring this build targets. Breadboard: the current development unit.
-// Classic: units wired for Gnimu Classic. Polarity is the same on both; only
-// the pins differ. Change this to build for a Classic-wired unit.
+// Which wiring this build targets: Breadboard, the development unit, or
+// Classic, the earlier hardware revision's PCB. Polarity is the same on both;
+// only the pins differ.
 enum class Wiring : uint8_t { Breadboard, Classic };
 constexpr Wiring kWiring = Wiring::Breadboard;
 
 // EN of the regulator that powers only the GNSS module (TPS63070 on the
-// breadboard, TPS63020 in Classic). LOW disables it; released to an input,
-// the regulator's own pull-up enables it.
+// breadboard, TPS63020 on the Classic PCB). LOW disables it; released to an
+// input, the regulator's own pull-up enables it.
 constexpr int kGnssEnablePin = kWiring == Wiring::Breadboard ? D1 : D9;
 
 // The slide switch's spare throw through a 510k/510k divider (same circuit on

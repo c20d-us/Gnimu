@@ -16,7 +16,7 @@ struct BleProfile {
   const char *rxUuid;  // write / write-without-response: phone -> device
 };
 
-// RaceBox compatibility requirements (Classic's values): scanners match the
+// RaceBox compatibility requirements: scanners match the
 // "RaceBox Mini <10 digits>" name plus these services and DIS fields.
 constexpr BleProfile kRaceBoxProfile = {
     "RaceBox Mini",

@@ -12,7 +12,7 @@ namespace gnimu {
 
 namespace {
 // Active-low: HIGH is off. The variant's LED_STATE_ON (1) says otherwise, but
-// Classic's working nRF builds drive these LOW to light them.
+// these LEDs light when driven LOW.
 void drive(int pin, bool on) { digitalWrite(pin, on ? LOW : HIGH); }
 }  // namespace
 
@@ -23,7 +23,7 @@ void StatusLedPort::begin() {
   write(false, LedColor::Blue);
 }
 
-// Amber is red and green together, as in Classic.
+// Amber is red and green together.
 void StatusLedPort::write(bool on, LedColor color) {
   drive(LED_RED, on && (color == LedColor::Red || color == LedColor::Amber));
   drive(LED_GREEN, on && (color == LedColor::Green || color == LedColor::Amber));

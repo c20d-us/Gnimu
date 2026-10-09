@@ -27,13 +27,13 @@ constexpr float kDividerRatio = (1000000.0f + 510000.0f) / 510000.0f;
 void BatteryPort::begin() {
   analogReadResolution(12);
   analogReference(AR_INTERNAL_3_0);
-  // Long acquisition time for the high-impedance divider (Classic/NG).
+  // Long acquisition time for the high-impedance divider.
   analogSampleTime(40);
   // LOW enables the divider. Left on: it draws only microamps, and Seeed
   // advises keeping it enabled while charging. Switched off before System OFF.
   pinMode(VBAT_ENABLE, OUTPUT);
   digitalWrite(VBAT_ENABLE, LOW);
-  // HICHG LOW selects the ~100 mA charge rate rather than ~50 mA (Classic).
+  // HICHG LOW selects the ~100 mA charge rate rather than ~50 mA.
   pinMode(PIN_CHARGING_CURRENT, OUTPUT);
   digitalWrite(PIN_CHARGING_CURRENT, LOW);
   pinMode(kChargeStatusPin, INPUT_PULLUP);
@@ -47,13 +47,13 @@ uint16_t BatteryPort::readCellMv() {
 
 bool BatteryPort::chargerActive() { return digitalRead(kChargeStatusPin) == LOW; }
 
-// Classic's divider through the switch's spare throw reads ~2 V with the
+// The divider through the switch's spare throw reads ~2 V with the
 // switch OFF and ~0 V with it ON; analog, not digital, so the threshold sits
 // well clear of both.
 bool BatteryPort::switchOn() {
   // The ADC alternates between this high-impedance divider and VBAT; the
   // first conversion after a channel switch can carry charge from the last
-  // one (the "ghost" readings Classic noted), so it's thrown away. The boot
+  // one ("ghost" readings), so it's thrown away. The boot
   // classification acts on a single reading with no debounce behind it.
   (void)analogRead(board::kSwitchSensePin);
   const float mv = analogRead(board::kSwitchSensePin) * (kAdcReferenceMv / kAdcMax);

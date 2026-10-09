@@ -12,8 +12,7 @@ namespace gnimu {
 
 // The periodic (1 Hz) status line: one terse row for watching the console
 // scroll by, as opposed to the on-request `D` report's full table. Pipe-
-// delimited "Label: value" cells, matching Classic's console line style
-// rather than a comma key=value format.
+// delimited "Label: value" cells.
 // The status line's per-line rates: events since the previous line, as
 // RateTracker measures them. Hz * 100, displayed rounded to a whole Hz.
 struct StatusRates {

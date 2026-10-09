@@ -72,9 +72,8 @@ void onPvt(UBX_NAV_PVT_data_t *pvt) {
 }
 
 // Overloaded on value width so ensureVal<T> can reach the right getVal/setVal
-// pair through ordinary overload resolution, without an if-constexpr (not
-// worth risking on a C++ standard we haven't confirmed either core compiles
-// with).
+// pair through ordinary overload resolution, without `if constexpr`, which
+// needs C++17; the nRF core builds as C++11.
 bool getVal(uint32_t key, uint8_t *val, uint8_t layer) {
   return receiver.getVal8(key, val, layer);
 }
@@ -260,11 +259,8 @@ bool Gnss::configure() {
     return selected[static_cast<unsigned>(s)] ? 1 : 0;
   };
 
-  // Every setting the receiver must hold. Read-verified-and-fixed-if-needed by
-  // ensureVal8 above, so every boot logs one "✅" or "written" line per key.
-  // A normal boot shows all "✅"; a first-ever configuration, or something
-  // knocking a value loose, shows "written" instead for whichever keys needed
-  // it.
+  // Every setting the receiver must hold. ensureVal logs one line per key (its
+  // outcomes are listed above it), so a normal boot shows all ✅.
   const KeyVal settings[] = {
       {UBLOX_CFG_NAVSPG_DYNMODEL, config::kGnssDynamicModel, "dynamic model"},
       {UBLOX_CFG_UART1OUTPROT_UBX, 1, "UBX output enable"},
