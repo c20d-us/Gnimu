@@ -985,6 +985,23 @@ Considered and left out: templating every module on its hardware types for host 
 
 **Verified 2026-10-09 (owner):** both boards compile, boot and work. **Checks were:** boot, connect and stream: `failed` / `refused` about 11 / 13 at connect, then frozen; `max send` as before; `BLE: client connected` / `disconnected` logged, with no reason on the nRF.
 
+#### CPLX-2: one IMU pipeline around small chip drivers. Done (bench verified)
+
+**Finding confirmed:** `Mpu6050` and `Lsm6ds3` were two copies of one class: the same public interface, the same filter, health and 13-line trim setup in `begin()`, the same `poll()` body, `step()` helper and failure lines. Only bring-up, the sample read and `end()` differed.
+
+**Fix (owner approved after one simplification round):**
+- **`ImuDevice` is now one concrete class** (`peripherals/imu/ImuDevice.{h,cpp}`) holding the shared pipeline, with the board's chip driver as a member (`ImuChip`, chosen in `ImuDevice.h` as before). Plain member object, like `BleLink`: no template, no inheritance. App's interface is unchanged.
+- **Each driver has three functions:** `bool begin(Console&, ImuSample& first)` (its own bring-up and ✅/❌ steps, returning the first good sample), `bool read(ImuSample&)` (physical units, remapped), `void end()` (the nRF powers its chip off; the ESP32 does nothing). The shared `imuStep()` log helper is in `ImuLog.h`.
+- **The driver returns its first sample** (the LSM6DS3's bring-up already took one as its last check, the MPU-6050's comes after its 100 ms settle), so there's no extra read and no seeding logic in the pipeline. Seeding from the first poll was considered and dropped: it would leave a ~10 ms window "up" but reading zeros.
+- **Behaviour:** unchanged except that (1) the two closing failure lines became one, `❌ IMU: continuing without it - IMU fields will read zero`, after the driver's own ❌ step; and (2) on the MPU-6050 a first read that fails right after a verified configuration now fails bring-up (logged `first sample read failed ❌`), matching the LSM6DS3, instead of coming up unseeded.
+- `Mpu6050.cpp` stays unguarded: it's a portable `Wire` driver by design, and both linkers use `--gc-sections` (the nRF image contains no `Mpu6050` symbols).
+
+**Files:** `peripherals/imu/ImuDevice.{h,cpp}` (`.cpp` new), `peripherals/imu/ImuLog.h` (new), `peripherals/imu/Mpu6050.{h,cpp}`, `peripherals/imu/Lsm6ds3.{h,cpp}`. 225 lines removed, 108 added in the existing files, plus the two new ones.
+
+**Checks:** host suites pass; `scripts/build.sh` passes for both boards with no project warnings.
+
+**Verified 2026-10-09 (owner):** both boards compile, boot and work. **Checks were:** boot IMU lines as before (`detected ✅`, `configured, 4g 500deg/s ✅`); D's IMU readings normal (about 1000 mG on Z when level); trim reaches `locked`.
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
@@ -1038,7 +1055,7 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 | Finding | Planned fix |
 |---|---|
 | REL-6 | **Declined** (owner): the IMU stays down until reboot; GNSS unaffected. See Restructure progress → "Phase 5". |
-| CPLX-2 | Later cleanup: merge the MPU-6050 and LSM6DS3 pipelines (chip driver plus shared pipeline). No longer needed by REL-6. |
+| CPLX-2 | **Done (bench verified):** one `ImuDevice` pipeline around small chip drivers. See Restructure progress → "CPLX-2". |
 | REL-3 | **ESP32 done (boot verified):** `Wire.setTimeOut(2)`. nRF bounded TWIM driver deferred; the REL-1 watchdog covers the hang. |
 
 ### Later, as a separate effort

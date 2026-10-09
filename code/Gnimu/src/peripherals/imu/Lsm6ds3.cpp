@@ -10,11 +10,11 @@
 #include <Arduino.h>
 #include <LSM6DS3.h>
 #include <Wire.h>
-#include <stdarg.h>
 #include <stdio.h>
 
 #include "../../app/Config.h"
 #include "../../platform/nrf52840/BoardConfig.h"
+#include "ImuLog.h"
 
 namespace gnimu {
 
@@ -83,13 +83,15 @@ int16_t rawPair(const uint8_t *p) {
                               (static_cast<uint16_t>(p[1]) << 8));
 }
 
+} // namespace
+
 // One 12-byte burst, gyro X/Y/Z then accel X/Y/Z (OUTX_L_G..OUTZ_H_XL), rather
 // than six separate two-transaction reads. BDU (enabled in begin()) freezes
 // each 16-bit pair against a mid-read sample rollover, but only within that
 // one pair; six separate transactions could still straddle a new sample
 // landing between them, mixing an old X with a new Z. One burst is one
 // coherent six-axis set.
-bool readSample(ImuSample &out) {
+bool Lsm6ds3::read(ImuSample &out) {
   uint8_t raw[12];
   if (sensor.readRegisterRegion(raw, LSM6DS3_ACC_GYRO_OUTX_L_G, sizeof(raw)) !=
       IMU_SUCCESS)
@@ -107,42 +109,11 @@ bool readSample(ImuSample &out) {
   return true;
 }
 
-} // namespace
-
-void Lsm6ds3::step(bool ok, const char *fmt, ...) {
-  char what[96];
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(what, sizeof(what), fmt, ap);
-  va_end(ap);
-  log_->log("IMU: %s %s", what, ok ? "✅" : "❌");
-}
-
 // Powers the chip back off, as at boot. No restart path: leaving a stop goes
 // through a reset, and begin() powers it up again from scratch.
-void Lsm6ds3::end() {
-  health_.markDown();
-  digitalWrite(board::kImuPowerPin, LOW);
-}
+void Lsm6ds3::end() { digitalWrite(board::kImuPowerPin, LOW); }
 
-void Lsm6ds3::begin(Console &log) {
-  log_ = &log;
-  filter_ = ImuFilter(config::kImuAccelAlpha, config::kImuGyroAlpha);
-  health_ = ImuHealth(config::kImuDownAfterFailures);
-  trim_ = ImuTrim(ImuTrimConfig{
-      config::kImuTrimGravityNative,
-      static_cast<float>(config::kImuSamplePeriodUs) / 1000.0f,
-      config::kImuTrimQualifyMs,
-      config::kImuTrimBlockMs,
-      config::kImuTrimLockBlocks,
-      config::kImuTrimSpeedMaxMps,
-      config::kImuTrimAccelSanityTol,
-      config::kImuTrimAccelVarMax,
-      config::kImuTrimGyroVarMax,
-      config::kImuTrimMaxTiltDeg,
-      config::kImuTrimRequireFix,
-  });
-
+bool Lsm6ds3::begin(Console &log, ImuSample &first) {
   // Power the onboard chip and let it settle before talking to it over I2C.
   pinMode(board::kImuPowerPin, OUTPUT);
   digitalWrite(board::kImuPowerPin, HIGH);
@@ -160,12 +131,9 @@ void Lsm6ds3::begin(Console &log) {
   // begin() fails only on a WHO_AM_I mismatch; its register writes go
   // unchecked, so "configured" is verified separately below.
   const bool found = sensor.begin() == IMU_SUCCESS;
-  step(found, "LSM6DS3TR-C detected");
-  if (!found) {
-    log_->log("❌ IMU: no IMU found, continuing without it - IMU fields will "
-              "read zero");
-    return;
-  }
+  imuStep(log, found, "LSM6DS3TR-C detected");
+  if (!found)
+    return false;
 
   // Must come after begin(): the library's begin() calls Wire1.begin()
   // internally, which resets the TWI frequency register, silently overwriting
@@ -180,9 +148,8 @@ void Lsm6ds3::begin(Console &log) {
       sensor.readRegisterRegion(ctrl, LSM6DS3_ACC_GYRO_CTRL1_XL, sizeof(ctrl)) == IMU_SUCCESS;
   const bool regsMatch =
       regsAccessible && ctrl[0] == kCtrl1Xl && ctrl[1] == kCtrl2G && ctrl[2] == kCtrl3C;
-  // The filter's seed read also proves a full sample read works at this speed.
-  ImuSample seed;
-  const bool seeded = regsMatch && readSample(seed);
+  // The first sample also proves a full sample read works at this speed.
+  const bool sampled = regsMatch && read(first);
 
   char why[64] = "";
   if (!regsAccessible) {
@@ -190,39 +157,12 @@ void Lsm6ds3::begin(Console &log) {
   } else if (!regsMatch) {
     snprintf(why, sizeof(why), " (read %02X %02X %02X, expected %02X %02X %02X)", ctrl[0], ctrl[1],
              ctrl[2], kCtrl1Xl, kCtrl2G, kCtrl3C);
-  } else if (!seeded) {
+  } else if (!sampled) {
     snprintf(why, sizeof(why), " (first sample read failed)");
   }
-  step(seeded, "configured, %dg %ddeg/s%s", config::kImuAccelRangeG, config::kImuGyroRangeDps,
-       why);
-  if (!seeded) {
-    log_->log("❌ IMU: configuration failed, continuing without it - IMU "
-              "fields will read zero");
-    return;
-  }
-
-  health_.markUp();
-  // Seeded with a real first reading; see Mpu6050.cpp for why.
-  filter_.reset(seed);
-}
-
-void Lsm6ds3::poll(float speedMps, bool speedValid) {
-  if (!health_.up())
-    return;
-
-  ImuSample sample;
-  const bool ok = readSample(sample);
-  if (ok) {
-    // Trim runs on the raw, uncorrected, remapped sample and BEFORE the EMA
-    // filter - see Mpu6050.cpp for why.
-    trim_.update(sample.accel, sample.gyro, speedMps, speedValid);
-    trim_.apply(sample.accel, sample.gyro);
-    filter_.update(sample);
-  }
-  if (health_.feed(ok)) {
-    log_->log(
-        "❌ IMU: stopped answering - IMU fields will read zero until reboot");
-  }
+  imuStep(log, sampled, "configured, %dg %ddeg/s%s", config::kImuAccelRangeG,
+          config::kImuGyroRangeDps, why);
+  return sampled;
 }
 
 } // namespace gnimu
