@@ -1037,13 +1037,14 @@ Considered and left out: templating every module on its hardware types for host 
 
 **Checks:** a comment-only pass. Both firmware images are **byte-for-byte the same size** before and after (ESP32 1,194,891 / 47,020 bytes, nRF 200,704 / 18,732 bytes). Host suites pass, and `scripts/build.sh` reports no project warnings. No bench test needed.
 
-#### Self-review before going back to the reviewer (2026-10-09). Done (bench check pending)
+#### Self-review before going back to the reviewer (2026-10-09). Done (boot verified)
 
 **Scope:** the owner asked for a critical pass over the whole codebase as it now stands, looking for complexity, performance or bugs added by this review's changes. Firmware grew from 5,534 to 6,336 lines (+14%). Most of that is REL-1 (watchdog and reset reason, ~330 lines); the IMU and BLE consolidation removed about 270.
 
 **Found and fixed:**
 1. **Fault on USB: the comment was wrong.** `App.cpp` said "a switch cycle on USB retries". Fault handles the switch exactly as Running does, so on USB off/on leads to CHARGE_ONLY and a second off/on restarts (confirmed with a host simulation). Owner decision: keep the behaviour and fix the comment. Keeping it means the power policy needs no Fault special case.
 2. **All-zero accel was rejected only by the MPU-6050 driver.** An LSM6DS3 that reset itself mid-run would have stayed "up" reading zeros. One shared `isZeroAccel()` in `core/ImuSample.h` now holds the rule (a working IMU always measures gravity), and both drivers' `read()` use it after the remap. It sits in `read()` rather than the pipeline so it also covers the first sample in `begin()`. New host test `testZeroAccel`.
+   - **Bench result on the nRF:** IMU bring-up failed with `(first sample read failed) ❌`. The new check had exposed a latent bug: `Lsm6ds3::begin()` read its first sample under 1 ms after configuring, before the chip produced any data (one 104 Hz period, plus ~70 ms gyro start-up), so it got the power-on zeros. Before the check, those zeros seeded the filter, which is the jump to gravity the seeding exists to avoid. **Fix:** a 100 ms settle before the first sample, the same as the MPU-6050. nRF boot is 100 ms longer.
 3. **Stale or history-style comments CPLX-7 missed:**
    - `App.h`: "Starting's GNSS result" → its bring-up result (BLE included).
    - `Gnss.cpp`: the C++-standard note (now: `if constexpr` needs C++17; the nRF core is C++11), and the settings-table note that listed only ✅/written.
@@ -1066,8 +1067,8 @@ Considered and left out: templating every module on its hardware types for host 
 
 **Checks:**
 - Host suites pass (plain and sanitized). `scripts/build.sh` reports no project warnings.
-- Images: ESP32 1,194,915 / 47,020 bytes (+24 flash), nRF 200,752 / 18,732 bytes (+48 flash).
-- **Bench check pending:** an ordinary boot on both boards, with `IMU: configured ✅` and live accel in `D`.
+- Images: ESP32 1,194,915 / 47,020 bytes (+24 flash), nRF 200,720 / 18,732 bytes (+16 flash, with the settle).
+- **Boot verified (2026-10-09)** on both boards: `IMU: configured ✅` and live accel in `D`.
 
 ### Phase 2: survive faults instead of hanging
 
@@ -1163,4 +1164,4 @@ Hardware checks that decisions above depend on.
 | CPLX-5 (rest) | Declined (2026-10-09) | The clock part is done (one timebase). Wrapping portable Arduino calls (`delay`, `Serial`) is declined: `platform/` holds what differs per board. See Restructure progress → "CPLX-5 (rest)". |
 | CPLX-7 | Done (2026-10-09) | Comments explain purpose only; see Restructure progress → "CPLX-7". |
 | TEST-1 | Deferred | Later cleanup (TEST-3 done, see Restructure progress → "TEST-3") |
-| Self-review | Done (2026-10-09, bench check pending) | Fault comment, shared zero-accel check, stale comments; see Restructure progress → "Self-review". |
+| Self-review | Done (2026-10-09, boot verified) | Fault comment, shared zero-accel check, stale comments; see Restructure progress → "Self-review". |

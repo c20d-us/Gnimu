@@ -148,7 +148,11 @@ bool Lsm6ds3::begin(Console &log, ImuSample &first) {
       sensor.readRegisterRegion(ctrl, LSM6DS3_ACC_GYRO_CTRL1_XL, sizeof(ctrl)) == IMU_SUCCESS;
   const bool regsMatch =
       regsAccessible && ctrl[0] == kCtrl1Xl && ctrl[1] == kCtrl2G && ctrl[2] == kCtrl3C;
-  // The first sample also proves a full sample read works at this speed.
+  // The first sample needs one output period after configuration, and the
+  // gyro about 70 ms to start up; until then the outputs hold their power-on
+  // zeros. The same 100 ms settle as the MPU-6050. The sample also proves a
+  // full sample read works at this speed.
+  if (regsMatch) delay(100);
   const bool sampled = regsMatch && read(first);
 
   char why[64] = "";
