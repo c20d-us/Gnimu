@@ -10,7 +10,7 @@
 #include "../peripherals/ble/BleTransport.h"
 #include "../peripherals/gnss/Gnss.h"
 #include "../peripherals/imu/ImuDevice.h"
-#include "Config.h"
+#include "SystemConfig.h"
 #include "Console.h"
 #include "Diagnostics.h"
 #include "protocol/Protocol.h"

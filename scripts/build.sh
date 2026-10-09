@@ -54,8 +54,12 @@ trap 'rm -f "$log"' EXIT
 
 # --clean: every source is recompiled, so every warning is printed. An
 # incremental build skips unchanged files, and their warnings with them.
+# --build-path: its own build folder, not the per-sketch one the Arduino IDE
+# also uses. --clean wipes the build folder, and a shared one would break an
+# IDE build running at the same time (and the IDE could break this one).
 "$cli" compile \
   --clean \
+  --build-path "build/work/$1" \
   --config-file arduino-cli.yaml \
   --fqbn "$fqbn" \
   --warnings all \

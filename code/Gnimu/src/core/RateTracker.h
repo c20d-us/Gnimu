@@ -10,8 +10,9 @@ namespace gnimu {
 // to catch up over several seconds.
 class RateTracker {
  public:
-  // Call once when periodic reporting (re)starts, so the first sample()
-  // measures the interval from a clean baseline instead of from zero.
+  // Call when periodic reporting (re)starts, so the first sample() measures
+  // the interval from a clean baseline instead of from zero, and whenever the
+  // counter is cleared (console C), which would otherwise read as a wrap.
   void reset(uint32_t count, uint64_t nowUs) {
     lastCount_ = count;
     lastUs_ = nowUs;
@@ -20,12 +21,6 @@ class RateTracker {
   // Centihertz (Hz * 100) of events since the last reset()/sample() call.
   // Integer-only - no float format specifier, same reasoning as Report.h.
   uint32_t sampleCentiHz(uint32_t count, uint64_t nowUs) {
-    // A counter that went backwards was reset (console C) after the last
-    // sample: start over from it rather than wrapping into a huge rate.
-    if (count < lastCount_) {
-      reset(count, nowUs);
-      return 0;
-    }
     const uint64_t elapsedUs = nowUs - lastUs_;
     const uint32_t delta = count - lastCount_;
     reset(count, nowUs);

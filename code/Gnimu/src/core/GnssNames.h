@@ -1,6 +1,8 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 namespace gnimu {
 
@@ -73,6 +75,16 @@ inline const char* dynamicModelName(uint8_t model) {
       return "e-scooter";
     default:
       return "unknown model";
+  }
+}
+
+// A NAV-PVT accuracy estimate with its unit, or "unknown": the receiver
+// reports one it can't estimate as all bits set.
+inline void formatAccuracy(char* buf, size_t cap, uint32_t v, const char* unit) {
+  if (v == UINT32_MAX) {
+    snprintf(buf, cap, "unknown");
+  } else {
+    snprintf(buf, cap, "%lu%s", static_cast<unsigned long>(v), unit);
   }
 }
 

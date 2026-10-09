@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../Watchdog.h"
 
 namespace gnimu {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,11 @@ struct JobTable {
   size_t count;
   uint32_t loops;
 };
+
+// The console's D-report buffer. test_report checks that the worst case
+// (every counter at 10 digits) fits, so a report that grows fails a test
+// rather than losing its last lines on the device.
+constexpr size_t kReportMaxBytes = 2048;
 
 // Text of the on-request diagnostics report, formatted into a caller buffer so
 // it can be tested on a host. Output is truncated, never overrun.
@@ -126,13 +132,10 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
         static_cast<unsigned long>(d.gnss.epochs->timeSteps()));
   if (d.gnss.latest) {
     const GnssEpoch &e = *d.gnss.latest;
-    // The receiver reports an accuracy it can't estimate as all bits set.
-    char hAcc[16] = "unknown";
-    char tAcc[16] = "unknown";
-    if (e.hAccMm != UINT32_MAX)
-      snprintf(hAcc, sizeof(hAcc), "%lumm", static_cast<unsigned long>(e.hAccMm));
-    if (e.tAccNs != UINT32_MAX)
-      snprintf(tAcc, sizeof(tAcc), "%luns", static_cast<unsigned long>(e.tAccNs));
+    char hAcc[16];
+    char tAcc[16];
+    formatAccuracy(hAcc, sizeof(hAcc), e.hAccMm, "mm");
+    formatAccuracy(tAcc, sizeof(tAcc), e.tAccNs, "ns");
     // gnssFixOK is false while a fix is outside the receiver's accuracy
     // limits; a 3D fix that isn't OK yet is easy to misread without it.
     o.put("GNSS: %s%s, %u SVs, hAcc %s, tAcc %s, pDOP %u.%02u\n", fixTypeName(e.fixType),

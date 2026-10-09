@@ -1,6 +1,6 @@
 #include "ImuDevice.h"
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 
 namespace gnimu {
 

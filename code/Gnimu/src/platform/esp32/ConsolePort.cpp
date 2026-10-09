@@ -5,8 +5,6 @@
 
 #include <Arduino.h>
 
-#include "driver/uart.h"
-
 #include "../ConsolePort.h"
 
 namespace gnimu {
@@ -23,10 +21,6 @@ void consoleOpen() {
   Serial.begin(115200);
   delay(750);
 }
-
-// Serial is UART0. Not Serial.flush(false): that also spins until the
-// transmitter is idle before clearing input.
-void consoleDiscardInput() { uart_flush_input(UART_NUM_0); }
 
 }  // namespace gnimu
 

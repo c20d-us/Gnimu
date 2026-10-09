@@ -949,6 +949,10 @@ Considered and left out: templating every module on its hardware types for host 
 - A scratch copy with a planted unused variable in `App.cpp` fails, naming `App.cpp:221:7`.
 - The filter ignores a vendor-library warning line (synthetic log in arduino-cli's format; the installed libraries weren't touched).
 
+**Follow-up (2026-10-09): its own build folder.** `build.sh` and the Arduino IDE shared one build folder for this sketch (`~/Library/Caches/arduino/sketches/<hash of the sketch path>`), and `--clean` wipes it. Builds running in both at once twice broke each other: one failed with `can't create …/core/RingBuffer.cpp.o`, and another left a compiler hung for 15 minutes. `build.sh` now passes `--build-path build/work/<board>` (git-ignored under `build/`), so `--clean` wipes only its own folder.
+- **Still shared:** the compiled-core cache. A clash there needs both tools rebuilding the same core at the same moment, which is much rarer. Separating that too would need a separate arduino-cli data directory with its own board packages.
+- **Checks:** both boards pass. A planted unused variable in `core/Ema.h` still fails the build (exit 1): warnings name the original source path, not the copy in `build/work`. Owner ran `build.sh` and an IDE compile at the same time: both completed.
+
 **Side note from the build:** the ESP32 image uses **91% of its flash partition** (1,194,083 of 1,310,720 bytes). Not a problem today, but little headroom.
 
 #### D-report wording (the "later, separate effort"). Done (bench verified)
@@ -1061,7 +1065,10 @@ Considered and left out: templating every module on its hardware types for host 
 - BLE callbacks touch only atomics and the RX ring. The ESP32 `onStatus()` always runs synchronously inside `notify()` (checked in the 3.3.12 library source).
 
 **Noted, not changed:**
-- **Optional simplifications** (owner's call): drop the `ensureVal8`/`ensureVal16` wrappers in favour of calling `ensureVal<T>` directly; and remove `RateTracker`'s counter-went-backwards check, which is redundant with Diagnostics re-baselining on C.
+- **Optional simplifications, then done at the owner's request:**
+  - The `ensureVal8`/`ensureVal16` wrappers are gone. The four call sites in `Gnss.cpp` call `ensureVal<uint8_t>` / `ensureVal<uint16_t>`, so each key's width sits next to the key, and `check` defaults to `Ram`.
+  - `RateTracker`'s counter-went-backwards check (and its test) is gone. It could never fire: the only backwards step is C, and Diagnostics re-baselines in the same console pass before any status line prints. `reset()`'s comment now says it must follow a counter clear.
+  - Images after both: ESP32 1,194,887 / 47,020 bytes, nRF 200,544 / 18,732 bytes. Host suites pass; no project warnings. Boot verified on both boards (2026-10-09).
 - **Biggest remaining performance risk:** the nRF `notify()` blocking up to 100 ms on a full queue. This predates the review and is what the weak-link soak decides.
 - ESP32 flash at 91%.
 
@@ -1069,6 +1076,139 @@ Considered and left out: templating every module on its hardware types for host 
 - Host suites pass (plain and sanitized). `scripts/build.sh` reports no project warnings.
 - Images: ESP32 1,194,915 / 47,020 bytes (+24 flash), nRF 200,720 / 18,732 bytes (+16 flash, with the settle).
 - **Boot verified (2026-10-09)** on both boards: `IMU: configured ✅` and live accel in `D`.
+
+#### Follow-up review (2026-10-09, `firmware-review-2026-10-09-followup.md`)
+
+The review conversation re-read everything at `b8f414f`. Since then, `dd1b5c8` (the LSM6DS3 first-sample settle) and the two C2 simplifications already listed (`ensureVal8/16`, `RateTracker`) have landed. Findings were checked against the code, the installed libraries and scratch measurements. They are taken one at a time:
+
+| ID | Decision | Notes |
+|---|---|---|
+| N1 | **Done (bench verified)** | See below. |
+| N2 | **Done (bench verified)** | See below. |
+| N3 | **Done (bench verified)** | See below. |
+| N4 | **Done (bench verified)** | See below. |
+| N5 | Declined (owner, 2026-10-09) | The LED stays dark during Starting. A boot indication would need a colour that doesn't read as a run state: solid blue means "connected", and the ESP32 LED is blue only. |
+| P1 | Agreed, added to the soak plan | `BANDWIDTH_MAX` is `configPrphConn(247, 100, 3, …)`: 3 HVN slots. Knobs: `hvn_qsize` 8–10 and `Periph.setConnInterval(12, 24)`. |
+| P2 | Skipped (owner, 2026-10-09) | Not now. If taken up later, the IDE's Tools → Partition Scheme must match `build.sh`'s FQBN, or the two builds disagree. |
+| C1 | Declined for now | Correct and tested; revisit if a power state is added. |
+| C2 | **Done (build verified)** | `Scheduler::job()`/`count()` removed: no callers anywhere, both predate the review. Images byte-identical. Test-only accessors (`Scheduler::stats(i)`, `PowerPolicy::running()`/`chargingOnly()`) stay: tests are legitimate callers. `ensureVal8/16` and the `RateTracker` check were already removed. |
+| C3 | Declined | Cosmetic; a separate header buys nothing in a single-binary firmware. |
+| I1 | Agreed, no action | Self-heals through liveness. |
+
+##### N1: a ghost OFF reading at boot on USB. Done (bench verified)
+
+**Finding confirmed:** the boot classification acts on one switch reading. On USB, a ghost OFF → BATTERY_WAIT with "switch ON leads to CHARGE_ONLY" armed. The real ON then debounces in → CHARGE_ONLY, with telemetry off until the switch is cycled. Each decision (PWR-1 dropping several boot readings; switch-on from BATTERY_WAIT meaning CHARGE_ONLY) was fine alone; together they made a ghost sticky. Battery boots are unaffected: off without USB counts as on.
+
+**Fix (`App::begin()`):** boot applies the runtime rule. On USB, an OFF reading is re-read at the power job's pace (`kPowerPeriodUs`, 50 ms) for `kSwitchDebounceMs` (500 ms); any ON reading makes it ON. No new constants.
+
+**Why not the reviewer's 3–5 readings 20 ms apart:**
+- One switch rule for boot and runtime, using existing constants.
+- The 500 ms cost lands only on a device plugged in while switched off, before anything is running.
+- `PowerPolicy`/`RunStateMachine` are unchanged, so the suggested `test_powerpolicy` case doesn't apply. The change is in App, which has no host tests (TEST-1).
+
+**Bench verified (2026-10-09):**
+- USB with switch ON → `Running.`
+- USB with switch OFF → `BATTERY_WAIT`, then switch on → `CHARGE_ONLY`.
+
+Images: ESP32 unchanged (1,194,887 bytes; no battery, so the code compiles out); nRF 200,624 / 18,732 bytes.
+
+##### N2 + N3: formatter size limits, now tested. Done (bench verified)
+
+**N2, the status line:**
+- **Finding confirmed:** measured 247 bytes realistic worst, against a 256-byte buffer.
+- **The real limit is the nRF's 256-byte USB-CDC transmit FIFO** (`CFG_TUD_CDC_TX_BUFSIZE`). `emit()` sends a line whole or drops it, so a longer line could never be sent there. The reviewer's 320-byte buffer was therefore not taken.
+- **Fix:**
+  - `kStatusLineMaxBytes = 256` in `StatusLine.h` states the limit and its reason; Console's buffer uses it.
+  - A new `formatAccuracy()` in `GnssNames.h` prints the receiver's all-bits-set "can't estimate" value as `unknown`. Both the status line (new) and D (replacing its local copy) use it.
+
+**N3, the D report:**
+- **Finding confirmed:** measured 1,796 bytes for the 10-digit worst case against 1,536. The tail (Battery, Console) would have been cut silently.
+- **Fix:** `kReportMaxBytes = 2048` in `Report.h`, used by Console's static buffer. The stale "~1420" comment is gone. D goes out a line at a time, so the 256-byte FIFO doesn't limit it.
+
+**Tests:**
+- `test_statusline` `testWorstCaseFits`, with both `unknown` and 10-digit accuracies. The other fields are at their real maxima, with margin:
+  - 8-digit RT;
+  - 99 Hz rates (epochs and packets top out at the 25 Hz nav limit);
+  - 99 SVs;
+  - accel and gyro beyond full scale, with signs;
+  - tilt 180.0°;
+  - charging;
+  - `GNSS+DR`.
+
+  The line must end in its newline under the limit. Measured: **243 / 253 of 255 bytes.** The test first used 999 Hz and 255 SVs (values that can't occur), which came to 256 and failed by one byte.
+- `test_statusline` `testUnknownAccuracy`.
+- `test_report` `testWorstCaseFits`: 7 jobs with every counter at 10 digits, the longest texts and every battery flag. The final `Console:` line must be intact. Measured: **1,843 of 2,047 bytes.**
+- `test_gnssnames` `testAccuracy`.
+
+**Images:** ESP32 1,194,919 / 47,532 bytes, nRF 200,704 / 19,244 bytes. RAM is +512 bytes on each, the larger D buffer.
+
+**Bench verified (2026-10-09)** on both boards.
+
+##### N4: one console entry per pass; the discard rule removed. Done (bench verified)
+
+**Finding confirmed, and slightly worse than reported:** `ConsoleCommand` holds one command, so `D⏎C⏎` sent together ran only C. With CR+LF, `D⏎C⏎V⏎` also ran only C: the 6-byte read limit ran out, so V tripped the discard rule and was thrown away as "input too long".
+
+**Fix:**
+- `Console::poll()` returns as soon as an entry ends, before anything else runs. What follows waits in the input buffer for the next pass (10 ms), so commands sent together all run, in order.
+- The reviewer's version skipped that early return, so the leftover bytes would have hit the discard check and been thrown away.
+
+**Improvement agreed with the owner:** the discard rule (`Console: input too long, discarded`) is removed, along with `consoleDiscardInput()` and both ports:
+- the nRF's `tud_cdc_read_flush()`, plus its `Adafruit_TinyUSB.h`/`tusb.h` includes;
+- the ESP32's `uart_flush_input()`, plus `driver/uart.h`.
+
+Its two jobs are covered elsewhere:
+- **A paste can't hold up the loop:** each pass reads at most 6 bytes (`kCapacity + 2`) and at most one entry.
+- **No stray command letters:** `ConsoleEntry` already rejects any entry that isn't exactly one letter or a number, overlong ones included.
+
+**Behaviour now:**
+- A pasted sentence logs `unrecognised input 'hell…'` instead of the discard line.
+- A multi-line paste logs one line per line, draining at 6 bytes per 10 ms (under 0.5 s for the 256-byte input buffer).
+- **Accepted trade-off:** a paste with no final newline joins the next typed command into one unrecognised entry, so that command needs typing again.
+- `ConsoleCommand`'s comment now says a poll returns a command, a count, or neither. Its fields stay: merging them would touch App and Diagnostics for no change in behaviour.
+
+**Files:** `app/Console.{h,cpp}`, `platform/ConsolePort.h`, `platform/{nrf52840,esp32}/ConsolePort.cpp`.
+
+**Checks:**
+- Host suites pass; no project warnings.
+- Images: ESP32 1,194,803 / 47,532 bytes, nRF 200,528 / 19,244 bytes.
+- Console has no host tests (TEST-1); `ConsoleEntry` and its tests are unchanged.
+
+**Bench verified (2026-10-09)** on both boards.
+
+#### Config split: settings next to the sketch, system constants apart. Done (bench verified)
+
+**Owner request (2026-10-09):** `src/app/Config.h` mixed three kinds of thing:
+- types the settings are written in;
+- settings chosen for a build;
+- constants the firmware depends on.
+
+The settings belong at the sketch's level, separate from the rest, as the earlier firmware had them.
+
+**Layout (option A, names and split chosen by the owner):**
+- **`code/Gnimu/Config.h`**, next to `Gnimu.ino` and shown as an IDE tab: the settings only. Each has its comment and allowed range:
+  - protocol;
+  - GNSS baud, nav rate, minimum elevation, constellation priority and count;
+  - BLE TX power;
+  - IMU smoothing alphas and each chip's axis mapping;
+  - battery cutoff, critical, warning, full-scale and charge-full voltages.
+- **`src/app/ConfigTypes.h`**: the two enums the settings are written in (`Protocol`; `GnssSystem` with `gnssSystemName()`), so `Config.h` holds values only.
+- **`src/app/SystemConfig.h`**, the old file renamed with `git mv`: everything else, plus every `static_assert`, including those checking the settings. It includes `../../Config.h` first, so code includes only `SystemConfig.h`, and every name stays `config::k…`. Moved here at the owner's choice:
+  - GNSS dynamic model;
+  - IMU ranges and low-pass setting;
+  - all trim settings;
+  - battery debounce times and display alpha;
+  - switch debounce;
+  - all LED timings.
+- **Left out:** `kWiring` stays in the nRF `BoardConfig.h`, next to the pins it selects.
+
+**How it builds:** Arduino copies root-level headers into the build with `src/`, keeping the layout, so the relative includes resolve. 14 include lines changed from `Config.h` to `SystemConfig.h`.
+
+**Checks:**
+- Host suites pass. Host tests don't include config.
+- `scripts/build.sh` shows no project warnings, and both images are **the same size as before** (ESP32 1,194,803 / 47,532 bytes, nRF 200,528 / 19,244).
+- A bad setting still fails with its message: `kConstellationCount = 5` → `constellation count must be 1-4`.
+
+**Bench verified (2026-10-09):** compiled from the IDE and booted on both boards.
 
 ### Phase 2: survive faults instead of hanging
 
@@ -1165,3 +1305,4 @@ Hardware checks that decisions above depend on.
 | CPLX-7 | Done (2026-10-09) | Comments explain purpose only; see Restructure progress → "CPLX-7". |
 | TEST-1 | Deferred | Later cleanup (TEST-3 done, see Restructure progress → "TEST-3") |
 | Self-review | Done (2026-10-09, boot verified) | Fault comment, shared zero-accel check, stale comments; see Restructure progress → "Self-review". |
+| Follow-up review | Done (2026-10-09) | N1–N4 and C2 done; P2 skipped; N5, C1, C3 declined; I1 no action; P1 in the soak plan; see Restructure progress → "Follow-up review". |

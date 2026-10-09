@@ -123,8 +123,54 @@ static void testDisplayUnits() {
   assert(tiltCentiDeg(12.349f) == 1234);
 }
 
+// The longest line the device can produce must fit kStatusLineMaxBytes whole,
+// newline included: the nRF can't send a longer one at all. Both accuracy
+// forms are checked, since "unknown" is shorter than the longest number.
+static void testWorstCaseFits() {
+  BatteryStatus b;
+  b.valid = true;
+  b.voltage = 4.2f;
+  b.percent = 100;
+  b.chargerActive = true;
+  GnssEpoch e;
+  e.fixType = 4;  // "GNSS+DR", the longest fix name
+  e.numSv = 99;   // two digits: more than any receiver tracks
+  e.latDeg1e7 = -899999999;
+  e.lonDeg1e7 = -1799999999;
+  DeviceStatus v = {};
+  v.uptimeUs = 99999999ULL * 1000000ULL;  // 8-digit RT, about 3 years
+  v.power.battery = &b;
+  v.power.usbPresent = true;
+  v.gnss.latest = &e;
+  // Beyond full scale (4 g, 500 deg/s), with signs, for margin.
+  v.imu.sample = sampleShowing(-4999, -4999, -4999, -59999, -59999, -59999);
+  v.imu.tiltDegrees = degreesShowing(18000);
+  const StatusRates r = {9900, 9900};  // 99Hz: epochs and packets top out at the 25 Hz nav limit
+  for (uint32_t acc : {UINT32_MAX, UINT32_MAX - 1}) {
+    e.tAccNs = acc;
+    e.hAccMm = acc;
+    char buf[2 * kStatusLineMaxBytes];
+    const size_t n = formatStatus(buf, sizeof(buf), v, r);
+    assert(n < kStatusLineMaxBytes);
+    assert(buf[n - 1] == '\n');
+  }
+}
+
+static void testUnknownAccuracy() {
+  char buf[kStatusLineMaxBytes];
+  GnssEpoch e;
+  e.tAccNs = UINT32_MAX;
+  e.hAccMm = UINT32_MAX;
+  DeviceStatus v = {};
+  v.gnss.latest = &e;
+  formatStatus(buf, sizeof(buf), v, StatusRates{0, 0});
+  assert(strstr(buf, "| tAcc: unknown | hAcc: unknown |"));
+}
+
 int main() {
   testDisplayUnits();
+  testWorstCaseFits();
+  testUnknownAccuracy();
   testBatteryCell();
   testWithFix();
   testNoFixOmitsFixFields();

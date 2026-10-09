@@ -27,9 +27,20 @@ static void testDynamicModels() {
   assert(strcmp(dynamicModelName(13), "unknown model") == 0);
 }
 
+static void testAccuracy() {
+  char buf[16];
+  formatAccuracy(buf, sizeof(buf), 529, "mm");
+  assert(strcmp(buf, "529mm") == 0);
+  formatAccuracy(buf, sizeof(buf), UINT32_MAX - 1, "ns");
+  assert(strcmp(buf, "4294967294ns") == 0);
+  formatAccuracy(buf, sizeof(buf), UINT32_MAX, "ns");
+  assert(strcmp(buf, "unknown") == 0);
+}
+
 int main() {
   testFixTypes();
   testDynamicModels();
+  testAccuracy();
   puts("gnssnames: all tests passed");
   return 0;
 }

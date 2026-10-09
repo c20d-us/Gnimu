@@ -206,11 +206,60 @@ static void testTruncationNeverOverruns() {
   }
 }
 
+// The longest report the device can produce must fit kReportMaxBytes, its
+// last line intact: every counter at 10 digits, the longest texts, every
+// battery flag.
+static void testWorstCaseFits() {
+  const char* names[] = {"gnss", "imu", "battery", "power", "ble", "led", "console"};
+  Job jobs[7];
+  JobStats stats[7];
+  for (size_t i = 0; i < 7; i++) {
+    jobs[i] = {names[i], 1000, 1000, noop, nullptr};
+    stats[i].runs = stats[i].skipped = stats[i].overruns = 4000000000u;
+    stats[i].maxUs = stats[i].maxLateUs = 4000000000u;
+    stats[i].totalUs = 4000000000ull * 4000000000ull;  // mean 10 digits too
+  }
+  const JobTable t = {jobs, stats, 7, 4000000000u};
+  EpochTracker epochs(50);
+  GnssEpoch latest;
+  latest.fixType = 4;  // the longest fix name
+  latest.numSv = 255;
+  latest.hAccMm = UINT32_MAX - 1;
+  latest.tAccNs = UINT32_MAX - 1;
+  latest.pDop = 65535;
+  BatteryStatus b;
+  b.valid = true;
+  b.voltage = b.freshVoltage = 4.2f;
+  b.percent = 100;
+  b.chargerActive = b.chargeFull = b.warning = b.critical = b.cutoffRequested = true;
+  DeviceStatus v = {};
+  v.uptimeUs = 4000000000ULL * 1000000ULL;
+  v.reset.cause = ResetCause::Software;
+  v.reset.restartKnown = true;
+  v.reset.restart = RestartReason::GnssSilent;
+  v.gnss.settings = "GPS+Galileo+BeiDou+GLONASS, 25 Hz, airborne <4g";
+  v.gnss.epochs = &epochs;
+  v.gnss.latest = &latest;
+  v.imu.sample = sampleShowing(-4999, -4999, -4999, -59999, -59999, -59999);
+  v.imu.tiltDegrees = degreesShowing(18000);
+  BleStats& s = v.ble.stats;
+  s.sent = s.failed = s.refused = s.maxSendUs = s.rxBytes = s.rxDropped = 4000000000u;
+  v.power.battery = &b;
+  v.power.usbPresent = true;
+  v.power.switchNoise = 4000000000u;
+  v.consoleDropped = 4000000000u;
+  static char buf[2 * kReportMaxBytes];
+  const size_t n = formatReport(buf, sizeof(buf), t, v);
+  assert(n < kReportMaxBytes);
+  assert(strstr(buf, "Console: dropped 4000000000 bytes\n"));
+}
+
 int main() {
   testReport();
   testTiltRounding();
   testTableStaysAligned();
   testTruncationNeverOverruns();
+  testWorstCaseFits();
   puts("report: all tests passed");
   return 0;
 }

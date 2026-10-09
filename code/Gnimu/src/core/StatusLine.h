@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "BatteryMonitor.h"
@@ -19,6 +20,12 @@ struct StatusRates {
   uint32_t bleCentiHz;   // packets sent
   uint32_t gnssCentiHz;  // epochs received
 };
+
+// The longest status line, newline included, plus its terminator. The console
+// sends a line whole or not at all, and the nRF's USB transmit FIFO is 256
+// bytes, so a longer line could never be sent there. test_statusline checks
+// the worst case fits.
+constexpr size_t kStatusLineMaxBytes = 256;
 
 namespace detail {
 // Degrees from a PVT-native deg*1e-7 fixed-point value, full native
@@ -56,11 +63,13 @@ inline size_t formatStatus(char *buf, size_t cap, const DeviceStatus &d, const S
           charging ? " \xE2\x9A\xA1" : "");
   }
   if (d.gnss.latest) {
-    o.put("Fix: %s | SV: %u | tAcc: %luns | hAcc: %lumm | ",
+    char tAcc[16];
+    char hAcc[16];
+    formatAccuracy(tAcc, sizeof(tAcc), d.gnss.latest->tAccNs, "ns");
+    formatAccuracy(hAcc, sizeof(hAcc), d.gnss.latest->hAccMm, "mm");
+    o.put("Fix: %s | SV: %u | tAcc: %s | hAcc: %s | ",
           fixTypeShortName(d.gnss.latest->fixType),
-          static_cast<unsigned>(d.gnss.latest->numSv),
-          static_cast<unsigned long>(d.gnss.latest->tAccNs),
-          static_cast<unsigned long>(d.gnss.latest->hAccMm));
+          static_cast<unsigned>(d.gnss.latest->numSv), tAcc, hAcc);
     detail::putDegrees1e7(o, "Lat", d.gnss.latest->latDeg1e7);
     detail::putDegrees1e7(o, "Long", d.gnss.latest->lonDeg1e7);
   } else {

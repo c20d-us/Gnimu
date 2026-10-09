@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../ImuBus.h"
 #include "BoardConfig.h"
 

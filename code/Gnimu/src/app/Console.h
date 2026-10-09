@@ -6,12 +6,11 @@
 #include "../core/ConsoleEntry.h"
 #include "../core/Report.h"
 #include "../core/StatusLine.h"
-#include "Config.h"
+#include "SystemConfig.h"
 
 namespace gnimu {
 
-// One poll() result: at most one command letter and/or one status count.
-// Normally one or neither; both only if two entries end in the same pass.
+// One poll() result: a command letter, a status count, or neither.
 struct ConsoleCommand {
   CommandKind kind = CommandKind::None;
   bool hasCount = false;
@@ -24,11 +23,10 @@ class Console {
   void begin();
   // Reads waiting input as entries ended by Enter: 'D' report, 'C' clear,
   // 'V' version, 'L' toggles status reporting (at most kStatusMaxCount
-  // lines), or a number
-  // 0..kStatusMaxCount arms exactly that many status reports. Anything else
-  // is rejected with a message. Reads only as many bytes per call as the
-  // longest valid entry needs and discards the rest, so a paste can't hold up
-  // the loop or leave stray command letters behind.
+  // lines), or a number 0..kStatusMaxCount arms exactly that many status
+  // reports. Anything else is rejected whole, with a message. Each call
+  // handles at most one entry and reads at most the longest valid entry's
+  // bytes, so a paste can't hold up the loop; the rest waits for later calls.
   ConsoleCommand poll();
   void printReport(const JobTable& jobs, const DeviceStatus& status);
   void printStatus(const DeviceStatus& status, const StatusRates& rates);

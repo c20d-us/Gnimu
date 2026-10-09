@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../Config.h"
+#include "../SystemConfig.h"
 #include "RaceBox.h"
 
 namespace gnimu {

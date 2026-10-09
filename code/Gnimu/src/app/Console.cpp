@@ -4,7 +4,7 @@
 
 #include "../platform/Clock.h"
 #include "../platform/ConsolePort.h"
-#include "Config.h"
+#include "SystemConfig.h"
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -13,15 +13,16 @@ namespace gnimu {
 void Console::begin() { consoleOpen(); }
 
 ConsoleCommand Console::poll() {
-  // The longest valid entry plus CR+LF. More than that waiting at once can't
-  // be typed input, so it's discarded rather than read byte by byte.
+  // The longest valid entry plus CR+LF: the most one call reads. An entry
+  // longer than that is collected over several calls, and rejected whole when
+  // it ends.
   constexpr size_t kMaxReadBytes = decltype(entry_)::kCapacity + 2;
   ConsoleCommand result;
   for (size_t i = 0; i < kMaxReadBytes && Serial.available(); i++) {
     const EntryResult r = entry_.feed(static_cast<char>(Serial.read()));
     switch (r.kind) {
       case EntryKind::None:
-        break;
+        continue;
       case EntryKind::Command:
         result.kind = r.cmd;
         break;
@@ -36,20 +37,17 @@ ConsoleCommand Console::poll() {
         log("Console: unrecognised input '%s%s'", entry_.text(), entry_.truncated() ? "\xE2\x80\xA6" : "");
         break;
     }
-  }
-  if (Serial.available()) {
-    consoleDiscardInput();
-    entry_.reset();
-    log("Console: input too long, discarded");
+    // One entry per call: whatever follows it waits for the next poll, so
+    // commands sent together all run, in order.
+    return result;
   }
   return result;
 }
 
 void Console::printReport(const JobTable& jobs, const DeviceStatus& status) {
-  // Worst case (7 jobs, every counter at 10 digits, battery line) is ~1420
-  // bytes. Static rather than on the loop task's stack, which is only a few
-  // KB on the nRF.
-  static char buf[1536];
+  // Static rather than on the loop task's stack, which is only a few KB on
+  // the nRF.
+  static char buf[kReportMaxBytes];
   const size_t n = formatReport(buf, sizeof(buf), jobs, status);
   // A line at a time: the whole report is bigger than the USB buffer, but
   // each line fits, so emit() can send or drop it whole.
@@ -63,9 +61,7 @@ void Console::printReport(const JobTable& jobs, const DeviceStatus& status) {
 }
 
 void Console::printStatus(const DeviceStatus& status, const StatusRates& rates) {
-  // A full line (Fix+SV+tAcc+hAcc+Lat+Long+Accel+Gyro+Trim) runs ~185 bytes;
-  // 256 leaves room so no line loses its newline.
-  char buf[256];
+  char buf[kStatusLineMaxBytes];
   const size_t n = formatStatus(buf, sizeof(buf), status, rates);
   emit(buf, n);
 }

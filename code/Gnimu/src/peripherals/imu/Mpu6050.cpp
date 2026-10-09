@@ -4,7 +4,7 @@
 #include <Wire.h>
 #include <string.h>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../../platform/ImuBus.h"
 #include "ImuLog.h"
 

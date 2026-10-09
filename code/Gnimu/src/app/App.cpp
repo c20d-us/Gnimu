@@ -83,8 +83,17 @@ void App::begin() {
     Watchdog::feed();
     BatteryPort::begin();
     primeBattery();
-    const bool switchOn = BatteryPort::switchOn();
     const bool usb = BatteryPort::usbPresent();
+    // An OFF reading on USB must hold for the switch debounce, as it must at
+    // runtime: one ghost OFF would park a switched-on device in BATTERY_WAIT,
+    // and the switch-on that follows would take it to CHARGE_ONLY. Without USB
+    // an OFF reading counts as ON anyway (see PowerPolicy).
+    bool switchOn = BatteryPort::switchOn();
+    for (uint32_t waitedMs = 0; !switchOn && usb && waitedMs < config::kSwitchDebounceMs;
+         waitedMs += config::kPowerPeriodUs / 1000) {
+      delay(config::kPowerPeriodUs / 1000);
+      switchOn = BatteryPort::switchOn();
+    }
     const BatteryStatus& b = battery_.status();
     console_.log("Power: switch %s, USB %s", switchOn ? "on" : "off", usb ? "present" : "absent");
     first = machine_.boot(switchOn, usb, b.valid && b.freshVoltage < config::kBatteryCutoffV);

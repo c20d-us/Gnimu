@@ -9,7 +9,7 @@
 
 #include <atomic>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../../core/ByteRing.h"
 #include "../../platform/Clock.h"
 

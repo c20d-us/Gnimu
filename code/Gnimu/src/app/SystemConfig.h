@@ -1,20 +1,22 @@
 #pragma once
 
+// System constants: the values the firmware's timing, safety and hardware
+// handling depend on, as opposed to the settings chosen for a build. Those
+// are in Config.h next to Gnimu.ino, included here first so code includes
+// only this file. The checks at the end cover both.
+
 #include <stddef.h>
 #include <stdint.h>
+
+#include "../../Config.h"
 
 namespace gnimu {
 namespace config {
 
-// Which BLE protocol this build speaks. Compile-time, like the board: one
-// binary per protocol (app/protocol/Protocol.h picks the class). The
-// protocol, not the board, decides whether the IMU is sampled at all.
-// A RaceChrono build ignores even an onboard IMU.
-enum class Protocol : uint8_t { RaceBox };
-constexpr Protocol kProtocol = Protocol::RaceBox;
+// GNSS
 
-// The baud rate for GNSS communications. Higher than 115200 is not needed.
-constexpr uint32_t kGnssBaud = 115200;
+constexpr uint8_t kGnssDynamicModel = 4; // u-blox dynamic model 4 = automotive
+
 // Every rate a receiver could be saved at, in the order the sweep tries them.
 // kGnssBaud is tried first and skipped here.
 constexpr uint32_t kGnssBaudRates[] = {4800,   9600,   19200,  38400, 57600,
@@ -26,25 +28,6 @@ constexpr bool baudSweepIncludes(uint32_t baud, size_t i = 0) {
   return i < (sizeof(kGnssBaudRates) / sizeof(kGnssBaudRates[0])) &&
          (kGnssBaudRates[i] == baud || baudSweepIncludes(baud, i + 1));
 }
-constexpr uint8_t kGnssNavRateHz = 20; // 20Hz is the max with 2 constellations
-constexpr uint8_t kGnssMinElevDeg = 5; // ignore SVs below this angle
-constexpr uint8_t kGnssDynamicModel = 4; // u-blox dynamic model 4 = automotive
-
-// Constellations, most preferred first; the first kConstellationCount are
-// enabled. 20 Hz needs at most 2. QZSS and SBAS are never enabled.
-enum class GnssSystem : uint8_t { Gps, Galileo, Beidou, Glonass };
-constexpr const char* gnssSystemName(GnssSystem s) {
-  return s == GnssSystem::Gps       ? "GPS"
-         : s == GnssSystem::Galileo ? "Galileo"
-         : s == GnssSystem::Beidou  ? "BeiDou"
-                                    : "GLONASS";
-}
-// Constellations are enabled in this priority order, up to 4
-constexpr GnssSystem kConstellationPriority[] = {
-    GnssSystem::Gps, GnssSystem::Galileo, GnssSystem::Beidou,
-    GnssSystem::Glonass};
-// Enable at most this many constellations
-constexpr unsigned kConstellationCount = 2;
 
 // The drain period is also the longest the loop ever sleeps. The UART RX ring
 // must hold more than one period of data, with plenty of margin.
@@ -71,10 +54,6 @@ constexpr uint32_t kConsoleWaitUs = 2000;
 // happen from the GNSS job as each epoch lands, not from this job.
 constexpr uint32_t kBlePeriodUs = 10000;
 constexpr uint32_t kBleBudgetUs = 2000;
-// BLE Tx power, low on purpose: less RF near the GNSS antenna, and the client
-// is usually close. Raise it if connections drop. Each board validates the
-// value against the levels its own radio supports.
-constexpr int kBleTxPowerDbm = -12;
 
 // Status LED. core/StatusLed.h decides the patterns; these set their timing.
 constexpr uint32_t kLedPeriodUs =
@@ -97,13 +76,8 @@ constexpr uint32_t kBatteryBudgetUs = 500;
 constexpr uint8_t kBatterySamplesPerRun = 20; // ~50 ms window at 2.5 ms spacing
 constexpr uint32_t kBatteryRunIntervalMs = 250; // 4 Hz between run starts
 constexpr float kBatteryEmaAlpha = 0.1f;        // display only
-constexpr float kBatteryCutoffV = 3.30f; // also 0% on the straight-line curve
-constexpr float kBatteryCriticalV = 3.35f;
-constexpr float kBatteryWarningV = 3.40f;
-constexpr float kBatteryFullScaleV = 4.10f; // 100% on the curve
 // Low long enough to be a depleted cell, not acquisition-current sag: ~20 runs.
 constexpr uint32_t kBatteryCutoffDebounceMs = 5000;
-constexpr float kBatteryChargeFullV = 4.10f; // Rough value for "full"
 constexpr uint32_t kBatteryChargeFullDebounceMs = 5000;
 
 // Power state machine for battery builds. The job also paces the switch-sense
@@ -127,7 +101,7 @@ constexpr uint32_t kStatusMaxCount = 3600;
 // 100 Hz, undecimated - a future encoder step picks its own transmit cadence
 // rather than this job deciding one. The LSM6DS3 outputs at 104 Hz (100 isn't
 // one of its rates, and its clock isn't synced to ours), so about one sample
-// in 26 is never read; accepted, as the EMA below smooths over it.
+// in 26 is never read; accepted, as the EMA smoothing (Config.h) covers it.
 constexpr uint32_t kImuSamplePeriodUs = 10000;
 constexpr uint32_t kImuSampleBudgetUs = 1000;
 constexpr int kImuAccelRangeG = 4;    // 2, 4, 8 or 16 g; 4g is ample for auto-x
@@ -139,14 +113,6 @@ constexpr uint32_t kImuI2cClockHz = 400000;
 // 2 ms is ample, and an IMU that fails costs the GNSS ring (about 44 ms of
 // data on the ESP32) about 2 ms per read instead of 50.
 constexpr uint16_t kImuI2cTimeoutMs = 2;
-// EMA smoothing, 1.0 = raw. Its delay is about (1 - alpha) / alpha samples:
-// 0.33 is about 20 ms at 100 Hz, so a packet's IMU value lands near the epoch
-// it's sent with, while still damping vibration that would alias into the
-// 20 Hz packets. Heavier smoothing trades lag for calm: 0.18 is about 45 ms,
-// and 0.09 about 100 ms, which shifts braking and turn-in by about 3 m at
-// 30 m/s.
-constexpr float kImuAccelAlpha = 0.33f;
-constexpr float kImuGyroAlpha = 0.33f;
 // Consecutive failed reads that mark the IMU down: ~100 ms at 100 Hz. With
 // the I2C timeout above, the failures cost the loop about 20 ms in all.
 constexpr uint8_t kImuDownAfterFailures = 10;
@@ -154,15 +120,6 @@ constexpr uint8_t kImuDownAfterFailures = 10;
 // MPU-6050 only: DLPF_CFG has no LSM6DS3 equivalent (it uses ODR + bandwidth
 // instead, set directly in Lsm6ds3.cpp).
 constexpr uint8_t kImuDlpfCfg = 4; // DLPF_CFG 0-6; 4 = 21Hz accel, 20Hz gyro
-
-// Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
-// is a builder/BOM choice (currently identity), while the Sense's onboard
-// LSM6DS3TR-C has a fixed orientation on that PCB (signs -1,-1,+1). See
-// core/ImuSample.h for how src/sign are applied.
-constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
-constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
-constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};
-constexpr float kLsm6ds3AxisSign[3] = {-1.0f, -1.0f, +1.0f};
 
 // Trim (runtime levelling + gyro de-biasing).
 // Shared by both chips: both drivers already convert to SI
@@ -212,6 +169,8 @@ constexpr bool kImuTrimRequireFix = true;
 // counting as valid - a receiver that dies mid-drive must not freeze the gate
 // open on a stale "stationary" reading.
 constexpr uint32_t kImuTrimPvtStaleMs = 1000;
+
+// Checks: the settings in Config.h first, then the system constants.
 
 static_assert(
     baudSweepIncludes(kGnssBaud),

@@ -57,7 +57,7 @@ class Diagnostics {
   // the rate trackers' baseline so the first line's Hz reflects only the
   // interval after arming, not however long events have been accumulating.
   void armStatus(uint32_t count);
-  // The configured GNSS settings line, from Config.h: fixed for the build.
+  // The configured GNSS settings line: fixed for the build.
   void formatGnssSettings();
   // The device's state now, for the D report and the status line alike.
   DeviceStatus snapshot(uint64_t nowUs) const;

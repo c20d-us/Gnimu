@@ -5,7 +5,7 @@
 #include "../platform/BatteryPort.h"
 #include "../platform/Clock.h"
 #include "BuildInfo.h"
-#include "Config.h"
+#include "SystemConfig.h"
 
 namespace gnimu {
 

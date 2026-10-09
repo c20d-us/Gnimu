@@ -12,7 +12,7 @@
 #include <Wire.h>
 #include <stdio.h>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../../platform/nrf52840/BoardConfig.h"
 #include "ImuLog.h"
 

@@ -40,14 +40,10 @@ private:
   enum class Check : uint8_t { Ram, FlashOnly };
   // Checks one key and logs one line: already right, written, set but not
   // saved to flash (a warning), or could not be set (returns false). The
-  // rules are in Gnss.cpp. ensureVal8/16 are thin wrappers so call sites
-  // don't need to name the template argument; the shared logic lives once
-  // in ensureVal<T>, defined in Gnss.cpp and used only there, so it never
-  // needs to appear in this header.
+  // rules are in Gnss.cpp, the only place it's used. T is the key's value
+  // width: uint8_t or uint16_t.
   template <typename T>
-  bool ensureVal(uint32_t key, T desired, const char *name, Check check);
-  bool ensureVal8(uint32_t key, uint8_t desired, const char *name, Check check = Check::Ram);
-  bool ensureVal16(uint32_t key, uint16_t desired, const char *name);
+  bool ensureVal(uint32_t key, T desired, const char *name, Check check = Check::Ram);
 
   Console *log_ = nullptr;
   bool configured_ = false;

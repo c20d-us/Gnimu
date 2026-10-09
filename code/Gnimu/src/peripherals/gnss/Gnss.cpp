@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <SparkFun_u-blox_GNSS_v3.h>
 
-#include "../../app/Config.h"
+#include "../../app/SystemConfig.h"
 #include "../../platform/Clock.h"
 #include "../../platform/GnssUart.h"
 #include "../../platform/Watchdog.h"
@@ -215,14 +215,6 @@ bool Gnss::ensureVal(uint32_t key, T desired, const char *name, Check check) {
   return true;
 }
 
-bool Gnss::ensureVal8(uint32_t key, uint8_t desired, const char *name, Check check) {
-  return ensureVal<uint8_t>(key, desired, name, check);
-}
-
-bool Gnss::ensureVal16(uint32_t key, uint16_t desired, const char *name) {
-  return ensureVal<uint16_t>(key, desired, name, Check::Ram);
-}
-
 bool Gnss::configure() {
   // Let the receiver settle and then clear any bytes left from the baud
   // handshake so the first configuration reads/ACKs parse cleanly.
@@ -308,18 +300,19 @@ bool Gnss::configure() {
   bool allOk = true;
   flashWarnings_ = 0;
   for (const auto &s : settings)
-    allOk &= ensureVal8(s.key, s.desired, s.name);
+    allOk &= ensureVal<uint8_t>(s.key, s.desired, s.name);
   // Output rate is measurement interval x nav ratio. There's no single "nav
   // Hz" key, so both values have to be pinned: RATE_MEAS controls the interval
   // in milliseconds, and RATE_NAV=1 ensures every measurement produces a PVT.
   log_->log("GNSS: setting Nav frequency to %uHz",
             static_cast<unsigned>(config::kGnssNavRateHz));
-  allOk &= ensureVal16(UBLOX_CFG_RATE_NAV, 1, "nav ratio"); // always 1
-  allOk &= ensureVal16(UBLOX_CFG_RATE_MEAS, 1000 / config::kGnssNavRateHz,
-                       "nav rate");
+  allOk &= ensureVal<uint16_t>(UBLOX_CFG_RATE_NAV, 1, "nav ratio"); // always 1
+  allOk &= ensureVal<uint16_t>(UBLOX_CFG_RATE_MEAS, 1000 / config::kGnssNavRateHz,
+                               "nav rate");
   // Last: on a first-ever write this also turns output on in RAM (the write
   // goes to every layer), so nothing after it competes with the traffic.
-  ensureVal8(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 1, "NAV-PVT output rate", Check::FlashOnly);
+  ensureVal<uint8_t>(UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1, 1, "NAV-PVT output rate",
+                     Check::FlashOnly);
   if (!allOk) {
     log_->log("GNSS: configuration failed - a setting could not be applied ❌");
   } else if (flashWarnings_ > 0) {

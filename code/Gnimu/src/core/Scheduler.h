@@ -83,14 +83,12 @@ class Scheduler {
     return next;
   }
 
-  const Job& job(size_t i) const { return jobs_[i]; }
   const JobStats& stats(size_t i) const { return stats_[i]; }
   const Job* jobs() const { return jobs_; }
   const JobStats* allStats() const { return stats_; }
   void clearStats() {
     for (size_t i = 0; i < N; i++) stats_[i] = JobStats();
   }
-  static constexpr size_t count() { return N; }
 
  private:
   const Job (&jobs_)[N];
