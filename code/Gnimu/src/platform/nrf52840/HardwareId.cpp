@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // NRF52840_XXAA, not ARDUINO_ARCH_NRF52: see Clock.cpp for why. FICR.DEVICEID
 // is a chip register (present on any nRF52840, regardless of board), not a
 // board-specific pinout, so this belongs with the chip-generic files.

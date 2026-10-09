@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Same four-board guard as GnssUart.cpp: the pins below are the four Seeed XIAO
 // nRF52840 boards' shared pinout.
 #if defined(ARDUINO_Seeed_XIAO_nRF52840) || defined(ARDUINO_Seeed_XIAO_nRF52840_Sense) || \

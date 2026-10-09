@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // NRF52840_XXAA, not ARDUINO_ARCH_NRF52: same reasoning as Clock.cpp.
 #if defined(NRF52840_XXAA)
 

@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Two-layer guard. ARDUINO_ARCH_ESP32 is a raw compiler -D flag: safe to
 // check before any #include, but shared by the whole family (S3, C3, C6,
 // ...). CONFIG_IDF_TARGET_ESP32 is the actual chip-specific macro, but it

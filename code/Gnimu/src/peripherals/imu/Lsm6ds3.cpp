@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // NRF52840_XXAA, not ARDUINO_ARCH_NRF52: see Clock.cpp for why. This chip is
 // only actually populated on Sense/Sense Plus, but the vendor library itself
 // degrades gracefully (falls back to the primary Wire, finds nothing, and

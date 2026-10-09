@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // NRF52840_XXAA, not ARDUINO_ARCH_NRF52: the latter is shared by every board
 // this core (and other nRF52 cores, e.g. Adafruit's) supports, including
 // nRF52832 boards that lack peripherals this file uses directly (TIMER4 here

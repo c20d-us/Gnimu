@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The four Seeed XIAO nRF52840 boards (base, Sense, Plus, Sense Plus) share
 // one pinout: Serial1 is D6 (TX) / D7 (RX) on all of them, confirmed against
 // each board's variant.h. The Wio Tracker 1110 and Tracker T1000 E, built on

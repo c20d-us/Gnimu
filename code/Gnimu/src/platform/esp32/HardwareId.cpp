@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // ARDUINO_ARCH_ESP32, not the chip-specific two-layer guard Clock/GnssUart
 // need: ESP.getEfuseMac() is implemented unconditionally in the core's own
 // Esp.cpp (no CONFIG_IDF_TARGET_* guard around it, unlike its neighboring

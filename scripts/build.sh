@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Gnimu - GNSS+IMU streaming telemetry
+# Copyright (C) 2026 Chris Halstead
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Usage: scripts/build.sh [esp32|nrf52840]   (no argument: both boards)
 #
 # Builds the firmware with the real Arduino toolchain and fails on any compiler

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Gnimu - GNSS+IMU streaming telemetry
+# Copyright (C) 2026 Chris Halstead
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Builds and runs every host test: tests/test_*.cpp against Gnimu/src/core.
 # Each test runs twice: a plain build (closest to the firmware's codegen) and
 # one under AddressSanitizer + UndefinedBehaviorSanitizer, where the first

@@ -1,3 +1,7 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Same four-board guard as GnssUart.cpp: the battery pins below are the four
 // Seeed XIAO nRF52840 boards' own (PIN_VBAT is 32 on base/Sense and 35 on the
 // Plus boards; the macro covers both).
