@@ -32,10 +32,17 @@ static void testWithFix() {
   const size_t n = formatStatus(buf, sizeof(buf), v, r);
   assert(n == strlen(buf));
   assert(strcmp(buf,
-                "RT: 42s | BLE: 19Hz | GNSS: 20Hz | Fix: 3 | SV: 10 | tAcc: 22ns | hAcc: 529mm | "
+                "RT: 42s | BLE: 19Hz | GNSS: 20Hz | Fix: 3D | SV: 10 | tAcc: 22ns | hAcc: 529mm | "
                 "Lat: 48.0000000 | Long: -128.0000000 | "
                 "Accel mG: -12 3 998 | Gyro c\xC2\xB0/s: 5 -2 1 | "
                 "Trim: 12.3\xC2\xB0 \xF0\x9F\x94\x92\n") == 0);
+  e.fixType = 0;
+  formatStatus(buf, sizeof(buf), v, r);
+  assert(strstr(buf, "| Fix: none | SV: 10 |"));
+  e.fixType = 2;
+  formatStatus(buf, sizeof(buf), v, r);
+  assert(strstr(buf, "| Fix: 2D | SV: 10 |"));
+  e.fixType = 3;
   e.latDeg1e7 = INT32_MIN;  // the one value whose signed negation overflows
   formatStatus(buf, sizeof(buf), v, r);
   assert(strstr(buf, "Lat: -214.7483648 | "));

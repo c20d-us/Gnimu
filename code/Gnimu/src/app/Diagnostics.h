@@ -38,7 +38,9 @@ class Diagnostics {
         battery_(battery),
         machine_(machine),
         deviceId_(deviceId),
-        reset_(reset) {}
+        reset_(reset) {
+    formatGnssSettings();
+  }
 
   // One poll's result: Report, Version, ToggleStatus and a count act here;
   // Clear re-baselines the status line's rate trackers (App clears the
@@ -55,6 +57,8 @@ class Diagnostics {
   // the rate trackers' baseline so the first line's Hz reflects only the
   // interval after arming, not however long events have been accumulating.
   void armStatus(uint32_t count);
+  // The configured GNSS settings line, from Config.h: fixed for the build.
+  void formatGnssSettings();
   // The device's state now, for the D report and the status line alike.
   DeviceStatus snapshot(uint64_t nowUs) const;
   void printReport();
@@ -72,6 +76,7 @@ class Diagnostics {
   const RunStateMachine& machine_;
   const char* deviceId_;
   const ResetRecord& reset_;
+  char gnssSettings_[64] = {};  // e.g. "GPS+Galileo, 20 Hz, automotive"
 
   RateTracker gnssRate_;  // status line: epochs/s
   RateTracker bleRate_;   // status line: packets sent/s

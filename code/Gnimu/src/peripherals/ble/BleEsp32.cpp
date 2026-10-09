@@ -26,10 +26,6 @@ constexpr esp_power_level_t kTxPower =
 
 constexpr char kDeviceInfoUuid[] = "0000180a-0000-1000-8000-00805f9b34fb";
 
-// A few MTU refusals right after connecting are normal - the phone hasn't
-// finished the MTU exchange yet. Only a refusal lasting this long is logged.
-constexpr uint32_t kMtuRefusalLogMs = 1000;
-
 BLEServer* server = nullptr;
 BLECharacteristic* tx = nullptr;
 std::atomic<bool> linkUp{false};
@@ -66,7 +62,7 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 }  // namespace
 
 bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
-  log_ = &log;
+  link_.setLog(log);
   if (started_) return true;
   if (!built_) {
     // Nothing below works on a stack that didn't start.
@@ -141,15 +137,7 @@ void BleEsp32::end() {
 
 void BleEsp32::update() {
   if (!built_) return;
-  const bool up = linkUp.load(std::memory_order_acquire);
-  if (up && !wasConnected_) {
-    log_->log("BLE: client connected");
-    mtuRefusing_ = false;
-    mtuRefusalLogged_ = false;
-  } else if (!up && wasConnected_) {
-    log_->log("BLE: client disconnected");
-  }
-  wasConnected_ = up;
+  link_.edges(linkUp.load(std::memory_order_acquire));
 }
 
 bool BleEsp32::connected() const { return started_ && linkUp.load(std::memory_order_acquire); }
@@ -157,38 +145,20 @@ bool BleEsp32::connected() const { return started_ && linkUp.load(std::memory_or
 bool BleEsp32::send(const uint8_t* data, size_t len) {
   if (!connected()) return false;
   // A notification carries MTU - 3 bytes; anything longer would arrive cut short.
-  const uint16_t mtu = peerMtu.load(std::memory_order_acquire);
-  if (len + 3 > mtu) {
-    if (!mtuRefusing_) {
-      mtuRefusing_ = true;
-      mtuRefusingSinceMs_ = millis();
-    } else if (!mtuRefusalLogged_ && millis() - mtuRefusingSinceMs_ >= kMtuRefusalLogMs) {
-      mtuRefusalLogged_ = true;
-      log_->log("BLE: peer MTU %u too small for %u-byte frames - not sending \xE2\x9D\x8C",
-                static_cast<unsigned>(mtu), static_cast<unsigned>(len));
-    }
-    stats_.refused++;
-    return false;
-  }
-  mtuRefusing_ = false;
+  if (!link_.admit(len, peerMtu.load(std::memory_order_acquire))) return false;
   // Anything but SUCCESS_NOTIFY - notifications off, no peer, the stack
   // refusing the frame - counts as failed. Congestion isn't visible here: it
   // arrives later as a separate stack event.
-  const uint64_t begin = PlatformClock::nowUs();
+  const uint64_t start = PlatformClock::nowUs();
   lastNotifyStatus = NotifyStatus::ERROR_NO_CLIENT;
   tx->setValue(data, len);
   tx->notify();
-  const uint64_t us = PlatformClock::nowUs() - begin;
-  if (us > stats_.maxSendUs) stats_.maxSendUs = static_cast<uint32_t>(us);
-  const bool ok = lastNotifyStatus == NotifyStatus::SUCCESS_NOTIFY;
-  if (ok) stats_.sent++;
-  else stats_.failed++;
-  return ok;
+  return link_.sent(lastNotifyStatus == NotifyStatus::SUCCESS_NOTIFY, start);
 }
 
 size_t BleEsp32::read(uint8_t* out, size_t max) { return rxRing.pop(out, max); }
 BleStats BleEsp32::stats() const {
-  BleStats s = stats_;
+  BleStats s = link_.stats();
   s.rxBytes = rxRing.pushed();
   s.rxDropped = rxRing.dropped();
   return s;

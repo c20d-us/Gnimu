@@ -11,6 +11,7 @@ struct JobStats {
   uint32_t skipped = 0;    // whole periods missed before a run started
   uint32_t maxUs = 0;
   uint64_t totalUs = 0;
+  uint32_t maxLateUs = 0;  // longest a run started after it was due
 };
 
 struct Job {
@@ -60,7 +61,9 @@ class Scheduler {
 
       const Job& job = jobs_[i];
       JobStats& s = stats_[i];
-      const uint64_t missed = (begin - nextDue_[i]) / job.periodUs;
+      const uint64_t late = begin - nextDue_[i];
+      if (late > s.maxLateUs) s.maxLateUs = late > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(late);
+      const uint64_t missed = late / job.periodUs;
       s.skipped += static_cast<uint32_t>(missed);
       nextDue_[i] += (missed + 1) * job.periodUs;
 

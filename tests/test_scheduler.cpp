@@ -85,6 +85,31 @@ static void testBudgetAndStats() {
   assert(s.stats(0).runs == 0 && s.stats(1).maxUs == 0);
 }
 
+// How late each run started after it was due: the start delay that matters
+// against the GNSS UART's buffer, separate from how long the run took.
+static void testMaxLate() {
+  reset();
+  Counter fast, slow;
+  slow.cost = 4000;
+  const Job jobs[] = {{"slow", 10000, 0, runCounter, &slow}, {"fast", 1000, 0, runCounter, &fast}};
+  Scheduler<2, FakeClock> s(jobs);
+  s.start();
+  s.tick();  // both due at 1000; "fast" starts at 5000, after "slow"'s 4 ms
+  assert(s.stats(0).maxLateUs == 0);
+  assert(s.stats(1).maxLateUs == 4000);  // "fast" is next due at 6000
+  FakeClock::now = 6300;  // only "fast" is due, 300 us late: no new maximum
+  s.tick();
+  assert(s.stats(1).maxLateUs == 4000);  // next due at 7000
+  // Both due: "slow" 200 us late runs to 15200, so "fast" starts 8200 us
+  // after its due time - counted from that, skipped periods included.
+  FakeClock::now = 11200;
+  s.tick();
+  assert(s.stats(0).maxLateUs == 200);
+  assert(s.stats(1).maxLateUs == 8200);
+  s.clearStats();
+  assert(s.stats(0).maxLateUs == 0 && s.stats(1).maxLateUs == 0);
+}
+
 static void testReturnsEarliestDeadline() {
   reset();
   Counter a, b;
@@ -196,6 +221,7 @@ int main() {
   testNotRunEarly();
   testSkipAhead();
   testBudgetAndStats();
+  testMaxLate();
   testReturnsEarliestDeadline();
   testDisabledJobNeverRuns();
   testDisabledJobIgnoredForDeadline();

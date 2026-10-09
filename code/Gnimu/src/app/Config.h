@@ -8,11 +8,12 @@ namespace config {
 
 // Which BLE protocol this build speaks. Compile-time, like the board: one
 // binary per protocol (app/protocol/Protocol.h picks the class). The
-// protocol, not the board, decides whether the IMU is sampled at all - a
-// RaceChrono build ignores even an onboard IMU.
+// protocol, not the board, decides whether the IMU is sampled at all.
+// A RaceChrono build ignores even an onboard IMU.
 enum class Protocol : uint8_t { RaceBox };
 constexpr Protocol kProtocol = Protocol::RaceBox;
 
+// The bad rate for GNSS communications. Higer than 115200 is not needed.
 constexpr uint32_t kGnssBaud = 115200;
 // Every rate a receiver could be saved at, in the order the sweep tries them.
 // kGnssBaud is tried first and skipped here.
@@ -25,18 +26,24 @@ constexpr bool baudSweepIncludes(uint32_t baud, size_t i = 0) {
   return i < (sizeof(kGnssBaudRates) / sizeof(kGnssBaudRates[0])) &&
          (kGnssBaudRates[i] == baud || baudSweepIncludes(baud, i + 1));
 }
-constexpr uint8_t kGnssNavRateHz =
-    20; // 20 is the max with 2 constellations enabled
-constexpr uint8_t kGnssMinElevDeg =
-    5; // ignore SVs below this angle (anti-multipath)
+constexpr uint8_t kGnssNavRateHz = 20; // 20Hz is the max with 2 constellations
+constexpr uint8_t kGnssMinElevDeg = 5; // ignore SVs below this angle
 constexpr uint8_t kGnssDynamicModel = 4; // u-blox dynamic model 4 = automotive
 
 // Constellations, most preferred first; the first kConstellationCount are
 // enabled. 20 Hz needs at most 2. QZSS and SBAS are never enabled.
 enum class GnssSystem : uint8_t { Gps, Galileo, Beidou, Glonass };
+constexpr const char* gnssSystemName(GnssSystem s) {
+  return s == GnssSystem::Gps       ? "GPS"
+         : s == GnssSystem::Galileo ? "Galileo"
+         : s == GnssSystem::Beidou  ? "BeiDou"
+                                    : "GLONASS";
+}
+// Constellations are enabled in this priority order, up to 4
 constexpr GnssSystem kConstellationPriority[] = {
     GnssSystem::Gps, GnssSystem::Galileo, GnssSystem::Beidou,
     GnssSystem::Glonass};
+// Enable at most this many constellations
 constexpr unsigned kConstellationCount = 2;
 
 // The drain period is also the longest the loop ever sleeps. The UART RX ring
@@ -64,9 +71,9 @@ constexpr uint32_t kConsoleWaitUs = 2000;
 // happen from the GNSS job as each epoch lands, not from this job.
 constexpr uint32_t kBlePeriodUs = 10000;
 constexpr uint32_t kBleBudgetUs = 2000;
-// Low on purpose (Classic): less RF near the GNSS antenna, and the phone is
-// usually close. Raise it if connections drop. Each board validates the value
-// against the levels its own radio supports.
+// BLE Tx power, low on purpose: less RF near the GNSS antenna, and the client
+// is usually close. Raise it if connections drop. Each board validates the
+// value against the levels its own radio supports.
 constexpr int kBleTxPowerDbm = -12;
 
 // Status LED. core/StatusLed.h decides the patterns; these set their timing.
@@ -83,26 +90,24 @@ constexpr uint32_t kLedFaultHalfMs = 100;
 // battery-warning amber. Only ever on USB power, so it costs nothing.
 constexpr uint32_t kLedBatteryWaitHalfMs = 200;
 
-// Battery (boards that have one). Classic's g_battery values, kept by NG.
+// Battery settings, for builds that have one.
 // The job period is also the spacing between readings within a run.
 constexpr uint32_t kBatteryPeriodUs = 2500;
 constexpr uint32_t kBatteryBudgetUs = 500;
 constexpr uint8_t kBatterySamplesPerRun = 20; // ~50 ms window at 2.5 ms spacing
 constexpr uint32_t kBatteryRunIntervalMs = 250; // 4 Hz between run starts
-constexpr float kBatteryEmaAlpha =
-    0.1f; // display only; the cutoff sees raw peaks
+constexpr float kBatteryEmaAlpha = 0.1f;        // display only
 constexpr float kBatteryCutoffV = 3.30f; // also 0% on the straight-line curve
 constexpr float kBatteryCriticalV = 3.35f;
 constexpr float kBatteryWarningV = 3.40f;
 constexpr float kBatteryFullScaleV = 4.10f; // 100% on the curve
 // Low long enough to be a depleted cell, not acquisition-current sag: ~20 runs.
 constexpr uint32_t kBatteryCutoffDebounceMs = 5000;
-constexpr float kBatteryChargeFullV =
-    4.10f; // NG's plausibility floor for "full"
+constexpr float kBatteryChargeFullV = 4.10f; // Rough value for "full"
 constexpr uint32_t kBatteryChargeFullDebounceMs = 5000;
 
-// Power state machine (battery boards). The job also paces the switch-sense
-// ADC read; 50 ms is Classic's switch poll rate.
+// Power state machine for battery builds. The job also paces the switch-sense
+// ADC read.
 constexpr uint32_t kPowerPeriodUs = 50000;
 constexpr uint32_t kPowerBudgetUs = 1000;
 // A switch change, OFF or ON, must last this long to count (noise, EMI, a
@@ -118,7 +123,7 @@ constexpr uint64_t kStatusPeriodUs = 1000000;
 // digit count, so changing this resizes both.
 constexpr uint32_t kStatusMaxCount = 3600;
 
-// Shared by both chips (Classic uses identical values on ESP32 and nRF).
+// IMU sample rate, shared by both MPU-6050 and LSM6DS3.
 // 100 Hz, undecimated - a future encoder step picks its own transmit cadence
 // rather than this job deciding one.
 constexpr uint32_t kImuSamplePeriodUs = 10000;
@@ -127,9 +132,15 @@ constexpr int kImuAccelRangeG = 4;    // 2, 4, 8 or 16 g; 4g is ample for auto-x
 constexpr int kImuGyroRangeDps = 500; // 500, 1000 or 2000 deg/s suit both IMUs
                                       // (MPU-6050 also 250, LSM6DS3 125/245)
 constexpr uint32_t kImuI2cClockHz = 400000;
+// ESP32 only: how long one I2C transaction may wait before giving up (the
+// core's default is 50 ms). A 14-byte read at 400 kHz takes about 0.4 ms, so
+// 2 ms is ample, and an IMU that fails costs the GNSS ring (about 44 ms of
+// data on the ESP32) about 2 ms per read instead of 50.
+constexpr uint16_t kImuI2cTimeoutMs = 2;
 constexpr float kImuAccelAlpha = 0.09f; // EMA smoothing: 1.0 = raw, 0.1 = heavy
-constexpr float kImuGyroAlpha = 0.09f;
-// Consecutive failed reads that mark the IMU down: ~100 ms at 100 Hz.
+constexpr float kImuGyroAlpha = 0.09f;  // EMA smoothing: 1.0 = raw, 0.1 = heavy
+// Consecutive failed reads that mark the IMU down: ~100 ms at 100 Hz. With
+// the I2C timeout above, the failures cost the loop about 20 ms in all.
 constexpr uint8_t kImuDownAfterFailures = 10;
 
 // MPU-6050 only: DLPF_CFG has no LSM6DS3 equivalent (it uses ODR + bandwidth
@@ -145,11 +156,9 @@ constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
 constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};
 constexpr float kLsm6ds3AxisSign[3] = {-1.0f, -1.0f, +1.0f};
 
-// Trim (runtime levelling + gyro de-biasing), ported from Classic's
-// g_imu_trim. Shared by both chips: both drivers already convert to SI
-// (m/s^2, rad/s) before this point, unlike Classic's per-variant native
-// units, so one set of thresholds applies to both. Values and their vehicle-
-// measured rationale are Classic's own (2018 M2, 2026-09-08/09).
+// Trim (runtime levelling + gyro de-biasing).
+// Shared by both chips: both drivers already convert to SI
+// (m/s^2, rad/s) before this point, so one set of thresholds applies to both.
 constexpr float kImuTrimGravityNative =
     9.80665f; // m/s^2; matches ImuSample's units
 // 10s: not a noise requirement (half a second of averaging is already 2

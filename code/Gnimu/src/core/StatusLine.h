@@ -5,6 +5,7 @@
 #include "BatteryMonitor.h"
 #include "DeviceStatus.h"
 #include "GnssEpoch.h"
+#include "GnssNames.h"
 #include "TextOut.h"
 
 namespace gnimu {
@@ -56,8 +57,8 @@ inline size_t formatStatus(char *buf, size_t cap, const DeviceStatus &d, const S
           charging ? " \xE2\x9A\xA1" : "");
   }
   if (d.gnss.latest) {
-    o.put("Fix: %u | SV: %u | tAcc: %luns | hAcc: %lumm | ",
-          static_cast<unsigned>(d.gnss.latest->fixType),
+    o.put("Fix: %s | SV: %u | tAcc: %luns | hAcc: %lumm | ",
+          fixTypeShortName(d.gnss.latest->fixType),
           static_cast<unsigned>(d.gnss.latest->numSv),
           static_cast<unsigned long>(d.gnss.latest->tAccNs),
           static_cast<unsigned long>(d.gnss.latest->hAccMm));

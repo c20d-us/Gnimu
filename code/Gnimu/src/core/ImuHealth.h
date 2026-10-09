@@ -6,8 +6,10 @@ namespace gnimu {
 
 // Tracks whether the IMU is answering. Starts down; markUp() moves it up once
 // bring-up succeeds. Once up, enough consecutive failed reads latch it back
-// down for good - matching Classic, there is no recovery without a reboot, so
-// a flaky sensor can't flap the rest of the device between states all session.
+// down until the next reboot, by choice (owner, REL-6): the IMU is secondary.
+// GNSS keeps streaming without it, nothing else depends on its state, and a
+// down IMU's all-zero accel can't be mistaken for real data - a healthy one
+// always measures gravity.
 class ImuHealth {
  public:
   explicit ImuHealth(uint8_t downAfterFailures) : downAfterFailures_(downAfterFailures) {}

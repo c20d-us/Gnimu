@@ -25,10 +25,6 @@ constexpr bool isNrfTxPower(int dbm) {
 static_assert(isNrfTxPower(config::kBleTxPowerDbm),
               "nRF52840 BLE TX power must be -40, -20, -16, -12, -8, -4, 0 or 2..8 dBm");
 
-// A few MTU refusals right after connecting are normal - the phone hasn't
-// finished the MTU exchange yet. Only a refusal lasting this long is logged.
-constexpr uint32_t kMtuRefusalLogMs = 1000;
-
 // Classic's advertising cadence, in 0.625 ms units: fast (20 ms) for the first
 // 30 s so a phone finds it quickly, then slow (152.5 ms) to save power.
 constexpr uint16_t kAdvFastInterval = 32;
@@ -42,7 +38,6 @@ BLEDis deviceInfo;
 BLEBas batteryService;
 std::atomic<bool> linkUp{false};
 std::atomic<uint16_t> connHandle{BLE_CONN_HANDLE_INVALID};
-std::atomic<uint8_t> disconnectReason{0};
 ByteRing<256> rxRing;
 
 void onConnect(uint16_t handle) {
@@ -50,10 +45,7 @@ void onConnect(uint16_t handle) {
   linkUp.store(true, std::memory_order_release);
 }
 
-void onDisconnect(uint16_t, uint8_t reason) {
-  disconnectReason.store(reason, std::memory_order_relaxed);
-  linkUp.store(false, std::memory_order_release);
-}
+void onDisconnect(uint16_t, uint8_t) { linkUp.store(false, std::memory_order_release); }
 
 // Copy only: parsing and acting on commands happen on the loop.
 void onRxWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) { rxRing.push(data, len); }
@@ -61,7 +53,7 @@ void onRxWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) { rxRi
 }  // namespace
 
 bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Console& log) {
-  log_ = &log;
+  link_.setLog(log);
   if (started_) return true;
   if (!built_) {
     // Must precede Bluefruit.begin(): raises the ATT MTU ceiling to 247, so a
@@ -140,16 +132,7 @@ void BleNrf::end() {
 
 void BleNrf::update() {
   if (!built_) return;
-  const bool up = linkUp.load(std::memory_order_acquire);
-  if (up && !wasConnected_) {
-    log_->log("BLE: client connected");
-    mtuRefusing_ = false;
-    mtuRefusalLogged_ = false;
-  } else if (!up && wasConnected_) {
-    log_->log("BLE: client disconnected (reason 0x%02X)",
-              static_cast<unsigned>(disconnectReason.load(std::memory_order_relaxed)));
-  }
-  wasConnected_ = up;
+  link_.edges(linkUp.load(std::memory_order_acquire));
 }
 
 bool BleNrf::connected() const { return started_ && linkUp.load(std::memory_order_acquire); }
@@ -160,30 +143,12 @@ bool BleNrf::send(const uint8_t* data, size_t len) {
   BLEConnection* c = Bluefruit.Connection(handle);
   if (!c) return false;
   // Refused rather than split: Bluefruit's notify() would otherwise break a
-  // frame across several notifications. Same contract as BleEsp32.
-  const uint16_t mtu = c->getMtu();
-  if (len + 3 > mtu) {
-    if (!mtuRefusing_) {
-      mtuRefusing_ = true;
-      mtuRefusingSinceMs_ = millis();
-    } else if (!mtuRefusalLogged_ && millis() - mtuRefusingSinceMs_ >= kMtuRefusalLogMs) {
-      mtuRefusalLogged_ = true;
-      log_->log("BLE: peer MTU %u too small for %u-byte frames - not sending \xE2\x9D\x8C",
-                static_cast<unsigned>(mtu), static_cast<unsigned>(len));
-    }
-    stats_.refused++;
-    return false;
-  }
-  mtuRefusing_ = false;
+  // frame across several notifications.
+  if (!link_.admit(len, c->getMtu())) return false;
   // False when the peer hasn't enabled notifications, or after waiting up to
   // 100 ms (BLE_GENERIC_TIMEOUT) for a free slot in the send queue.
-  const uint64_t begin = PlatformClock::nowUs();
-  const bool ok = tx->notify(handle, data, static_cast<uint16_t>(len));
-  const uint64_t us = PlatformClock::nowUs() - begin;
-  if (us > stats_.maxSendUs) stats_.maxSendUs = static_cast<uint32_t>(us);
-  if (ok) stats_.sent++;
-  else stats_.failed++;
-  return ok;
+  const uint64_t start = PlatformClock::nowUs();
+  return link_.sent(tx->notify(handle, data, static_cast<uint16_t>(len)), start);
 }
 
 void BleNrf::setBatteryPercent(uint8_t percent) {
@@ -196,7 +161,7 @@ void BleNrf::setBatteryPercent(uint8_t percent) {
 
 size_t BleNrf::read(uint8_t* out, size_t max) { return rxRing.pop(out, max); }
 BleStats BleNrf::stats() const {
-  BleStats s = stats_;
+  BleStats s = link_.stats();
   s.rxBytes = rxRing.pushed();
   s.rxDropped = rxRing.dropped();
   return s;

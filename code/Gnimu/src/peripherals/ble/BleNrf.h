@@ -6,6 +6,7 @@
 #include "../../app/Console.h"
 #include "../../core/BleProfile.h"
 #include "../../core/BleStats.h"
+#include "BleLink.h"
 
 namespace gnimu {
 
@@ -38,17 +39,12 @@ class BleNrf {
   // Updated, and notified to a subscribed client, only when the value changes.
   void setBatteryPercent(uint8_t percent);
   BleStats stats() const;
-  void clearMaxSend() { stats_.maxSendUs = 0; }
+  void clearMaxSend() { link_.clearMaxSend(); }
 
  private:
-  Console* log_ = nullptr;
+  BleLink link_;  // MTU refusal, send counters, connection-edge logging
   bool built_ = false;
   bool started_ = false;
-  bool wasConnected_ = false;
-  bool mtuRefusing_ = false;
-  bool mtuRefusalLogged_ = false;
-  uint32_t mtuRefusingSinceMs_ = 0;
-  BleStats stats_;  // rx fields are filled in by stats()
   uint8_t batteryPercent_ = 0xFF;  // forces the first write
 };
 

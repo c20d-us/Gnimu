@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -7,6 +8,7 @@
 #include "BleStats.h"
 #include "DeviceStatus.h"
 #include "GnssEpoch.h"
+#include "GnssNames.h"
 #include "ResetReason.h"
 #include "Scheduler.h"
 #include "TextOut.h"
@@ -32,7 +34,7 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
   // whatever value is actually present so the table stays aligned regardless
   // of job name length or how large a count has grown.
   size_t wJob = 3, wRuns = 4, wSkipped = 7, wOverruns = 8, wMaxUs = 6,
-         wMeanUs = 7;
+         wMeanUs = 7, wLateUs = 11;
   for (size_t i = 0; i < t.count; i++) {
     const JobStats &s = t.stats[i];
     const unsigned long meanUs = s.runs ? s.totalUs / s.runs : 0;
@@ -49,11 +51,13 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
       wMaxUs = detail::decimalWidth(s.maxUs);
     if (detail::decimalWidth(meanUs) > wMeanUs)
       wMeanUs = detail::decimalWidth(meanUs);
+    if (detail::decimalWidth(s.maxLateUs) > wLateUs)
+      wLateUs = detail::decimalWidth(s.maxLateUs);
   }
-  // 6 columns, each framed as " | <cell>" plus the table's opening "| " and
-  // closing " |": 2 + 2 + 5*3 = 19 characters of furniture around the widths.
+  // 7 columns, each framed as " | <cell>" plus the table's opening "| " and
+  // closing " |": 2 + 2 + 6*3 = 22 characters of furniture around the widths.
   const size_t width =
-      19 + wJob + wRuns + wSkipped + wOverruns + wMaxUs + wMeanUs;
+      22 + wJob + wRuns + wSkipped + wOverruns + wMaxUs + wMeanUs + wLateUs;
 
   o.fill('=', width);
   o.put("\n| ");
@@ -68,6 +72,8 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
   o.right("max μs", wMaxUs);
   o.put(" | ");
   o.right("mean μs", wMeanUs);
+  o.put(" | ");
+  o.right("max late μs", wLateUs);
   o.put(" |\n");
   o.fill('-', width);
   o.put("\n");
@@ -87,6 +93,8 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
     o.right(static_cast<unsigned long>(s.maxUs), wMaxUs);
     o.put(" | ");
     o.right(meanUs, wMeanUs);
+    o.put(" | ");
+    o.right(static_cast<unsigned long>(s.maxLateUs), wLateUs);
     o.put(" |\n");
   }
   o.fill('=', width);
@@ -94,7 +102,7 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
 
   // RT and Loops split the bottom row in half, label left and value right in
   // each: "| " + left + " | " + right + " |" is 7 characters of furniture.
-  // The narrowest table (54) leaves 23 per half, room for any 10-digit value.
+  // The narrowest table (68) leaves 30 per half, room for any 10-digit value.
   char rt[16];
   snprintf(rt, sizeof(rt), "%lus", static_cast<unsigned long>(d.uptimeUs / 1000000ULL));
   const size_t wLeft = (width - 7) / 2, wRight = width - 7 - wLeft;
@@ -109,21 +117,30 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
   char reset[64];
   formatReset(reset, sizeof(reset), d.reset);
   o.put("Reset: %s\n", reset);
+  if (d.gnss.settings)
+    o.put("GNSS: %s\n", d.gnss.settings);
   o.put("GNSS: epochs %lu, missed %lu, max gap %luμs, time steps %lu\n",
         static_cast<unsigned long>(d.gnss.epochs->epochs()),
         static_cast<unsigned long>(d.gnss.epochs->missed()),
         static_cast<unsigned long>(d.gnss.epochs->maxGapUs()),
         static_cast<unsigned long>(d.gnss.epochs->timeSteps()));
   if (d.gnss.latest) {
-    o.put("GNSS: fix type %u, sv count %u, hAcc %lumm, tAcc %luns, pDOP %u.%02u\n",
-          static_cast<unsigned>(d.gnss.latest->fixType),
-          static_cast<unsigned>(d.gnss.latest->numSv),
-          static_cast<unsigned long>(d.gnss.latest->hAccMm),
-          static_cast<unsigned long>(d.gnss.latest->tAccNs),
-          static_cast<unsigned>(d.gnss.latest->pDop / 100),
-          static_cast<unsigned>(d.gnss.latest->pDop % 100));
+    const GnssEpoch &e = *d.gnss.latest;
+    // The receiver reports an accuracy it can't estimate as all bits set.
+    char hAcc[16] = "unknown";
+    char tAcc[16] = "unknown";
+    if (e.hAccMm != UINT32_MAX)
+      snprintf(hAcc, sizeof(hAcc), "%lumm", static_cast<unsigned long>(e.hAccMm));
+    if (e.tAccNs != UINT32_MAX)
+      snprintf(tAcc, sizeof(tAcc), "%luns", static_cast<unsigned long>(e.tAccNs));
+    // gnssFixOK is false while a fix is outside the receiver's accuracy
+    // limits; a 3D fix that isn't OK yet is easy to misread without it.
+    o.put("GNSS: %s%s, %u SVs, hAcc %s, tAcc %s, pDOP %u.%02u\n", fixTypeName(e.fixType),
+          e.fixType != 0 && !e.gnssFixOk ? " (not yet OK)" : "",
+          static_cast<unsigned>(e.numSv), hAcc, tAcc, static_cast<unsigned>(e.pDop / 100),
+          static_cast<unsigned>(e.pDop % 100));
   } else {
-    o.put("GNSS: fix none\n");
+    o.put("GNSS: no epoch yet\n");
   }
   const ImuDisplay imu = toDisplayUnits(d.imu.sample);
   o.put("IMU: %s, Accel XYZ mG %ld %ld %ld, Gyro XYZ c°/s %ld %ld %ld\n",
@@ -151,12 +168,23 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
     const BatteryStatus &b = *d.power.battery;
     const unsigned long centiV = static_cast<unsigned long>(b.voltage * 100.0f + 0.5f);
     const unsigned long peakCentiV = static_cast<unsigned long>(b.freshVoltage * 100.0f + 0.5f);
-    o.put("Battery: %lu.%02luV (last peak %lu.%02luV), %u%%, USB %u, charging %u, full %u, "
-          "warning %u, critical %u, cutoff %u, switch noise %lu\n",
-          centiV / 100, centiV % 100, peakCentiV / 100, peakCentiV % 100,
-          static_cast<unsigned>(b.percent), d.power.usbPresent ? 1u : 0u, b.chargerActive ? 1u : 0u,
-          b.chargeFull ? 1u : 0u, b.warning ? 1u : 0u, b.critical ? 1u : 0u,
-          b.cutoffRequested ? 1u : 0u, static_cast<unsigned long>(d.power.switchNoise));
+    o.put("Battery: %lu.%02luV (last peak %lu.%02luV), %u%%", centiV / 100, centiV % 100,
+          peakCentiV / 100, peakCentiV % 100, static_cast<unsigned>(b.percent));
+    // Only the flags that are true. Charging is isCharging(), the same as the
+    // boot line, the status line and the RaceBox bit use.
+    if (d.power.usbPresent)
+      o.put(", USB");
+    if (isCharging(b, d.power.usbPresent))
+      o.put(", charging");
+    if (b.chargeFull)
+      o.put(", full");
+    if (b.warning)
+      o.put(", warning");
+    if (b.critical)
+      o.put(", critical");
+    if (b.cutoffRequested)
+      o.put(", cutoff requested");
+    o.put(", switch noise %lu\n", static_cast<unsigned long>(d.power.switchNoise));
   } else if (d.power.battery) {
     o.put("Battery: no reading yet\n");
   }

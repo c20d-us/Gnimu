@@ -24,6 +24,7 @@ These claims were checked against the code, the installed library sources or ben
 | CLK-1 (accuracy) | TIMER4 runs from HFINT at about ±1.5% | On USB, a 512 s run's epoch count (20 Hz) and RT agree to within about 0.2%, so the clock is accurate there. USB most likely keeps HFXO running. The concern is still valid on battery, where it is unmeasured. |
 | BUG-3 (ESP32 congestion) | ESP32 congestion is reported through `onStatus` callbacks | For notifications, arduino-esp32 3.3.12's `onStatus` covers only the checks before sending: no client, notifications disabled, and a failed hand-off to the stack. Congestion arrives later as a separate GATTS event (`ESP_GATTS_CONGEST_EVT`) and is not visible through `onStatus`. |
 | MIN-6 (400 Hz writes) | `batteryJob` writes the Battery Service at 400 Hz | `batteryJob` calls `setBatteryPercent()` at 400 Hz, but `BleNrf::setBatteryPercent()` returns early unless the value changed, so the GATT write only happens on change. The missing *notify* is real. |
+| REL-6 (zeros) | A down IMU reports zeros, "which a consumer can't tell apart from level and still" | (Owner, 2026-10-09.) A healthy accelerometer always measures gravity: level and still reads about 1000 mG on Z. An all-zero accel vector can't come from a working IMU, so a client *can* tell a failed IMU from real data. The MPU-6050 driver already treats exactly that reading as a failure (its power-on state after a supply glitch). |
 | MIN-4 | The `"max μs"` header misaligns | It only misaligns once a column grows past 6 digits (≥ 1 s). Real reports render aligned today. Still worth fixing. |
 
 Confirmed as stated:
@@ -870,6 +871,120 @@ Considered and left out: templating every module on its hardware types for host 
 **Still to verify, both boards:**
 - Optional (ESP32, GNSS stays powered): write a different value to BBR only, then reset. Flash still matches but RAM doesn't; the boot should rewrite it.
 
+#### Phase 4, step 1: `max late μs` column and baseline; rescan declined. Done (bench verified)
+
+**Owner's plan:** add the measurement first, run both boards for a while to get a baseline, then decide on the rescan.
+
+**Change:** `JobStats::maxLateUs`, the longest any run started after it was due (counted from the original due time, so skipped periods count). Shown as a `max late μs` column at the right of the D report's job table. `C` clears it with the other stats. No scheduling change.
+
+**Reading it (`gnss` row, nRF):** the UART ring holds about 5.5 ms and `gnss` is due every 1 ms, so the drain gap is about 1 ms plus its lateness. Treat about **4.5 ms** as the limit. Expect a floor of up to about 1 ms even when idle, from the 1 ms RTOS-tick sleep. It's a maximum since the last `C`: to attribute it, press `C`, do one activity, then `D`. A D report's own cost shows on the *next* `D`. ESP32's GNSS ring is about 44 ms, so its numbers are context only.
+
+**Files:** `core/Scheduler.h`, `core/Report.h`, `tests/test_scheduler.cpp` (`testMaxLate`), `tests/test_report.cpp`.
+
+**Checks:** host suites pass (plain and sanitized). Clean against both cores.
+
+**First baseline run (nRF, USB, healthy link, 2026-10-09), about 10 minutes with D presses and status lines:**
+- `gnss` max late reached **5677 µs**, while its own max run was 931 µs (BLE send max 452 µs). The stall was the **console job**: max 5229 µs, with one budget overrun per D press (8 overruns for 8 reports). The D report has grown from the 3.9 ms measured earlier (the `Reset:` line, the late column, `switch noise`). 5677 ≈ one D report plus a small pile-up of other jobs or wake jitter.
+- The idle floor at the first D (8 s) was 1070 µs, matching the expected ~1 ms RTOS-tick sleep jitter.
+- One epoch missed, before 83 s (max gap 97.7 ms), none in the following ~500 s despite stalls past 5.5 ms. The cause is ambiguous: either an early D report overflowing the UART ring, or the receiver while acquiring its first fix (`time steps 1`). A stall only loses bytes when it overlaps a frame's ~8.7 ms arrival, about 17% of the time.
+- **Client side (owner):** solid. 20 Hz, more than 18,000 frames received, 0% errors.
+- **Reading:** the D-report stall is bench-only. In the car there's no USB host, and `Console::emit()` returns at once with no listener; status lines only run if `L` is typed. The rescan can't remove it (it is the longest single job). The field-relevant number is lateness **without console activity**: next, `C`, then 30–60 min untouched (no D, no L), then one D.
+- **Possible bench-only follow-up:** make D non-blocking. First split its ~5 ms into formatting versus waiting for USB; queueing console output and draining it per tick fixes the latter.
+
+**Field-like baseline (nRF, USB, client connected, no console activity, 2026-10-09), about 300 s after `C`:** `gnss` max late **1299 µs**, max run 579 µs, 0 missed of 6017 epochs, BLE max send 216 µs. Without console activity the worst case is bounded by the table itself: one sleep wake-up (about 1 ms) plus every other job's max run in the same tick (imu 433 + battery 196 + power 115 + ble 12 + led 133 + console 50 ≈ 0.94 ms), **about 2 ms whatever the epoch alignment**, so a longer run wasn't needed. Side notes: `max gap` 69 ms with nothing missed was one epoch output about 19 ms late by the receiver (the drain was never more than 1.3 ms late). About 10% of loop wake-ups find nothing due (335,246 loops against about 300,000 GNSS runs), because the nRF's 1024 Hz tick (0.98 ms) is slightly shorter than the 1 ms drain period. That also explains the ~1 ms floor and the `skipped` count. Harmless.
+
+**Rescan: declined (owner, 2026-10-09).** It could save at most about 1 ms off a 2 ms worst case that's already under half the 4.5 ms limit, and it can't touch the only stalls that matter: a D report (bench-only) or a BLE send inside the `gnss` job (the weak-link soak's question). The `max late μs` column stays: the soak needs it.
+
+**Rescan as proposed (kept for the record; declined above):** after every other job, re-check job 0 (`gnss`) and run it if due. Every other job still runs at most once per tick (no starvation, unlike the review's full rescan from 0). Plus `static_assert(kGnssJob == 0)` in the App constructor, so reordering the table can't drop the protection. It bounds the drain gap by the longest *single* job (about 3.9 ms for D), and can't help a stall inside the `gnss` job itself (a BLE send on a weak link), which is the soak's question. If the baseline sits far below 4.5 ms, dropping the rescan is a fair call.
+
+**Possible later item: finer sleep than the RTOS tick.** `sleepUntilUs()` uses `delay()`, one tick of about 1 ms (nRF 1024 Hz, ESP32 1000 Hz), so starts jitter up to about 1 ms. Options: busy-wait the last fraction (costs battery current, and on the nRF bypasses `delay()`'s USB-serial flush), or a timer-compare wake via task notification (µs-accurate, still sleeps; needs an interrupt that fits the SoftDevice's priority rules and must keep the USB flush). Not worth it now: it buys about 1 ms of the 4.5 ms margin, while the real risks are single-job stalls. Revisit if the baseline's idle floor is high, or with DATA-1 (IMU-to-GNSS time alignment).
+
+#### Phase 5: REL-6 declined; REL-3 ESP32 I²C timeout. Done (boot verified)
+
+**REL-6 (IMU latched down until reboot): declined, owner's choice (2026-10-09).**
+- The IMU is secondary. Its state changes no run state, jobs or LED, and GNSS keeps streaming without it, so a dropout is a degraded session, not a failed one. Recovery would add code for an unlikely edge case. A down IMU waits for the next power cycle, which the existing log line already says (`IMU fields will read zero until reboot`).
+- A down IMU's all-zero accel is recognisably invalid (see Corrections), so declining doesn't leave the data ambiguous.
+- Proposals considered on the way: a non-blocking reset/settle state machine (bring-up blocks for 200–300 ms), then the simpler "re-run `configure()` every 1 s" with a `recoveries` counter in D. Both declined with REL-6.
+- `core/ImuHealth.h`'s comment now gives the real reason for the latch instead of "matching Classic".
+
+**REL-3 (ESP32 part): done.** `Wire.setTimeOut(config::kImuI2cTimeoutMs)` (2 ms) in the ESP32's `imuBusBegin()`, after `Wire.begin()`. Before, each failed read waited the core's 50 ms default, so the 10 failures before the latch stalled the loop for about 500 ms, and with the ESP32's ~44 ms GNSS ring that would have cost roughly 10 epochs. Now about 2 ms per failed read, about 20 ms in all. A 14-byte read at 400 kHz takes about 0.4 ms. On the nRF, a stuck bus still hangs `Wire`, and the REL-1 watchdog resets the device; the bounded nRF I²C driver stays deferred.
+
+**CPLX-2:** stays a later cleanup (no longer needed by REL-6).
+
+**Files:** `app/Config.h` (`kImuI2cTimeoutMs`, comment on `kImuDownAfterFailures`), `platform/esp32/ImuBus.cpp`, `core/ImuHealth.h` (comment only).
+
+**Checks:** host suites pass; `ImuBus.cpp` is clean against the ESP32 core.
+
+**Verified 2026-10-09 (owner):** both boards boot and work normally. **Still optional (ESP32):** IMU readings unchanged. Optionally pull the MPU-6050's wire mid-run: expect `stopped answering ... until reboot`, D `IMU: down`, and `missed` unchanged (before this, that would have cost epochs).
+
+#### CPLX-5 (rest): one clock; the remaining platform-layer items declined. Done (boot verified)
+
+**What was left after the console part:** four `millis()` calls (the 1 s MTU-refusal log timer in `BleNrf.cpp` and `BleEsp32.cpp`), boot-time `delay()` / `delayMicroseconds()` waits (`Gnss.cpp`, both IMU drivers, `Console` flush, `primeBattery()`), and `Console` using `Serial` directly.
+
+**Done (owner chose option A, "one clock"):** both MTU-refusal timers now use `PlatformClock::nowUs()` (`mtuRefusingSinceUs_`, `kMtuRefusalLogUs`). Everything that *measures* time now uses one timebase. Both run inside `send()`, on the loop task, matching `nowUs()`'s loop-only rule. No behaviour change.
+
+**Declined:** wrapping `delay()` / `delayMicroseconds()` and routing `Console`'s `Serial` through `ConsolePort`. These are portable Arduino calls, the same on every board, like `Wire`. The boundary is: `platform/` holds what differs per board (`ConsolePort` already holds the USB wait and the input flush), and portable Arduino calls stay where they're used. Wrapping them would touch every bench-verified driver for no functional gain. A `Console` without direct `Serial` would help host testing, which belongs with TEST-1 if that's ever done.
+
+**Files:** `peripherals/ble/BleNrf.{h,cpp}`, `peripherals/ble/BleEsp32.{h,cpp}`.
+
+**Checks:** host suites pass; both BLE files are clean against their cores.
+
+**Verified 2026-10-09 (owner):** both boards compile, boot and work normally. The MTU-refusal log only appears with a client that never raises its MTU.
+
+#### TEST-3: project warnings fail the firmware build. Done
+
+**Finding confirmed:** CI and `scripts/build.sh` compiled both boards with `--warnings all` (`-Wall -Wextra` on both cores; the nRF core turns a few back off), but nothing failed on a warning. Host tests already build with `-Werror`.
+
+**Baseline:** with the IDE's bundled arduino-cli, both boards build with **0 warnings**, project and vendor alike, so nothing needed cleaning up first.
+
+**Fix (owner approved after two refinement rounds), all in `scripts/build.sh`:**
+- After the compile, the output is searched for `: warning:` lines under the sketch's own path (`$PWD/code/Gnimu/`). Any match prints the lines and fails the script. Core and library warnings are shown but don't fail. Arduino has no sketch-only `-Werror`: `compiler.cpp.extra_flags` reaches the core and every library too.
+- `--clean` on every build, so every source is recompiled and every warning printed. An incremental build skips unchanged files, and their warnings with them, so a local re-run could otherwise pass falsely. The core stays precompiled in its own cache.
+- No argument builds both boards (ESP32, then nRF, stopping at the first failure). CI's matrix still passes one board each; the workflow is unchanged.
+- arduino-cli is `$ARDUINO_CLI` if set, else on the PATH, else the copy bundled with the Arduino IDE on macOS.
+- The output goes through `tee` under `pipefail`, so a failed compile still fails, and "no matches" from `grep` is handled as the pass.
+
+**Checks:**
+- `scripts/build.sh`: both boards pass (`no warnings in project sources`).
+- A scratch copy with a planted unused variable in `App.cpp` fails, naming `App.cpp:221:7`.
+- The filter ignores a vendor-library warning line (synthetic log in arduino-cli's format; the installed libraries weren't touched).
+
+**Side note from the build:** the ESP32 image uses **91% of its flash partition** (1,194,083 of 1,310,720 bytes). Not a problem today, but little headroom.
+
+#### D-report wording (the "later, separate effort"). Done (bench verified)
+
+**Owner's decisions (2026-10-09):** all three planned items, plus `fix OK`, `Fix: 3D` on the status line, and the dynamic model on the settings line. `charging` in D now uses `isCharging()`, reversing R6's raw-pin choice for D.
+
+**Changes:**
+- **New first GNSS line:** `GNSS: GPS+Galileo, 20 Hz, automotive`. Built once by Diagnostics from `Config.h` (constellations in priority order via the new `config::gnssSystemName()`, `kGnssNavRateHz`, `kGnssDynamicModel`). These are the targets the boot check verified, not a live readback. Carried in `DeviceStatus::gnss.settings`; `nullptr` omits the line.
+- **Fix line in words:** `GNSS: 3D fix, 11 SVs, hAcc 597mm, tAcc 22ns, pDOP 2.34`. Fix types from NAV-PVT: no fix, dead reckoning, 2D fix, 3D fix, GNSS + dead reckoning, time only. `(not yet OK)` follows any fix type other than "no fix" while `gnssFixOK` is false. An accuracy the receiver can't estimate (all bits set) shows as `unknown`. Before any epoch: `GNSS: no epoch yet`.
+- **Battery line:** only the true flags, as words (`USB`, `charging`, `full`, `warning`, `critical`, `cutoff requested`), e.g. `Battery: 4.16V (last peak 4.18V), 100%, USB, full, switch noise 0`. `charging` is `isCharging()` (USB present and the charger pin), the same as the boot line, status line and RaceBox bit.
+- **Status line:** `Fix: 3D` (short names: none, DR, 2D, 3D, GNSS+DR, time). Its pre-epoch `Fix: none` is unchanged.
+- **New `core/GnssNames.h`:** `fixTypeName()`, `fixTypeShortName()`, `dynamicModelName()` (u-blox CFG-NAVSPG-DYNMODEL; 1 is reserved).
+
+**Files:** `core/GnssNames.h` (new), `core/Report.h`, `core/StatusLine.h`, `core/DeviceStatus.h`, `app/Diagnostics.{h,cpp}`, `app/Config.h`, `tests/test_gnssnames.cpp` (new), `tests/test_report.cpp`, `tests/test_statusline.cpp`.
+
+**Tests:** every fix type (long and short) and out-of-range values; dynamic models including the reserved 1; the settings line's position and omission; `(not yet OK)`; unknown accuracy; `no epoch yet`; battery flag combinations, including the charger pin without USB not counting as charging.
+
+**Checks:** host suites pass (plain and sanitized); `scripts/build.sh` passes for both boards with no project warnings.
+
+**Verified 2026-10-09 (owner):** both boards compile, boot and work. **Checks were:** `D` after boot shows the settings line and the new fix line (`(not yet OK)` until the fix is good); on battery boards, the battery line's flags; the status line (`L`) shows `Fix: 3D`.
+
+#### CPLX-3: shared BLE rules in one place. Done (bench verified)
+
+**Finding confirmed:** `BleNrf.cpp` and `BleEsp32.cpp` repeated the MTU-refusal rule and its 1 s log, the send accounting (`sent` / `failed` / `maxSendUs`), and the connection-edge logging almost line for line. BUG-3 and CPLX-5 had each needed the same change made twice.
+
+**Fix (owner approved after two simplification rounds):** a small `BleLink` member in `peripherals/ble/BleLink.h`, owned by each transport. It holds the shared state and rules: `admit(len, mtu)` (refuse rather than split, count `refused`, log once after 1 s of refusals, re-armed on each connect), `sent(ok, startUs)` (accounting), `edges(up)` (connect and disconnect log lines), `stats()` and `clearMaxSend()`. It logs through `Console` directly. Each transport keeps its stack calls, and its `send()` stays a short, readable sequence in its own file. No template, no inheritance. Loop task only, as before.
+- **Owner's change:** the nRF no longer captures or logs the disconnect reason (the `disconnectReason` atomic is gone), matching the ESP32. Both now log `BLE: client disconnected`.
+- `begin()`, `end()`, `read()`, the RX counters and the nRF battery service stay per transport. `BleStub` is unchanged.
+- Considered on the way: a pure core helper (host-testable, but needing a "log is due" flag and more code) and a template base class (fewest lines, but a send can't be read in one file).
+
+**Files:** `peripherals/ble/BleLink.h` (new), `peripherals/ble/BleNrf.{h,cpp}`, `peripherals/ble/BleEsp32.{h,cpp}`. Net 93 lines removed and 20 added in the transports, plus the new header.
+
+**Checks:** host suites pass; `scripts/build.sh` passes for both boards with no project warnings. No host tests for `BleLink`, as before for this logic.
+
+**Verified 2026-10-09 (owner):** both boards compile, boot and work. **Checks were:** boot, connect and stream: `failed` / `refused` about 11 / 13 at connect, then frozen; `max send` as before; `BLE: client connected` / `disconnected` logged, with no reason on the nRF.
+
 ### Phase 2: survive faults instead of hanging
 
 | Finding | Planned fix |
@@ -914,7 +1029,7 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 
 | Finding | Planned fix |
 |---|---|
-| PERF-1 (scheduler) | After every job run, rescan from the GNSS job (index 0), so the time between drains is bounded by one job's worst case |
+| PERF-1 (scheduler) | **Rescan declined** after the baseline: `gnss` max late 1.3 ms with no console activity, bounded at about 2 ms. `max late μs` column kept. See Restructure progress → "Phase 4, step 1". |
 | Soak / HIL | Weak-link BLE soak on nRF: phone at range or shielded, `D` pressed periodically; check `missed`, `skipped` and the new BLE `failed` / `max send` counters |
 | PERF-1 (BLE and UART) | Decided by the soak result: a deeper HVN queue, a separate BLE sender task, or EasyDMA UART ingestion |
 
@@ -922,15 +1037,13 @@ That allows at most one restart per failure. REL-4 ("configuration failed → Fa
 
 | Finding | Planned fix |
 |---|---|
-| REL-6 | Re-initialise the IMU with backoff after it is marked down; recovery counter in `D` |
-| CPLX-2 | Merge the MPU-6050 and LSM6DS3 pipelines (chip driver plus shared pipeline) while doing REL-6 |
-| REL-3 | ESP32 `Wire.setTimeOut()` short. nRF bounded TWIM driver deferred; the REL-1 watchdog covers the hang. |
+| REL-6 | **Declined** (owner): the IMU stays down until reboot; GNSS unaffected. See Restructure progress → "Phase 5". |
+| CPLX-2 | Later cleanup: merge the MPU-6050 and LSM6DS3 pipelines (chip driver plus shared pipeline). No longer needed by REL-6. |
+| REL-3 | **ESP32 done (boot verified):** `Wire.setTimeOut(2)`. nRF bounded TWIM driver deferred; the REL-1 watchdog covers the hang. |
 
 ### Later, as a separate effort
 
-- D report GNSS lines: fix type as words (e.g. `3D fix`); `no epoch yet` instead of `fix none` before the first epoch.
-- D report Battery line: 0/1 flags as words, or list only the true ones.
-- D report: a `GNSS:` line showing the configured constellations and the target nav rate (owner, 2026-10-08), e.g. `GNSS: config GPS+Galileo, 20 Hz`.
+- ~~D report GNSS lines, Battery line, and the GNSS settings line~~: **done**, see Restructure progress → "D-report wording".
 
 ---
 
@@ -950,7 +1063,8 @@ Hardware checks that decisions above depend on.
 
 | Finding | Decision | Reason |
 |---|---|---|
-| PERF-1 (console) / PERF-2 "spread `D` across ticks" | Declined for now | Measured at 3.9 ms with 0 missed epochs (see Corrections). Revisit if the soak shows misses. |
+| PERF-1 (console) / PERF-2 "spread `D` across ticks" | Declined for now | Measured at 3.9 ms with 0 missed epochs (see Corrections); 5.2 ms in the 2026-10-09 baseline, now that the report is longer. Bench-only: with no USB host (the car) `emit()` returns at once. Revisit if it disturbs bench measurements. |
+| PERF-1 (scheduler rescan) | Declined (2026-10-09) | Baseline without console activity: `gnss` max late 1.3 ms, bounded at about 2 ms, against a 4.5 ms limit. See Phase 4, step 1. |
 | PERF-2 "latch a stalled host" | Declined | The owner chose the simplest console writer (each line sent whole or dropped after a bounded wait); the latch was rejected as unnecessary. |
 | PERF-3 | Declined | BATTERY_WAIT and CHARGE_ONLY both run on USB power. While RUNNING, the loop already wakes at 1 kHz for the GNSS drain. |
 | PERF-4 | Deferred | ESP32 is the secondary board. Same-size allocations; a long soak would show fragmentation. |
@@ -961,5 +1075,6 @@ Hardware checks that decisions above depend on.
 | SEC-3 | Deferred | Input-handling rules will be written when the RaceBox command decoder is built. No code today. |
 | SEC-4 | Accepted risk | Already accepted. |
 | CPLX-1 | Declined | The SparkFun callback is a plain function pointer, so the state must be static. There is one receiver by design. |
-| CPLX-3 | Deferred | Revisit when SEC-1-style policy or the command decoder lands |
-| CPLX-7, TEST-1, TEST-3 | Deferred | Later cleanup |
+| CPLX-3 | Done (2026-10-09) | Shared BLE rules in `BleLink`. See Restructure progress → "CPLX-3". |
+| CPLX-5 (rest) | Declined (2026-10-09) | The clock part is done (one timebase). Wrapping portable Arduino calls (`delay`, `Serial`) is declined: `platform/` holds what differs per board. See Restructure progress → "CPLX-5 (rest)". |
+| CPLX-7, TEST-1 | Deferred | Later cleanup (TEST-3 done, see Restructure progress → "TEST-3") |

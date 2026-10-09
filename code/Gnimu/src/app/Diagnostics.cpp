@@ -1,5 +1,7 @@
 #include "Diagnostics.h"
 
+#include "../core/GnssNames.h"
+#include "../core/TextOut.h"
 #include "../platform/BatteryPort.h"
 #include "../platform/Clock.h"
 #include "BuildInfo.h"
@@ -82,10 +84,21 @@ void Diagnostics::armStatus(uint32_t count) {
   }
 }
 
+// The constellations in priority order, the nav rate and the dynamic model:
+// the targets the boot configuration verified, not a live readback.
+void Diagnostics::formatGnssSettings() {
+  detail::Out o{gnssSettings_, sizeof(gnssSettings_), 0};
+  for (unsigned i = 0; i < config::kConstellationCount; i++)
+    o.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
+  o.put(", %u Hz, %s", static_cast<unsigned>(config::kGnssNavRateHz),
+        dynamicModelName(config::kGnssDynamicModel));
+}
+
 DeviceStatus Diagnostics::snapshot(uint64_t nowUs) const {
   DeviceStatus s = {};
   s.uptimeUs = nowUs;
   s.reset = reset_;
+  s.gnss.settings = gnssSettings_;
   s.gnss.epochs = &feed_.epochs();
   s.gnss.latest = feed_.latest();
   s.imu.up = imu_.up();

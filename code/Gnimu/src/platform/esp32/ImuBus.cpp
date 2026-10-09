@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include "../../app/Config.h"
 #include "../ImuBus.h"
 #include "BoardConfig.h"
 
@@ -15,6 +16,8 @@ namespace gnimu {
 void imuBusBegin(uint32_t clockHz) {
   Wire.begin(board::kImuSdaPin, board::kImuSclPin);
   Wire.setClock(clockHz);
+  // After begin(), which applies the core's 50 ms default.
+  Wire.setTimeOut(config::kImuI2cTimeoutMs);
 }
 
 }  // namespace gnimu
