@@ -5,7 +5,7 @@
 [![Language: C++ (Arduino)][Language-shield]][Language-link]
 
 > [!WARNING]
-> **Gnimu Classic is deprecated.** This is the original Gnimu firmware. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../../../README.md). The OLED variant has no successor there; this is its only home. The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
+> **Gnimu Classic is deprecated.** This is the original Gnimu firmware, final at version 1.2.1. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../../../README.md). The OLED variant has no successor there; this is its only home. The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
 
 This section of the repository is a further evolution of [Gnimu nRF52840][0]. The same **Seeed Studio XIAO nRF52840 Sense** [MCU][9], GNSS module, onboard IMU, battery subsystem, and BLE protocol, but it replaces the onboard RGB status LED with a small **SSD1306 OLED display**. Where the LED could only signal state through color and blink patterns, the display can show it directly as text, alongside GNSS quality information the LED never could: **locked satellites, pDOP, horizontal accuracy, PVT rate, and fix status**.
 
