@@ -42,7 +42,7 @@ Start with the README for whichever hardware you're building (links at the top o
 
 1. All three of my builds use M10-based GNSS modules from HGLRC. Two use the M100-5883 module, and one uses the M100 Mini. Both modules are ~$20 each from Amazon. The M100-5883 is excellent for the price. I've seen 16+ SVs locked with <0.200m hAcc and 1.2 pDOP with the device sitting on a table in my living room. The M100 Mini is a little bit cheaper, and definitely smaller, but I wouldn't use it on future builds. It works OK, but the performance is not quite as good as the M100-5883's due to the smaller antenna patch (15x15mm vs. 21x21mm) . It's not worth the slight cost savings IMO.
 
-2. If you use the HGLRC M100-5883 or M100 Mini modules, be aware that **as-delivered they *cannot* hold a 20Hz+ fix rate** even with just one constellation configured. To enable high fix rates you need to adjust the module's clock speed by writing values to their One-Time Programmable (OTP) memory (there is a sketch in the `./src/tools/common` folder to do this). Without doing this you'll never get 20Hz (with GPS **and** Galileo) or 25Hz (with GPS **or** Galileo) fix rates at high SV counts. All will look fine until you reach ~10-12 SVs, and then the fix rate will start to stumble and sag, getting worse as the SV count climbs. After you burn the OTP settings, you will see solid 20Hz/25Hz performance into the high teen SV counts and beyond. Keep in mind that the module documentation only claims ≥98% of fix rate at full SV capacity, so you may see minor degradation when lots of SVs are visible.
+2. If you use the HGLRC M100-5883 or M100 Mini modules, be aware that **as-delivered they *cannot* hold a 20Hz+ fix rate** even with just one constellation configured. To enable high fix rates you need to adjust the module's clock speed by writing values to their One-Time Programmable (OTP) memory (there is a sketch in the repository's top-level [`tools/`](../tools/) folder to do this). Without doing this you'll never get 20Hz (with GPS **and** Galileo) or 25Hz (with GPS **or** Galileo) fix rates at high SV counts. All will look fine until you reach ~10-12 SVs, and then the fix rate will start to stumble and sag, getting worse as the SV count climbs. After you burn the OTP settings, you will see solid 20Hz/25Hz performance into the high teen SV counts and beyond. Keep in mind that the module documentation only claims ≥98% of fix rate at full SV capacity, so you may see minor degradation when lots of SVs are visible.
 
 3. There are other u-blox compatible GNSS modules that should work with this firmware, either as a drop-in replacement or with minor code tweaks. I have not tried any other options, but you can easily find several other M10-based modules on Amazon, DigiKey, and Mouser. Keep in mind that M10-based modules will all have similar performance and constraints as the HGLRC modules.
 
@@ -83,7 +83,6 @@ src/
   Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README
   tools/
     check_common.sh      Verifies the modules the two nRF52840 trees share are identical
-    common/              Diagnostic sketches not tied to any one platform
     ESP32/               Diagnostic sketches for the ESP32 variant
     nRF52840/            Diagnostic sketches for the nRF52840 variant
     nRF52840-OLED/        Diagnostic sketches for the nRF52840-OLED variant

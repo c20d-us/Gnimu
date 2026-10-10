@@ -8,7 +8,7 @@ open it directly.
 |---|---|---|
 | [`imu_calibration/`](imu_calibration/imu_calibration.ino) | Per-axis MPU-6050 zero-point offsets in the raw sensor frame, independent of the `IMU_AXIS_*` remap (formerly fed `config.h`; now a bench diagnostic only). Warms up until die temp plateaus (5–20 min), then repeating 10000-sample sessions 1 min apart, each gated on a stability check and appended to LittleFS. Press any key over Serial to halt, then `a` to aggregate the run into six `#define`-formatted lines. **Those no longer go anywhere** — see the note below. | Gate passes on a still bench; `a` reports a median and 20% trimmed mean that agree within 1 sd, and a median tilt under 1°. |
 
-> **Also usable here:** [`tools/common/gnss_ver`](../common/gnss_ver/gnss_ver.ino)
+> **Also usable here:** [`tools/gnss_ver`](../../../../tools/gnss_ver/gnss_ver.ino)
 > — GNSS identity and high-rate capability report (which M10 part, which
 > firmware, whether the receiver is running the high CPU clock the 25Hz/20Hz
 > figures require, what the current rate/constellation config is rated for, and
@@ -20,12 +20,12 @@ open it directly.
 > so it compiles for this tree unchanged — edit those two constants at the top
 > if your wiring differs from `config.h`.
 >
-> [`tools/common/gnss_reset`](../common/gnss_reset/gnss_reset.ino) carries the
+> [`tools/gnss_reset`](../../../../tools/gnss_reset/gnss_reset.ino) carries the
 > same platform block and is likewise usable here: a full GNSS factory reset
 > (BBR + Flash + EEPROM wipe, then a cold-start reset) for recovering a
 > receiver left in an unexpected config state.
 >
-> [`tools/common/gnss_otp_clock`](../common/gnss_otp_clock/gnss_otp_clock.ino)
+> [`tools/gnss_otp_clock`](../../../../tools/gnss_otp_clock/gnss_otp_clock.ino)
 > — same platform block again. Programs the M10 high-performance CPU clock into
 > OTP, gated behind a typed confirmation. **Permanent and irreversible**; read
 > its header before running it.

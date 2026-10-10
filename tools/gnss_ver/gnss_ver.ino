@@ -125,7 +125,7 @@
 // ADAPTING IT
 //
 // If phase 3 comes back at the default clock and you decide to program the
-// high clock, that is a separate tool: tools/common/gnss_otp_clock. It is kept
+// high clock, that is a separate tool: tools/gnss_otp_clock. It is kept
 // separate on purpose - this sketch is a diagnostic you can run against a
 // working board any time, and the OTP write is PERMANENT and cannot be
 // reverted. Do not fold the write in here.
@@ -778,7 +778,7 @@ static bool printClockConfig() {
     Serial.println("  default row: 18 Hz single-GNSS, 10 Hz two-GNSS. Asking");
     Serial.println("  for more will drop fixes rather than error. Raising it");
     Serial.println("  means the PERMANENT OTP write in integration manual");
-    Serial.println("  sec 2.1.7 - see tools/common/gnss_otp_clock.");
+    Serial.println("  sec 2.1.7 - see tools/gnss_otp_clock.");
   }
   Serial.println();
 

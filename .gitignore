@@ -87,6 +87,7 @@ venv/
 # as a committed test fixture, sanitize it first (offset the coordinates and
 # re-encode, so the packets stay self-consistent) rather than adding an
 # exception here.
+test/
 test/*.jsonl
 test/vectors*.gc1
 

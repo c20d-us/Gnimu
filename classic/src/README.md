@@ -64,7 +64,7 @@ measure a per-board constant that then gets pasted into a variant's `config.h`.
 
 | Folder | Contents |
 |---|---|
-| [`tools/common/`](tools/common/) | GNSS sketches that build for any variant: `gnss_ver` (identity + high-rate capability report), `gnss_reset` (factory reset), `gnss_otp_clock` (**permanent** M10 high-performance clock burn). |
+| [`tools/`](../../tools/) (repository top level) | GNSS sketches that build for any variant: `gnss_ver` (identity + high-rate capability report), `gnss_reset` (factory reset), `gnss_otp_clock` (**permanent** M10 high-performance clock burn). |
 | [`tools/nRF52840/`](tools/nRF52840/) | The largest set - IMU probe/tiltmap/calibration/wake, LED check, BLE MTU, GNSS power gating and backup mode, battery presence and logging, flash storage. [README](tools/nRF52840/README.md) has a pass-criteria table and what each result fed back into the firmware. |
 | [`tools/nRF52840-OLED/`](tools/nRF52840-OLED/) | OLED bring-up (`oled_probe`, `oled_layout`, `oled_bench`) plus this tree's own copy of `imu_calibration`. |
 | [`tools/ESP32/`](tools/ESP32/) | `imu_calibration` in the MPU-6050's native units. [README](tools/ESP32/README.md) |
