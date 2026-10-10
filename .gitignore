@@ -105,3 +105,6 @@ test/vectors*.gc1
 
 # Firmware review working notes: kept locally, not part of the repository.
 docs/firmware-review-*.md
+
+# Restructure design notes: kept locally with the review notes.
+docs/app-restructure-design.md
