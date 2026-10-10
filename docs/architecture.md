@@ -37,7 +37,7 @@ The firmware's work is a table of **jobs**, each with a period and a time budget
 |---|---|---|
 | `gnss` | 1 ms | Drains the receiver's UART. When a position update completes, encodes and sends the packet. |
 | `imu` | 10 ms | Reads the IMU, applies the self-calibration and the smoothing. |
-| `battery` | 2.5 ms | Samples the battery voltage and the charger. Battery boards only. |
+| `battery` | 10 ms | Samples the battery voltage and the charger. Battery boards only. |
 | `power` | 50 ms | Reads the power switch and USB, and applies any change of state. Battery boards only. |
 | `ble` | 10 ms | BLE housekeeping, and collecting anything the app wrote to the device. |
 | `led` | 25 ms | Updates the status LED. |
