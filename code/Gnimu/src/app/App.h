@@ -49,7 +49,7 @@ class App {
       {kLedJob, "led", config::kLedPeriodUs, config::kLedBudgetUs, &App::ledJob},
       {kConsoleJob, "console", config::kConsolePeriodUs, config::kConsoleBudgetUs, &App::consoleJob},
   };
-  // One blocking sampling run (~50 ms) at boot, before the GNSS starts.
+  // One blocking sampling run (~100 ms) at boot, before the GNSS starts.
   void primeBattery();
   // nullptr on boards without a battery.
   const BatteryStatus* batteryStatus() const;

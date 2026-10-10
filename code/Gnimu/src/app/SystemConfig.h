@@ -83,12 +83,12 @@ constexpr uint32_t kLedBatteryWaitHalfMs = 200;
 
 // Battery settings, for builds that have one.
 // The job period is also the spacing between readings within a run.
-constexpr uint32_t kBatteryPeriodUs = 2500;
+constexpr uint32_t kBatteryPeriodUs = 10000;
 constexpr uint32_t kBatteryBudgetUs = 500;
-constexpr uint8_t kBatterySamplesPerRun = 20; // ~50 ms window at 2.5 ms spacing
-constexpr uint32_t kBatteryRunIntervalMs = 250; // 4 Hz between run starts
-constexpr float kBatteryEmaAlpha = 0.1f;        // display only
-// Low long enough to be a depleted cell, not acquisition-current sag: ~20 runs.
+constexpr uint8_t kBatterySamplesPerRun = 10; // 100 ms window at 10 ms spacing
+constexpr uint32_t kBatteryRunIntervalMs = 1000; // one run a second
+constexpr float kBatteryEmaAlpha = 0.1f;         // display only
+// Low long enough to be a depleted cell, not acquisition-current sag: ~5 runs.
 constexpr uint32_t kBatteryCutoffDebounceMs = 5000;
 constexpr uint32_t kBatteryChargeFullDebounceMs = 5000;
 
