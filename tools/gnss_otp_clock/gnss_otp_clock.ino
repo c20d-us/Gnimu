@@ -1,18 +1,6 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // ============================================================================
 // TOOL: program the u-blox M10 high-performance CPU clock into OTP
@@ -63,8 +51,8 @@
 // narrow: there is exactly one window where it cannot drain the UART, and that
 // is the blocking wait for the operator to type the confirmation word, which
 // lasts as long as they take to read the warning. A Gnimu-configured receiver
-// pushes ~2 KB/s, so a 256-byte RX ring (the nRF52 core's compile-time size)
-// overflows in about 130 ms of wait. The overflow is not itself fatal,
+// pushes ~2 KB/s, so a 64-byte RX ring (the nRF52 core's compile-time size)
+// overflows in about 30 ms of wait. The overflow is not itself fatal,
 // since the buffer is drained before the write, but a UART left in an overrun
 // state is not what anyone wants immediately before an irreversible operation.
 //
@@ -93,9 +81,9 @@
 // reporting the stock 128/128/128/64 even after a fully successful write, so
 // RAM must not be used to judge the outcome.
 //
-// Requires: the GNSS wired as the variant's README describes, USB for serial,
-// and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial monitor at
-// 115200 with a newline-sending line ending.
+// Requires: the GNSS wired as the board's build guide describes, USB for
+// serial, and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial
+// monitor at 115200 with a newline-sending line ending.
 // ============================================================================
 
 // UBX-MON-VER can return up to ~348 bytes. Must be defined before the library
@@ -109,8 +97,8 @@
 // receiver hangs off, and whether opening it needs pin arguments.
 #if defined(ARDUINO_ARCH_ESP32)
 
-// ESP32 variant: UART2 on the GPIOs from Gnimu-ESP32/config.h. Change these to
-// match your wiring if you routed the receiver elsewhere.
+// ESP32: UART2 on the GPIOs the Gnimu firmware uses. Change these to match
+// your wiring if you routed the receiver elsewhere.
 static const int GNSS_RX_PIN = 16; // ESP32 RX <- GNSS TX
 static const int GNSS_TX_PIN = 17; // ESP32 TX -> GNSS RX
 static HardwareSerial gnssSerial(2);
@@ -125,7 +113,7 @@ static HardwareSerial gnssSerial(2);
 
 #else
 
-// nRF52840 (XIAO) variants: Serial (USB CDC) needs the TinyUSB library linked,
+// XIAO nRF52840: Serial (USB CDC) needs the TinyUSB library linked,
 // and this sketch pulls in nothing else that would include it transitively.
 #include <Adafruit_TinyUSB.h>
 
@@ -143,8 +131,8 @@ static SFE_UBLOX_GNSS_SERIAL myGNSS;
 // The word the operator must type to authorize the burn. Anything else aborts.
 static const char CONFIRM_WORD[] = "BURN";
 
-// Common u-blox baud rates. 115200 first (GNSS_BAUD in every variant's
-// config.h), then the factory default, then the rest.
+// Common u-blox baud rates. 115200 first (the Gnimu firmware's default,
+// kGnssBaud in Config.h), then the factory default, then the rest.
 static const uint32_t BAUD_RATES[] = {115200, 38400,  9600,
                                       57600,  230400, 460800};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
@@ -401,7 +389,7 @@ static bool connectAtAnyBaud() {
 //
 // All of it is written to the RAM layer, so a power cycle restores the
 // receiver, the CFG-RST at the end of a successful burn does the same, and
-// g_gnss.cpp's gnssBegin() reconfigures everything from config.h at boot
+// the Gnimu firmware checks and restores every setting from Config.h at boot
 // regardless. Nothing here needs undoing.
 static const uint32_t PERIODIC_NAV_MSGS[] = {
     UBLOX_CFG_MSGOUT_UBX_NAV_PVT_UART1,
@@ -856,9 +844,8 @@ void setup() {
     }
     Serial.println();
     Serial.println(
-        "Next: run gnss_ver under an open sky and compare phase 6's");
-    Serial.println(
-        "fix rate at a high satellite count against your pre-burn run.");
+        "Next: run gnss_ver and check that phase 3 reports the high");
+    Serial.println("clock and phase 4's rated nav rate has risen to match.");
   } else if (after == CLOCK_HIGH) {
     Serial.println(
         "PARTIAL. RAM reads the high clock but the OTP layer did not");

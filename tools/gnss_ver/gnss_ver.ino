@@ -1,37 +1,20 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // ============================================================================
 // TOOL: GNSS identity + high-rate capability report
 //
 // Connects to the receiver (sweeping common baud rates) and prints what it
-// actually is, whether it is clocked for the nav rates config.h asks for, and
-// what fix rate it is really delivering at its current settings.
+// actually is, whether it is clocked for the nav rate Config.h asks for, and
+// how it is currently configured.
 //
-// Phases 1-5 are strictly read-only. Phase 6 makes the sketch's only write:
-// enabling UBX-NAV-PVT output on the RAM layer so there is something to count.
-// That is the same call g_gnss.cpp makes, it is RAM-only so a power cycle
-// clears it, and it touches neither the rate nor the constellations - phase 6
-// measures the receiver exactly as phase 4 found it. Nothing here writes OTP
-// or issues a reset. Set MEASURE_SECONDS to 0 to skip phase 6 and keep the
-// whole run read-only.
+// Strictly read-only: nothing here writes a setting, writes OTP or issues a
+// reset.
 //
 // WHY THIS EXISTS
 //
-// The Gnimu READMEs and config.h only ever say "u-blox M10 chipset", because
+// The Gnimu documentation only ever says "u-blox M10 chipset", because
 // the HGLRC M100-5883 / M100 Mini boards don't publish which M10 part they
 // carry. That matters for nav rate. u-blox ships M10 silicon at a reduced CPU
 // clock to save power, and at that default clock the maximum nav rate is much
@@ -47,28 +30,26 @@
 // (MAX-M10S Integration manual UBX-20053088 sec 2.1.7). Selecting
 // constellations and setting CFG-RATE-MEAS does NOT get you there on its own.
 //
-// Gnimu ships GNSS_NAV_RATE_HZ 20 with GPS + Galileo - two constellations,
+// Gnimu defaults to kGnssNavRateHz 20 with GPS + Galileo - two constellations,
 // which is a high-clock number. If a board were at the default clock it would
 // cap at 10 Hz and simply drop fixes when asked for 20, rather than refuse.
 // Phase 3 below reads the clock back so that question is answered by the
 // hardware instead of inferred from how smooth the stream looks.
 //
-// As measured 2026-08-29. Every M100 board checked so far is a bare
-// UBX-M10050-KB, ROM SPG 5.10, PROTVER 34.10, and every unprogrammed one reads
+// Measured on hardware: every M100 board checked is a bare UBX-M10050-KB,
+// ROM SPG 5.10, PROTVER 34.10, and every unprogrammed one reads
 // 128/128/128/64 MHz on RAM and Default with no OTP reply at all - so the
-// shipped firmware is asking 20 Hz of a receiver rated for 10 Hz on two
+// default configuration asks 20 Hz of a receiver rated for 10 Hz on two
 // constellations. The manual permits that ("the navigation update rate can be
 // increased beyond the maximum value stated in the datasheet. However, this may
-// result in a reduced fix rate"), which is why phase 6 exists: the rating says
-// nothing about what you are actually getting, and only counting epochs does.
+// result in a reduced fix rate"), so the receiver accepts the setting and the
+// rating is the only warning that it may not keep up.
 //
-// The nRF52840-OLED board (M100 Mini) and the nRF52840 board (M100-5883) have
-// since been through gnss_otp_clock - the procedure behaves identically on both
-// GNSS board types. Each now reads 192/192/192/96 on the Default and OTP layers
-// and returns the manual's expected OTP frame - but RAM still reports
+// After gnss_otp_clock, which behaves identically on the M100 Mini and the
+// M100-5883, a receiver reads 192/192/192/96 on the Default and OTP layers and
+// returns the manual's expected OTP frame - but RAM still reports
 // 128/128/128/64. That is the layer distinction described under phase 3, and
-// the reason this sketch judges on the OTP poll. The ESP32 board is
-// deliberately left unprogrammed as a stock-clock control.
+// the reason this sketch judges on the OTP poll.
 //
 // WHAT IT PRINTS
 //
@@ -93,34 +74,14 @@
 //            interface description documents, listing the ones with a
 //            non-zero rate, plus the port's UBX/NMEA protocol filter. The
 //            filter and the per-message rates are independent, so a message
-//            can be configured and still never reach the wire - which is how
-//            Gnimu runs, since gnssBegin() clears the NMEA protocol bit but
-//            leaves the NMEA message rates alone. Marked [protocol off]
-//            where that applies.
+//            can be configured and still never reach the wire. Marked
+//            [protocol off] where that applies.
 //
 //            This phase also self-checks: its own replies arrive as UBX
 //            frames, so a receiver reporting UBX output disabled is telling
 //            an impossible story and the reads are lagging rather than the
 //            config being unusual. That case is called out loudly, because a
 //            shifted-by-one inventory otherwise reads as a real answer.
-//   Phase 6  Measured fix rate. Counts NAV-PVT epochs for MEASURE_SECONDS and
-//            histograms the gaps in iTOW, which advances by exactly one
-//            measurement period per healthy epoch. A skipped epoch shows up as
-//            a delta of 2x the period, two skipped as 3x, and so on. This is
-//            the number that decides whether an out-of-rating configuration is
-//            actually costing you anything: u-blox specs its rate figures for
-//            a >=98% fix rate, and a receiver asked for more than it can
-//            deliver silently drops epochs rather than refusing the setting.
-//            Needs sky view. Also reports the satellite count, since the
-//            manual attributes rate loss to "a very large number of
-//            satellites" - a poor sky and an overclocked config look nothing
-//            alike in the SV stats.
-//
-//            The UART is not a plausible bottleneck here and doesn't need
-//            ruling out: NAV-PVT is 100 bytes on the wire, so 20 Hz is 2 KB/s,
-//            about 17% of 115200 baud. Gaps are the receiver, not the link -
-//            as long as the port is UBX-only. If a variant ever re-enables
-//            NMEA, revisit that before trusting a low number here.
 //
 // ADAPTING IT
 //
@@ -135,27 +96,11 @@
 // Phase 1 identifies the part. Phase 3 passes when the OTP-layer poll returns
 // the manual's frame byte-for-byte - that is the manual's own criterion, and it
 // holds even when the RAM column still shows the stock clock. Phase 4's rated
-// ceiling should then be >= GNSS_NAV_RATE_HZ.
+// ceiling should then be >= kGnssNavRateHz.
 //
-// Phase 6 is the one that matters when phase 4's ceiling comes up short: a
-// measured fix rate at or above 98% means the receiver is keeping up with what
-// config.h asks of it regardless of what it is rated for, and the out-of-rating
-// setting is costing nothing measurable. Below that, the loss is real and the
-// gap histogram says how it is distributed - a few isolated skips are a very
-// different thing from a steady every-other-epoch pattern.
-//
-// But phase 6 only passes or fails when the run actually loaded the receiver.
-// The nav solution is what the clock limits, so a window with no fix, or with
-// only a handful of satellites, is reported INCONCLUSIVE however clean the
-// count was: an empty epoch costs nothing to emit and will read 100% on any
-// clock. A verdict you can act on needs a 3D fix and a MEDIAN satellite count
-// of MEASURE_MIN_SV_FOR_VERDICT or more - median rather than mean so the
-// acquisition ramp at the start of the window doesn't fail an otherwise good
-// run.
-//
-// Requires: the GNSS wired as the variant's README describes, USB for serial,
-// the SparkFun_u-blox_GNSS_v3 library installed, and - for phase 6 - a clear
-// enough sky to hold a fix for the duration. Open the serial monitor at 115200.
+// Requires: the GNSS wired as the board's build guide describes, USB for
+// serial, and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial
+// monitor at 115200.
 // ============================================================================
 
 // UBX-MON-VER can return up to ~348 bytes. This must be defined before the
@@ -169,8 +114,8 @@
 // receiver hangs off, and whether opening it needs pin arguments.
 #if defined(ARDUINO_ARCH_ESP32)
 
-// ESP32 variant: UART2 on the GPIOs from Gnimu-ESP32/config.h. Change these to
-// match your wiring if you routed the receiver elsewhere.
+// ESP32: UART2 on the GPIOs the Gnimu firmware uses. Change these to match
+// your wiring if you routed the receiver elsewhere.
 static const int GNSS_RX_PIN = 16; // ESP32 RX <- GNSS TX
 static const int GNSS_TX_PIN = 17; // ESP32 TX -> GNSS RX
 static HardwareSerial gnssSerial(2);
@@ -179,18 +124,20 @@ static HardwareSerial gnssSerial(2);
 
 #else
 
-// nRF52840 (XIAO) variants: Serial (USB CDC) needs the TinyUSB library linked,
+// XIAO nRF52840: Serial (USB CDC) needs the TinyUSB library linked,
 // and this sketch pulls in nothing else that would include it transitively.
 #include <Adafruit_TinyUSB.h>
 
-// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as g_gnss.cpp.
+// Serial1 = D6 (TX) / D7 (RX), fixed on the XIAO - the pins the Gnimu firmware
+// uses.
 static Uart &gnssSerial = Serial1;
 #define GNSS_SERIAL_BEGIN(baud) gnssSerial.begin(baud)
 
-// TPS63020 EN pad (config.h's GNSS_EN_PIN). Left alone deliberately: the TPS's
-// own EN pullup holds the rail on, and this pin is an input at reset, so an
-// untouched D9 means a powered receiver. Driving it here would only matter if
-// a prior firmware run had left it low, which a reset already undoes.
+// GNSS regulator enable pin (kGnssEnablePin in the firmware's board config).
+// Left alone deliberately: the regulator's own EN pull-up holds the rail on,
+// and the pin is an input at reset, so an untouched pin means a powered
+// receiver. Driving it here would only matter if a prior firmware run had left
+// it low, which a reset already undoes.
 
 #endif
 
@@ -198,8 +145,8 @@ static Uart &gnssSerial = Serial1;
 
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 
-// Common u-blox baud rates. 115200 first - GNSS_BAUD in every variant's
-// config.h - then the factory default and the rest.
+// Common u-blox baud rates. 115200 first - the Gnimu firmware's default,
+// kGnssBaud in Config.h - then the factory default and the rest.
 static const uint32_t BAUD_RATES[] = {115200, 38400, 9600,
                                       57600,  230400, 460800};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
@@ -225,7 +172,7 @@ static const int NUM_CLOCK_KEYS = sizeof(CLOCK_KEYS) / sizeof(CLOCK_KEYS[0]);
 static const uint8_t RATE_DEFAULT_CLOCK[] = {0, 18, 10, 10, 5};
 static const uint8_t RATE_HIGH_CLOCK[] = {0, 25, 20, 16, 10};
 
-// Constellations, in the order config.h lists them. QZSS and SBAS are
+// Constellations. QZSS and SBAS are
 // augmentation rather than independent constellations and don't count toward
 // the concurrent-GNSS figure the rate table is indexed by.
 struct Constellation {
@@ -254,9 +201,8 @@ static const int NUM_CONSTELLATIONS =
 //
 // Note what this does NOT tell you: a non-zero rate here is the message's
 // configured rate, not proof it reaches the wire. The port's protocol filter
-// (CFG-UART1OUTPROT-NMEA / -UBX) gates output independently, which is exactly
-// how Gnimu runs - gnssBegin() clears the NMEA protocol bit but leaves the
-// individual NMEA message rates untouched. Both are reported below.
+// (CFG-UART1OUTPROT-NMEA / -UBX) gates output independently. Both are
+// reported below.
 struct MessageOut {
   uint32_t key;
   const char *name;
@@ -323,121 +269,6 @@ static const MessageOut MESSAGE_OUT_KEYS[] = {
 };
 static const int NUM_MESSAGE_OUT_KEYS =
     sizeof(MESSAGE_OUT_KEYS) / sizeof(MESSAGE_OUT_KEYS[0]);
-
-// Phase 6 window. 60 s at 20 Hz is 1200 expected epochs - enough that a 1%
-// loss is several counts rather than statistical noise. Set to 0 to skip
-// phase 6 entirely and keep the whole run read-only.
-static const uint32_t MEASURE_SECONDS = 60;
-
-// Progress line cadence during the measurement, so a 60 s wait doesn't look
-// like a hang.
-static const uint32_t MEASURE_REPORT_EVERY_MS = 10000;
-
-// Below this median satellite count the run is reported as inconclusive rather
-// than passed. Not a spec number - a judgement call. The navigation solution is
-// what the CPU clock limits, and the integration manual blames rate loss on "a
-// very large number of satellites", so a handful of SVs is the easy case and a
-// clean result there does not generalise to an open sky. Twelve is roughly
-// where a two-constellation fix stops being trivial.
-static const uint8_t MEASURE_MIN_SV_FOR_VERDICT = 12;
-
-// --- Phase 6 measurement state ---------------------------------------------
-// Written from the library's NAV-PVT callback, which fires inside
-// checkUblox() on the same thread as the measurement loop.
-static uint32_t epochCount = 0;
-static uint32_t prevITOW = 0;
-static uint32_t firstITOW = 0;
-static uint32_t lastITOW = 0;
-static bool haveFirstEpoch = false;
-static uint32_t skippedEpochs = 0;
-// Gap histogram, indexed by how many epoch periods the iTOW step covered:
-// [0] unused, [1] clean, [2] one skipped, [3] two skipped, [4] three or more.
-static uint32_t gapHistogram[5] = {0, 0, 0, 0, 0};
-// Steps that weren't a whole multiple of the epoch period - a rate change
-// mid-run, a time jump, or a period that isn't what phase 4 read back.
-static uint32_t irregularGaps = 0;
-static uint8_t minNumSV = 255;
-static uint8_t maxNumSV = 0;
-static uint32_t sumNumSV = 0;
-static uint8_t lastNumSV = 0;
-static uint8_t lastFixType = 0;
-
-// Satellite-count distribution, so the verdict can use a median rather than a
-// mean. The mean is dragged down by the acquisition ramp at the start of the
-// window - a receiver that climbs 7 -> 12 SVs over the first several seconds
-// and then holds 12 for the rest of the minute reports a mean well below 12,
-// failing a 12-SV gate on a run that was genuinely at 12 nearly throughout.
-// The median ignores a minority of low samples, which is exactly the shape of
-// that ramp. 64 bins is far above anything an L1-only two-constellation fix
-// reaches; counts above it are clamped into the top bin.
-static const int SV_HISTOGRAM_BINS = 64;
-static uint16_t svHistogram[SV_HISTOGRAM_BINS];
-
-// Satellite count at the midpoint of the distribution.
-static uint8_t medianNumSV() {
-  uint32_t half = epochCount / 2;
-  uint32_t cumulative = 0;
-  for (int i = 0; i < SV_HISTOGRAM_BINS; i++) {
-    cumulative += svHistogram[i];
-    if (cumulative > half) {
-      return (uint8_t)i;
-    }
-  }
-  return 0;
-}
-
-// Epoch period in ms, from phase 4. Zero means phase 4 couldn't read it, in
-// which case phase 6 has no yardstick and is skipped.
-static uint32_t epochPeriodMs = 0;
-
-static void measurePvtCallback(UBX_NAV_PVT_data_t *pvt) {
-  epochCount++;
-  lastITOW = pvt->iTOW;
-  lastFixType = pvt->fixType;
-
-  if (pvt->numSV < minNumSV) {
-    minNumSV = pvt->numSV;
-  }
-  if (pvt->numSV > maxNumSV) {
-    maxNumSV = pvt->numSV;
-  }
-  sumNumSV += pvt->numSV;
-  lastNumSV = pvt->numSV;
-  svHistogram[pvt->numSV < SV_HISTOGRAM_BINS ? pvt->numSV
-                                             : SV_HISTOGRAM_BINS - 1]++;
-
-  if (!haveFirstEpoch) {
-    haveFirstEpoch = true;
-    firstITOW = pvt->iTOW;
-    prevITOW = pvt->iTOW;
-    return;
-  }
-
-  // iTOW is GPS time of week in ms and wraps at the end of the week. An
-  // apparent backwards step means a wrap or a time resync, not a gap - treat
-  // it as a resync point rather than letting it poison the histogram.
-  if (pvt->iTOW <= prevITOW) {
-    irregularGaps++;
-    prevITOW = pvt->iTOW;
-    return;
-  }
-
-  uint32_t delta = pvt->iTOW - prevITOW;
-  prevITOW = pvt->iTOW;
-
-  if (epochPeriodMs == 0 || (delta % epochPeriodMs) != 0) {
-    irregularGaps++;
-    return;
-  }
-
-  uint32_t periods = delta / epochPeriodMs;
-  skippedEpochs += periods - 1;
-  if (periods >= 4) {
-    gapHistogram[4]++;
-  } else {
-    gapHistogram[periods]++;
-  }
-}
 
 // Sweep common baud rates until the receiver responds. Returns true and leaves
 // gnssSerial/myGNSS connected at the working baud on success.
@@ -795,8 +626,7 @@ static void printRateConfig(bool highClock) {
   bool navOk = myGNSS.getNavigationRate(&navRate, VAL_LAYER_RAM);
 
   if (measOk && navOk && measRate > 0 && navRate > 0) {
-    // Stash the epoch period for phase 6 to measure gaps against.
-    epochPeriodMs = (uint32_t)measRate * (uint32_t)navRate;
+    uint32_t epochPeriodMs = (uint32_t)measRate * (uint32_t)navRate;
     Serial.printf("  CFG-RATE-MEAS : %u ms\n", measRate);
     Serial.printf("  CFG-RATE-NAV  : %u\n", navRate);
     Serial.printf("  nav epoch     : %lu ms (%.2f Hz)\n",
@@ -836,162 +666,6 @@ static void printRateConfig(bool highClock) {
     Serial.println("  No constellations enabled - nothing to rate.");
   } else {
     Serial.println("  More than 4 concurrent GNSS - off the published table.");
-  }
-  Serial.println();
-}
-
-// --- Phase 6: measured fix rate --------------------------------------------
-static void printMeasuredFixRate() {
-  Serial.println("--- Phase 6: measured fix rate ---");
-
-  if (MEASURE_SECONDS == 0) {
-    Serial.println("  MEASURE_SECONDS is 0 - skipped, run stays read-only.");
-    Serial.println();
-    return;
-  }
-
-  if (epochPeriodMs == 0) {
-    Serial.println("  Skipped: phase 4 could not read the epoch period, so");
-    Serial.println("  there is nothing to measure gaps against.");
-    Serial.println();
-    return;
-  }
-
-  Serial.printf("  Enabling UBX-NAV-PVT on the RAM layer (the only write this "
-                "sketch makes;\n  a power cycle clears it), then counting for "
-                "%lu s.\n",
-                (unsigned long)MEASURE_SECONDS);
-
-  if (!myGNSS.setAutoPVTcallbackPtr(&measurePvtCallback, VAL_LAYER_RAM)) {
-    Serial.println("  FAILED to enable NAV-PVT output. Nothing to count.");
-    Serial.println();
-    return;
-  }
-
-  Serial.println("  Needs sky view - a receiver that never fixes still emits");
-  Serial.println("  epochs, but the SV stats below are what tell you whether a");
-  Serial.println("  low number is the sky or the clock.");
-  Serial.println();
-
-  uint32_t startMs = millis();
-  uint32_t windowMs = MEASURE_SECONDS * 1000UL;
-  uint32_t nextReportMs = startMs + MEASURE_REPORT_EVERY_MS;
-
-  while (millis() - startMs < windowMs) {
-    myGNSS.checkUblox();     // parse whatever has arrived on the UART
-    myGNSS.checkCallbacks(); // dispatch measurePvtCallback for each new epoch
-    delay(1);                // yield; the UART buffer holds several epochs
-
-    if ((int32_t)(millis() - nextReportMs) >= 0) {
-      uint32_t elapsedS = (millis() - startMs) / 1000UL;
-      Serial.printf(
-          "  ... %lu s: %lu epochs, %lu skipped, %u SVs (max %u), fixType %u\n",
-          (unsigned long)elapsedS, (unsigned long)epochCount,
-          (unsigned long)skippedEpochs, lastNumSV, maxNumSV, lastFixType);
-      nextReportMs += MEASURE_REPORT_EVERY_MS;
-    }
-  }
-
-  Serial.println();
-
-  if (epochCount == 0) {
-    Serial.println("  No NAV-PVT epochs received at all. Either the receiver");
-    Serial.println("  isn't emitting them or the port isn't carrying UBX.");
-    Serial.println();
-    return;
-  }
-
-  // Measure against the iTOW span rather than wall-clock millis(): the span is
-  // the receiver's own view of how much time the epochs covered, and it isn't
-  // affected by where in an epoch the window happened to open and close.
-  uint32_t spanMs = (lastITOW > firstITOW) ? (lastITOW - firstITOW) : 0;
-
-  if (epochCount < 10 || spanMs == 0) {
-    Serial.printf("  Only %lu epoch(s) over a %lu ms span - too few to draw a\n",
-                  (unsigned long)epochCount, (unsigned long)spanMs);
-    Serial.println("  fix rate from. Check the receiver is emitting NAV-PVT and");
-    Serial.println("  that MEASURE_SECONDS is long enough for the epoch period.");
-    Serial.println();
-    return;
-  }
-
-  // Both divisors are non-zero by the guard above. Note that epochs dropped at
-  // the very end of the window shrink the span with them, so this is a mildly
-  // optimistic estimate rather than a pessimistic one.
-  uint32_t expectedEpochs = (spanMs / epochPeriodMs) + 1;
-  float fixRatePct = 100.0f * (float)epochCount / (float)expectedEpochs;
-  float measuredHz = 1000.0f * (float)(epochCount - 1) / (float)spanMs;
-
-  Serial.printf("  window (iTOW span) : %.1f s\n", (float)spanMs / 1000.0f);
-  Serial.printf("  epochs received    : %lu\n", (unsigned long)epochCount);
-  Serial.printf("  epochs expected    : %lu\n", (unsigned long)expectedEpochs);
-  Serial.printf("  epochs skipped     : %lu\n", (unsigned long)skippedEpochs);
-  Serial.printf("  fix rate           : %.2f%%\n", fixRatePct);
-  Serial.printf("  effective rate     : %.2f Hz (configured %.2f Hz)\n",
-                measuredHz, 1000.0f / (float)epochPeriodMs);
-  Serial.println();
-
-  Serial.println("  iTOW gap histogram:");
-  Serial.printf("    %lu ms  (clean)        : %lu\n",
-                (unsigned long)epochPeriodMs, (unsigned long)gapHistogram[1]);
-  Serial.printf("    %lu ms  (1 skipped)    : %lu\n",
-                (unsigned long)(epochPeriodMs * 2),
-                (unsigned long)gapHistogram[2]);
-  Serial.printf("    %lu ms  (2 skipped)    : %lu\n",
-                (unsigned long)(epochPeriodMs * 3),
-                (unsigned long)gapHistogram[3]);
-  Serial.printf("    >=%lu ms (3+ skipped)  : %lu\n",
-                (unsigned long)(epochPeriodMs * 4),
-                (unsigned long)gapHistogram[4]);
-  Serial.printf("    irregular / resync     : %lu\n",
-                (unsigned long)irregularGaps);
-  Serial.println();
-
-  Serial.printf("  satellites   : min %u, max %u, mean %.1f, median %u\n",
-                minNumSV, maxNumSV, (float)sumNumSV / (float)epochCount,
-                medianNumSV());
-  Serial.printf("  last fixType : %u (0 no fix, 2 = 2D, 3 = 3D)\n",
-                lastFixType);
-  Serial.println();
-
-  // A fix rate means nothing without knowing what load produced it. The
-  // navigation solution is what the CPU clock limits, and with no fix there is
-  // no solution being computed - a receiver emitting empty epochs at 20 Hz will
-  // hit 100% on any clock, which says nothing about whether it could hold that
-  // rate under a real sky. Gate the verdict on the load actually being there.
-  bool haveFix = lastFixType >= 2;
-  uint8_t medianSV = medianNumSV();
-
-  if (!haveFix) {
-    Serial.println("  INCONCLUSIVE: no position fix during the window, so the");
-    Serial.println("  receiver was emitting empty epochs and never ran a real");
-    Serial.println("  navigation solution. 100% here is the cheapest possible");
-    Serial.println("  case and proves nothing about the rate limit. Get the");
-    Serial.println("  antenna a clear view of the sky and run it again.");
-  } else if (medianSV < MEASURE_MIN_SV_FOR_VERDICT) {
-    Serial.printf("  INCONCLUSIVE: fixed, but on a median of only %u\n",
-                  medianSV);
-    Serial.printf("  satellites. The manual attributes rate loss to \"a very\n"
-                  "  large number of satellites\", so a thin sky is the easy\n"
-                  "  case and a clean result here does not generalise. Re-run\n"
-                  "  with a median of at least %d SVs to exercise the limit.\n",
-                  MEASURE_MIN_SV_FOR_VERDICT);
-  } else if (fixRatePct >= 98.0f) {
-    Serial.println("  VERDICT: >=98% fix rate - the receiver is keeping up with");
-    Serial.println("  what config.h asks of it. That is u-blox's own criterion");
-    Serial.println("  for a rated figure, so even an out-of-rating setting is");
-    Serial.println("  costing nothing measurable at this satellite count.");
-  } else if (fixRatePct >= 90.0f) {
-    Serial.println("  VERDICT: measurable loss. Under 98% but over 90% - the");
-    Serial.println("  configured rate is more than this receiver reliably");
-    Serial.println("  delivers here. Check the histogram: scattered single");
-    Serial.println("  skips degrade gracefully, a dominant 2x bucket means it");
-    Serial.println("  is effectively running at half the configured rate.");
-  } else {
-    Serial.println("  VERDICT: substantial loss. The configured rate is well");
-    Serial.println("  beyond what this receiver is delivering. If the SV counts");
-    Serial.println("  above are healthy, this is the clock rather than the sky -");
-    Serial.println("  compare against phase 3's verdict and phase 4's rating.");
   }
   Serial.println();
 }
@@ -1115,8 +789,8 @@ void setup() {
       delay(100); // Halt
   }
 
-  // Let the receiver settle, then drain any backlog before polling - same
-  // lesson as g_gnss.cpp's gnssBegin().
+  // Let the receiver settle, then drain any backlog before polling, so stale
+  // bytes can't be taken for a reply.
   delay(500);
   while (gnssSerial.available()) {
     gnssSerial.read();
@@ -1125,9 +799,8 @@ void setup() {
   printRawMonVer();
   printLibraryModuleInfo();
   bool highClock = printClockConfig();
-  printRateConfig(highClock); // also stashes epochPeriodMs for phase 6
+  printRateConfig(highClock);
   printMessageOutputs();
-  printMeasuredFixRate();
 
   Serial.println("Done. Halting.");
 }

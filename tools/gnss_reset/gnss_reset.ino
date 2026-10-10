@@ -1,18 +1,6 @@
-// Gnimu - RaceBox Mini-compatible GNSS+IMU streaming telemetry
+// Gnimu - GNSS+IMU streaming telemetry
 // Copyright (C) 2026 Chris Halstead
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 // ============================================================================
 // TOOL: full GNSS factory reset
@@ -26,20 +14,18 @@
 // TTFF penalty.
 //
 // Use this when you want a guaranteed-clean receiver with no leftover state
-// from prior runs - e.g. after debugging a config-persistence issue, or
-// before handing off a board. It is NOT part of the normal boot flow:
-// g_gnss.cpp's gnssBegin() already sets every runtime option with
-// VAL_LAYER_RAM (RAM-only, never persisted), so a factory reset should not be
-// needed in ordinary operation. See the gnss-first-command-ack-bug notes for
-// the persistence bug this tool was built to recover from.
+// from prior runs - e.g. after debugging a configuration problem, or before
+// handing off a board. It is NOT part of normal operation: the Gnimu firmware
+// checks every receiver setting at boot and rewrites any that differ, so a
+// factory reset should not be needed in ordinary use.
 //
 // After this sketch reports success, power-cycle the board and flash/run the
-// main firmware - gnssBegin()'s baud sweep will find the receiver back at its
-// factory baud (typically 38400) and reconfigure it from config.h as usual.
+// main firmware - its baud sweep will find the receiver back at its factory
+// baud (typically 38400) and configure it again from Config.h, saving the
+// settings to the receiver's flash.
 //
-// Requires: on the nRF52840 variants, a XIAO nRF52840 Sense wired GNSS TX ->
-// D7, GNSS RX <- D6; on the ESP32 variant, the receiver on the UART2 pins set
-// below. Plus USB for serial and the
+// Requires: on the XIAO nRF52840, GNSS TX -> D7 and GNSS RX <- D6; on the
+// ESP32, the receiver on the UART2 pins set below. Plus USB for serial and the
 // SparkFun_u-blox_GNSS_v3 library installed.
 // ============================================================================
 
@@ -50,8 +36,8 @@
 // receiver hangs off, and whether opening it needs pin arguments.
 #if defined(ARDUINO_ARCH_ESP32)
 
-// ESP32 variant: UART2 on the GPIOs from Gnimu-ESP32/config.h. Change these to
-// match your wiring if you routed the receiver elsewhere.
+// ESP32: UART2 on the GPIOs the Gnimu firmware uses. Change these to match
+// your wiring if you routed the receiver elsewhere.
 static const int GNSS_RX_PIN = 16; // ESP32 RX <- GNSS TX
 static const int GNSS_TX_PIN = 17; // ESP32 TX -> GNSS RX
 static HardwareSerial gnssSerial(2);
@@ -60,11 +46,12 @@ static HardwareSerial gnssSerial(2);
 
 #else
 
-// nRF52840 (XIAO) variants: Serial (USB CDC) needs the TinyUSB library linked,
+// XIAO nRF52840: Serial (USB CDC) needs the TinyUSB library linked,
 // and this sketch pulls in nothing else that would include it transitively.
 #include <Adafruit_TinyUSB.h>
 
-// Serial1 = D6 (TX) / D7 (RX), fixed on the nRF52 - same wiring as g_gnss.cpp.
+// Serial1 = D6 (TX) / D7 (RX), fixed on the XIAO - the pins the Gnimu firmware
+// uses.
 static Uart &gnssSerial = Serial1;
 #define GNSS_SERIAL_BEGIN(baud) gnssSerial.begin(baud)
 
@@ -117,7 +104,7 @@ void setup() {
   }
 
   // Give the receiver a moment to fully wake up, then drain any backlog
-  // before issuing the reset - same lesson as g_gnss.cpp's gnssBegin().
+  // before issuing the reset, so stale bytes can't be taken for a reply.
   delay(500);
   while (gnssSerial.available()) {
     gnssSerial.read();
@@ -130,7 +117,7 @@ void setup() {
   Serial.println("Reset command sent. The receiver is now cold-resetting.");
   Serial.println("Power-cycle the board, then flash/run the main firmware -");
   Serial.println("its baud sweep will find the receiver at its factory baud");
-  Serial.println("(typically 38400) and reconfigure it from config.h.");
+  Serial.println("(typically 38400) and configure it again from Config.h.");
   Serial.println("\nDone. Halting.");
 }
 

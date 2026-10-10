@@ -12,10 +12,8 @@ open it directly.
 > — GNSS identity and high-rate capability report (which M10 part, which
 > firmware, whether the receiver is running the high CPU clock the 25Hz/20Hz
 > figures require, what the current rate/constellation config is rated for, and
-> an inventory of every message with a non-zero `CFG-MSGOUT` rate, and a
-> measured fix rate with an `iTOW` gap histogram to show whether running past
-> that rating is actually dropping epochs). Phases 1–5 are read-only; phase 6
-> enables NAV-PVT on the RAM layer, which a power cycle clears. It carries an
+> an inventory of every message with a non-zero `CFG-MSGOUT` rate). It is
+> read-only: it writes nothing to the receiver. It carries an
 > `ARDUINO_ARCH_ESP32` branch that opens UART2 on `GNSS_RX_PIN`/`GNSS_TX_PIN`,
 > so it compiles for this tree unchanged — edit those two constants at the top
 > if your wiring differs from `config.h`.
