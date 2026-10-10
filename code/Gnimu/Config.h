@@ -25,19 +25,27 @@ constexpr Protocol kProtocol = Protocol::RaceBox;
 
 // GNSS
 
-// The baud rate for GNSS communications. Higher than 115200 is not needed.
-// Must be one of the standard rates the detection sweep tries.
+// The baud rate for GNSS communications.
+// Higher than 115200 is not needed, but lower than that will lead to poor
+// performance. Must be one of the standard rates the detection sweep tries.
+// (4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
 constexpr uint32_t kGnssBaud = 115200;
-// Navigation rate, 1-25 Hz. 20 Hz is the max with 2 constellations.
+// Navigation rate, 1-25 Hz.
+// 20Hz is the max with 2 constellations.
+// 25Hz can only be achieved with 1 constellation.
 constexpr uint8_t kGnssNavRateHz = 20;
-// Satellites below this elevation are ignored, 0-90 degrees.
+// Satellites below this elevation are ignored (anti-multipath).
+// Valid values are 0-90 degrees.
 constexpr uint8_t kGnssMinElevDeg = 5;
-// Constellations, most preferred first, each listed once (Gps, Galileo,
-// Beidou, Glonass); the first kConstellationCount are enabled.
+// Constellation preference list, most preferred first, each listed once.
+// Valid constellations are Gps, Galileo, Beidou, Glonass.
+// The first kConstellationCount are enabled.
 constexpr GnssSystem kConstellationPriority[] = {
     GnssSystem::Gps, GnssSystem::Galileo, GnssSystem::Beidou,
     GnssSystem::Glonass};
-// How many constellations to enable, 1-4. 20 Hz needs at most 2.
+// How many constellations to enable.
+// 20Hz needs at most 2, 25Hz at most 1
+// Valid values are 1-4.
 constexpr unsigned kConstellationCount = 2;
 
 // BLE
@@ -45,6 +53,8 @@ constexpr unsigned kConstellationCount = 2;
 // BLE Tx power, low on purpose: less RF near the GNSS antenna, and the client
 // is usually close. Raise it if connections drop. Each board validates the
 // value against the levels its own radio supports.
+// ESP32: -12 to +9 dBm in 3 dB steps
+// nRF52840: -40, -20, -16, -12, -8, -4, 0 or 2..8 dBm
 constexpr int kBleTxPowerDbm = -12;
 
 // IMU
@@ -59,10 +69,9 @@ constexpr float kImuAccelAlpha = 0.33f;
 constexpr float kImuGyroAlpha = 0.33f;
 
 // Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
-// is a builder/BOM choice (currently identity), while the Sense's onboard
-// LSM6DS3TR-C has a fixed orientation on that PCB (signs -1,-1,+1). Output
-// axis i is input axis src[i] times sign[i]; src must be a permutation of
-// 0, 1, 2.
+// is a builder/BOM choice, while the Sense's onboard LSM6DS3TR-C has a fixed
+// orientation on that PCB (signs -1,-1,+1). Output axis i is input axis src[i]
+// times sign[i]; src must be a permutation of 0, 1, 2.
 constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
 constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
 constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};
@@ -72,11 +81,11 @@ constexpr float kLsm6ds3AxisSign[3] = {-1.0f, -1.0f, +1.0f};
 
 // Cell voltages, ordered cutoff < critical < warning < full scale <= 4.2 V.
 // Percent is a straight line from cutoff (0%) to full scale (100%).
-constexpr float kBatteryCutoffV = 3.30f;     // System OFF below this, on battery
-constexpr float kBatteryCriticalV = 3.35f;   // red blink
-constexpr float kBatteryWarningV = 3.40f;    // amber blink
-constexpr float kBatteryFullScaleV = 4.10f;  // 100%
+constexpr float kBatteryCutoffV = 3.30f;    // System OFF below this, on battery
+constexpr float kBatteryCriticalV = 3.35f;  // red blink
+constexpr float kBatteryWarningV = 3.40f;   // amber blink
+constexpr float kBatteryFullScaleV = 4.10f; // 100%
 constexpr float kBatteryChargeFullV = 4.10f; // Rough value for "full"
 
-}  // namespace config
-}  // namespace gnimu
+} // namespace config
+} // namespace gnimu
