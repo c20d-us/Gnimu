@@ -21,6 +21,11 @@ namespace config {
 
 constexpr uint8_t kGnssDynamicModel = 4; // u-blox dynamic model 4 = automotive
 
+// The baud rate the receiver is switched to and run at. Higher than 115200
+// isn't needed, and lower leads to poor performance. Must be one of the rates
+// the detection sweep tries.
+constexpr uint32_t kGnssBaud = 115200;
+
 // Every rate a receiver could be saved at, in the order the sweep tries them.
 // kGnssBaud is tried first and skipped here.
 constexpr uint32_t kGnssBaudRates[] = {4800,   9600,   19200,  38400, 57600,
@@ -32,6 +37,9 @@ constexpr bool baudSweepIncludes(uint32_t baud, size_t i = 0) {
   return i < (sizeof(kGnssBaudRates) / sizeof(kGnssBaudRates[0])) &&
          (kGnssBaudRates[i] == baud || baudSweepIncludes(baud, i + 1));
 }
+static_assert(
+    baudSweepIncludes(kGnssBaud),
+    "kGnssBaud must be a rate the sweep can detect and switch between");
 
 // The drain period is also the longest the loop ever sleeps. The UART RX ring
 // must hold more than one period of data, with plenty of margin.
@@ -176,9 +184,6 @@ constexpr uint32_t kImuTrimPvtStaleMs = 1000;
 
 // Checks: the settings in Config.h first, then the system constants.
 
-static_assert(
-    baudSweepIncludes(kGnssBaud),
-    "kGnssBaud must be a rate the sweep can detect and switch between");
 static_assert(kGnssNavRateHz > 0 && kGnssNavRateHz <= 25,
               "nav rate must be 1-25 Hz");
 static_assert(kGnssMinElevDeg <= 90, "min elevation must be 0-90 degrees");

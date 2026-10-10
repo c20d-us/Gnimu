@@ -25,11 +25,6 @@ constexpr Protocol kProtocol = Protocol::RaceBox;
 
 // GNSS
 
-// The baud rate for GNSS communications.
-// Higher than 115200 is not needed, but lower than that will lead to poor
-// performance. Must be one of the standard rates the detection sweep tries.
-// (4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600)
-constexpr uint32_t kGnssBaud = 115200;
 // Navigation rate, 1-25 Hz.
 // 20Hz is the max with 2 constellations.
 // 25Hz can only be achieved with 1 constellation.

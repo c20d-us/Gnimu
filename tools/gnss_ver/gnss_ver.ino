@@ -145,8 +145,8 @@ static Uart &gnssSerial = Serial1;
 
 static SFE_UBLOX_GNSS_SERIAL myGNSS;
 
-// Common u-blox baud rates. 115200 first - the Gnimu firmware's default,
-// kGnssBaud in Config.h - then the factory default and the rest.
+// Common u-blox baud rates. 115200 first - the rate the Gnimu firmware runs
+// the receiver at - then the factory default and the rest.
 static const uint32_t BAUD_RATES[] = {115200, 38400, 9600,
                                       57600,  230400, 460800};
 static const int NUM_BAUD_RATES = sizeof(BAUD_RATES) / sizeof(BAUD_RATES[0]);
