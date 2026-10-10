@@ -75,7 +75,7 @@ The IMU is sampled at 100 Hz and smoothed before it's sent. Alpha of `1.0` is th
 | Setting | Default | Applies to |
 |---|---|---|
 | `kMpu6050AxisSrc`, `kMpu6050AxisSign` | `{0, 1, 2}`, `{+1, +1, +1}` | ESP32, external MPU-6050 |
-| `kLsm6ds3AxisSrc`, `kLsm6ds3AxisSign` | `{0, 1, 2}`, `{-1, -1, +1}` | XIAO nRF52840 Sense, onboard LSM6DS3TR-C |
+| `kLsm6ds3AxisSrc`, `kLsm6ds3AxisSign` | `{0, 1, 2}`, `{+1, +1, +1}` | XIAO nRF52840 Sense, onboard LSM6DS3TR-C |
 
 These map the sensor's axes onto the vehicle's. Output axis *i* is sensor axis `Src[i]` multiplied by `Sign[i]`. `Src` must use each of 0, 1 and 2 exactly once.
 

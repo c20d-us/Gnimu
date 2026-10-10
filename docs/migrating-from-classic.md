@@ -75,7 +75,12 @@ All settings are now in [`code/Gnimu/Config.h`](../code/Gnimu/Config.h), describ
 | `LOG_ENABLED` | Gone. The console is silent after boot unless you ask it for something. |
 | Pin assignments | In each board's `BoardConfig.h`, not in `Config.h`. |
 
-If you had the IMU mounted in a non-default orientation, carry your six axis values over. If your IMU smoothing was tuned to taste at Classic's default, set both alphas back to `0.09` to keep the feel you had.
+If you had the IMU mounted in a non-default orientation, carry your six axis values over.
+
+> [!IMPORTANT]
+> **Classic nRF52840 devices need their axis signs set.** The XIAO faces a different way in the current build than it did in the Classic nRF52840 build, so the default changed. For a device built from the Classic nRF52840 instructions, set `kLsm6ds3AxisSign` to `{-1.0f, -1.0f, +1.0f}` in `Config.h`, which is what Classic used. Without it, forward and left read reversed.
+
+If your IMU smoothing was tuned to taste at Classic's default, set both alphas back to `0.09` to keep the feel you had.
 
 Sensor ranges, filter settings, and timing constants that Classic exposed are now in [`SystemConfig.h`](../code/Gnimu/src/app/SystemConfig.h), away from the settings you're expected to touch.
 
