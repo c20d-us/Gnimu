@@ -1,8 +1,11 @@
 # Gnimu: GNSS+IMU data over BLE
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](../LICENSE)
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#variants)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
+
+> [!WARNING]
+> **Gnimu Classic is deprecated.** This is the original Gnimu firmware. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../README.md). The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
 
 Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the streaming-telemetry function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) motorsports telemetry device. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz. Emulation does *not* include command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
 
@@ -102,4 +105,4 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 ## License
 
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](LICENSE).
+Released under the **GNU General Public License v3.0** — see [`LICENSE`](../LICENSE).

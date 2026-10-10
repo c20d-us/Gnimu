@@ -4,6 +4,9 @@
 [![Platform: nRF52840][Platform-shield]][Platform-link]
 [![Language: C++ (Arduino)][Language-shield]][Language-link]
 
+> [!WARNING]
+> **Gnimu Classic is deprecated.** This is the original Gnimu firmware. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../../../README.md). The OLED variant has no successor there; this is its only home. The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
+
 This section of the repository is a further evolution of [Gnimu nRF52840][0]. The same **Seeed Studio XIAO nRF52840 Sense** [MCU][9], GNSS module, onboard IMU, battery subsystem, and BLE protocol, but it replaces the onboard RGB status LED with a small **SSD1306 OLED display**. Where the LED could only signal state through color and blink patterns, the display can show it directly as text, alongside GNSS quality information the LED never could: **locked satellites, pDOP, horizontal accuracy, PVT rate, and fix status**.
 
 The advertised BLE identity and RaceBox Data Message protocol are unaffected. This variant differs only in its status/telemetry presentation, not in what it streams to a connected app.
@@ -196,12 +199,12 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 ## License
 
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840-OLED carries the same license.
+Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840-OLED carries the same license.
 
 [License-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
 [Platform-shield]: https://img.shields.io/badge/platform-nRF52840-00A9CE.svg
 [Language-shield]: https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg
-[License-link]: ../../LICENSE
+[License-link]: ../../../LICENSE
 [Platform-link]: https://wiki.seeedstudio.com/XIAO_BLE/
 [Language-link]: https://www.arduino.cc/
 [config]: ./config.h

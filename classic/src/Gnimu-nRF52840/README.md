@@ -4,6 +4,9 @@
 [![Platform: nRF52840][Platform-shield]][Platform-link]
 [![Language: C++ (Arduino)][Language-shield]][Language-link]
 
+> [!WARNING]
+> **Gnimu Classic is deprecated.** This is the original Gnimu firmware. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../../../README.md). The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
+
 This section of the repository is a **battery-powered** evolution of [Gnimu][0], re-targeted from the original always-on ESP32-based build to a **Seeed Studio XIAO nRF52840 Sense** [MCU][9] (MicroController Unit). It integrates a GNSS module and an IMU into a device that emulates a [RaceBox Mini][1] streaming telemetry meter. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE ([Bluetooth Low Energy][2]) and read live position, speed, and motion data at up to **25Hz** (more details on the nav rate is below). This version runs off a **3.7V LiPo battery** instead of a USB supply, uses the XIAO's **onboard 6-axis IMU**, and adds a full battery subsystem (charge detection, state-of-charge reporting, and a firmware low-voltage cutoff).
 
 The advertised BLE identity and data streaming protocol stay exactly the same for RaceBox Mini app compatibility. The two streaming data changes compared to the ESP32-based version are actual battery charge percentage value (rather than reporting a fixed 100%), and charging status.
@@ -381,12 +384,12 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 ## License
 
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840 carries the same license.
+Released under the **GNU General Public License v3.0** — see [`LICENSE`](../../../LICENSE). As a derivative of the GPL-v3 licensed Gnimu / Open-Source RaceBox Mini Emulator, Gnimu nRF52840 carries the same license.
 
 [License-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
 [Platform-shield]: https://img.shields.io/badge/platform-nRF52840-00A9CE.svg
 [Language-shield]: https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg
-[License-link]: ../../LICENSE
+[License-link]: ../../../LICENSE
 [Platform-link]: https://wiki.seeedstudio.com/XIAO_BLE/
 [Language-link]: https://www.arduino.cc/
 [config]: ./config.h
