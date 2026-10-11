@@ -128,12 +128,12 @@ Close the IDE's Serial Monitor, or any other serial terminal on that port, befor
 A device flashed this way reports a stamped `BUILD` line, at boot and whenever you type `V`:
 
 ```
-BUILD,version=classic-final-32-gc45f72e-dirty,revision=c45f72e587cf,dirty=1,utc=2026-10-11T17:03:40Z,target=nrf52840
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,target=esp32
 ```
 
 | Field | Meaning |
 |---|---|
-| `version` | `git describe`: the nearest tag, the number of commits since it, and the commit. |
+| `version` | The tag the firmware was built from. Between tags it is the nearest tag, the number of commits since it, and the commit, such as `2.0.0-rc1-3-g1a2b3c4`. |
 | `revision` | The commit the firmware was built from. |
 | `dirty` | `1` if the working tree had uncommitted changes when it was built, `0` if it was clean. |
 | `utc` | When it was built. |

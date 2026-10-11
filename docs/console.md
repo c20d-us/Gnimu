@@ -46,13 +46,83 @@ The log runs in this order:
 5. **Jobs.** One line per job with how often it runs and its time budget, or `disabled`.
 6. **State and commands.** The state the firmware ended up in, and the command list.
 
-Here is a complete boot of a XIAO nRF52840 device, on USB with the switch on, built from the Arduino IDE. Its GNSS receiver had been configured on an earlier boot, so every setting shows ✅.
+Here is a complete boot of each board. Both GNSS receivers had been configured on an earlier boot, so every setting shows ✅.
 
 <details>
-<summary>A complete boot log</summary>
+<summary>ESP32, built and flashed with the scripts</summary>
 
 ```
-BUILD,version=0.0.0-dev,revision=IDE-UNSTAMPED,dirty=unknown,utc=unknown,target=nrf52840
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,target=esp32
+Device ID: 0301821570
+Config: board esp32
+Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
+Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
+Config: BLE RaceBox, TX power -12 dBm
+Gnimu starting
+Reset: power-on
+Watchdog: 5000 ms ✅
+Clock started
+GNSS: trying 115200 baud
+GNSS: detected at 115200 baud ✅
+GNSS: NAV-PVT output paused for configuration ✅
+GNSS: dynamic model=4 ✅
+GNSS: UBX output enable=1 ✅
+GNSS: NMEA output enable=0 ✅
+GNSS: NMEA DTM rate=0 ✅
+GNSS: NMEA GBS rate=0 ✅
+GNSS: NMEA GGA rate=0 ✅
+GNSS: NMEA GLL rate=0 ✅
+GNSS: NMEA GNS rate=0 ✅
+GNSS: NMEA GRS rate=0 ✅
+GNSS: NMEA GSA rate=0 ✅
+GNSS: NMEA GST rate=0 ✅
+GNSS: NMEA GSV rate=0 ✅
+GNSS: NMEA RLM rate=0 ✅
+GNSS: NMEA RMC rate=0 ✅
+GNSS: NMEA VLW rate=0 ✅
+GNSS: NMEA VTG rate=0 ✅
+GNSS: NMEA ZDA rate=0 ✅
+GNSS: minimum SV elevation=5 ✅
+GNSS: BeiDou B1I signal=0 ✅
+GNSS: BeiDou B1C signal=0 ✅
+GNSS: GPS L1C/A signal=1 ✅
+GNSS: Galileo E1 signal=1 ✅
+GNSS: GLONASS L1 signal=0 ✅
+GNSS: GPS enable=1 ✅
+GNSS: Galileo enable=1 ✅
+GNSS: BeiDou enable=0 ✅
+GNSS: GLONASS enable=0 ✅
+GNSS: QZSS enable=0 ✅
+GNSS: SBAS enable=0 ✅
+GNSS: setting Nav frequency to 20Hz
+GNSS: nav ratio=1 ✅
+GNSS: nav rate=50 ✅
+GNSS: NAV-PVT output rate=1 ✅
+GNSS: Configuring PVT callback and auto PVT output
+GNSS: PVT callback and auto PVT output enabled ✅
+IMU: MPU-6050 detected ✅
+IMU: configured, 4g 500deg/s ✅
+BLE: TX power -12 dBm (advertising and connected) ✅
+BLE: advertising as "RaceBox Mini 0301821570" ✅
+Clock: crystal ✅
+Job gnss: every 1000 us, budget 4000 us
+Job imu: every 10000 us, budget 1000 us
+Job battery: disabled
+Job power: disabled
+Job ble: every 10000 us, budget 2000 us
+Job led: every 25000 us, budget 500 us
+Job console: every 10000 us, budget 2000 us
+Running.
+Commands end with Enter: D = report, C = clear statistics counters, V = version, L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
+```
+
+</details>
+
+<details>
+<summary>XIAO nRF52840, switched on while on USB, built and flashed with the scripts</summary>
+
+```
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
 Config: board nrf52840, wiring V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
@@ -60,11 +130,11 @@ Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
 Config: BLE RaceBox, TX power -12 dBm
 Config: battery cutoff 3.30V, critical 3.35V, warning 3.40V, 100% at 4.10V, charged at 4.10V
 Gnimu starting
-Reset: software
+Reset: software (Power: switch on)
 Watchdog: 5000 ms ✅
 Power: GNSS rail, IMU and LED held off ✅
 Clock started
-Battery: 4.16V 100% ⚡ ✅
+Battery: 4.17V 100% ⚡ ✅
 Power: switch on, USB present
 Power: GNSS rail on
 GNSS: trying 115200 baud
@@ -155,7 +225,7 @@ If the receiver was working and then goes quiet for two seconds, the firmware re
 `V` prints what the device is and how its firmware was built. The same lines open the boot log.
 
 ```
-BUILD,version=0.0.0-dev,revision=IDE-UNSTAMPED,dirty=unknown,utc=unknown,target=nrf52840
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
 Config: board nrf52840, wiring V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
