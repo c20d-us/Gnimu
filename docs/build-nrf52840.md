@@ -61,8 +61,8 @@ These parts are the same whichever way you build it.
     <td>Supplies the GNSS a stable 3.3V rail across the full LiPo voltage range. It powers only the GNSS; the XIAO runs directly from the battery. Its EN pin goes to the XIAO, which uses it to switch the GNSS on and off. Use the <strong>3.3V</strong> version. The GNSS module accepts 3.3V or 5V, but it regulates down to 3.3V internally, so feeding it 3.3V is the more efficient choice. The linked module ships set to 3.3V; the same module may also be available pre-set to 5V or 9V, and <strong>9V will destroy the GNSS module</strong>. Its <strong>PS</strong> solder jumper comes open; leave it that way. The carrier PCB is laid out for the XL63070 module.</td>
   </tr>
   <tr>
-    <td><a href="https://www.amazon.com/dp/B0FR9LK28P"><strong>3.7V LiPo battery</strong></a></td>
-    <td>Flat pouch cell, 900mAh, with a built-in protection circuit (overcharge, over-discharge, overcurrent, short circuit). The firmware's low-voltage cutoff is an additional protection against over-discharge.</td>
+    <td><a href="https://www.amazon.com/dp/B0DPZVBKMY"><strong>3.7V LiPo battery</strong></a></td>
+    <td>Flat pouch cell, 1000mAh, with a built-in protection circuit (overcharge, over-discharge, overcurrent, short circuit). The firmware's low-voltage cutoff is an additional protection against over-discharge.</td>
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0BWMS64PR"><strong>Latching 1P2T slide switch</strong></a></td>
@@ -99,14 +99,15 @@ The connections are the same on the carrier PCB and in a hand-wired build.
 The power wiring:
 
 ```
-        (+) ─── switch common
-  LiPo           ├─[ ON  ]──┬─────────────► XIAO BAT+
-  3.7V           │          └─────────────► regulator VIN
-                 └─[ OFF ]──[ 510kΩ ]──┬──► XIAO D0/A0
-                                       └──[ 510kΩ ]── GND
-        (–) ──────────────────────────────► XIAO BAT−, regulator GND, GNSS GND
+        (+) ─ SW common
+               │
+  LiPo         ├─[ SW ON  ]──┬──────────────────────► XIAO BAT+
+  3.7V         │             └──────────────────────► regulator VIN
+               └─[ SW OFF ]──[ 510kΩ ]──┬───────────► XIAO D0/A0
+                                        └─[ 510kΩ ]─► GND
+        (–) ────────────────────────────────────────► XIAO BAT−, regulator GND, GNSS GND
 
-  regulator VOUT (3.3V) ──────────────────► GNSS VCC
+  regulator VOUT (3.3V) ────────────────────────────► GNSS VCC
 ```
 
 - The GNSS **SDA / SCL** (compass) pins are left unconnected.
