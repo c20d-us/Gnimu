@@ -1,0 +1,49 @@
+# Gnimu - GNSS+IMU streaming telemetry
+# Copyright (C) 2026 Chris Halstead
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: tests/run.sh
+
+  compile:
+    name: compile ${{ matrix.board }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [esp32, nrf52840]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install board cores
+        run: |
+          arduino-cli core update-index --config-file arduino-cli.yaml
+          arduino-cli core install esp32:esp32@3.3.12 --config-file arduino-cli.yaml
+          arduino-cli core install Seeeduino:nrf52@1.1.13 --config-file arduino-cli.yaml
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "SparkFun u-blox GNSS v3@3.1.15"
+          arduino-cli lib install "Seeed Arduino LSM6DS3@2.0.7"
+      - name: Install nRF DFU packaging tool
+        if: matrix.board == 'nrf52840'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/nrfutil-venv"
+          "$RUNNER_TEMP/nrfutil-venv/bin/pip" install 'adafruit-nrfutil==0.5.3.post16'
+          echo "$RUNNER_TEMP/nrfutil-venv/bin" >> "$GITHUB_PATH"
+      - run: scripts/build.sh ${{ matrix.board }}

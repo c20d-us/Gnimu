@@ -1,0 +1,107 @@
+# Gnimu: GNSS+IMU data over BLE
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](../LICENSE)
+[![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#variants)
+[![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
+
+> [!WARNING]
+> **Gnimu Classic is deprecated.** This is the original Gnimu firmware, final at version 1.2.1. It is complete and still works on the hardware described here, but it no longer receives updates or fixes. New builds should use the [current Gnimu firmware](../README.md). The original repository layout is preserved at the [`classic-final`](https://github.com/c20d-us/Gnimu/tree/classic-final) tag.
+
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the streaming-telemetry function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) motorsports telemetry device. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz. Emulation does *not* include command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
+
+It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
+
+I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
+
+I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
+
+> [!IMPORTANT]
+> **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
+
+---
+
+## Variants
+
+This repo hosts three builds of the same concept, targeting different microcontrollers and use patterns. All advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app should work with any of them.
+
+| | [**Gnimu ESP32**](src/Gnimu-ESP32/README.md) | [**Gnimu nRF52840**](src/Gnimu-nRF52840/README.md) | [**Gnimu nRF52840-OLED**](src/Gnimu-nRF52840-OLED/README.md) |
+|---|---|---|---|
+| MCU | ESP32-WROOM-32 dev board | Seeed XIAO nRF52840 Sense | Seeed XIAO nRF52840 Sense |
+| Power | USB-powered | 3.7V LiPo battery or USB | 3.7V LiPo battery or USB |
+| GNSS | HGLRC M100-5883 | HGLRC M100-5883 | HGLRC M100 Mini |
+| IMU | External 6-axis, MPU-6050 | Onboard 6-axis, LSM6DS3TR-C | Onboard 6-axis, LSM6DS3TR-C |
+| Status readout | RGB LED | RGB LED | 0.96" 128×64 OLED |
+| Best for | A simple, always-plugged-in build | A portable, battery-powered build | Seeing fix quality, rate, and battery state without a receiver |
+|Build notes|Best bang-for-the-buck option. Easy build, cheap, rock-solid performance at 20Hz (GPS+Gal) or 25Hz (GPS only). Requires USB power source.|Simplest battery-powered option. Long battery life, solid performance. Slightly trickier build, but not hard. Could fit a slightly bigger LiPo.|"Advanced Beginner" mode. Trickiest build, but still not terribly hard. M100 Mini has slightly lower lock performance. If I were to do it again I'd skip the M100 Mini and use another M100-5883.|
+
+Start with the README for whichever hardware you're building (links at the top of the columns). Each has its own bill of materials, wiring, build/flash instructions, and configuration reference.
+
+---
+
+## Three notes about GNSS modules
+
+1. All three of my builds use M10-based GNSS modules from HGLRC. Two use the M100-5883 module, and one uses the M100 Mini. Both modules are ~$20 each from Amazon. The M100-5883 is excellent for the price. I've seen 16+ SVs locked with <0.200m hAcc and 1.2 pDOP with the device sitting on a table in my living room. The M100 Mini is a little bit cheaper, and definitely smaller, but I wouldn't use it on future builds. It works OK, but the performance is not quite as good as the M100-5883's due to the smaller antenna patch (15x15mm vs. 21x21mm) . It's not worth the slight cost savings IMO.
+
+2. If you use the HGLRC M100-5883 or M100 Mini modules, be aware that **as-delivered they *cannot* hold a 20Hz+ fix rate** even with just one constellation configured. To enable high fix rates you need to adjust the module's clock speed by writing values to their One-Time Programmable (OTP) memory (there is a sketch in the repository's top-level [`tools/`](../tools/) folder to do this). Without doing this you'll never get 20Hz (with GPS **and** Galileo) or 25Hz (with GPS **or** Galileo) fix rates at high SV counts. All will look fine until you reach ~10-12 SVs, and then the fix rate will start to stumble and sag, getting worse as the SV count climbs. After you burn the OTP settings, you will see solid 20Hz/25Hz performance into the high teen SV counts and beyond. Keep in mind that the module documentation only claims ≥98% of fix rate at full SV capacity, so you may see minor degradation when lots of SVs are visible.
+
+3. There are other u-blox compatible GNSS modules that should work with this firmware, either as a drop-in replacement or with minor code tweaks. I have not tried any other options, but you can easily find several other M10-based modules on Amazon, DigiKey, and Mouser. Keep in mind that M10-based modules will all have similar performance and constraints as the HGLRC modules.
+
+---
+
+## A note about mounting and self-calibration
+
+The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary for 10 seconds with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point, applies them, and holds that calibration until the device is powered off.
+
+That means you don't have to get the mount perfectly level, and there's no per-board calibration step before you flash. Earlier versions of this firmware needed six hand-measured zero-point offsets pasted into `config.h` for every individual board; those are gone, and the firmware image is now identical on every unit.
+
+A few practical notes:
+
+- **Mount the device in your desired location, power it on while parked, and let it sit.** The calibration happens during the *first* qualifying stationary period, which is what keeps it from calibrating itself to a sloped staging lane later on.
+- **Give it a minute or two.** The calibration window doesn't start until there's a usable 3D fix, and on a cold start that's usually the largest part of the stabilization period. In my testing it's taken anywhere from 70 to 95 seconds from power-on to get to the calibration window.
+- If you're connected to serial, **watch the `Trim:` field** on the log line. `⏳` means it hasn't locked yet; `✅` means it has, and the number beside it is the mounting tilt it measured. On the OLED build the same states show up as an icon in the status bar. You'll see a check once it's locked, an X if it refused, and nothing while it's still deciding.
+- **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting, and shows `❌` — so if you see that with a `Trim:` angle above 15°, the mount is the problem, not the firmware. Don't expect the `❌` immediately though: the reported tilt sits at 0° until the first measurement lands, so a badly mounted device shows `⏳` for the first 15 seconds or so and only then switches over.
+- **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car.
+
+Engine vibration doesn't interfere with this process. I checked, and a calibration captured at cold idle is repeatable to about 0.02°, which is miniscule for our purposes. So it doesn't matter whether you start the car before calibration or calibrate first.
+
+For what it's worth, the real RaceBox Mini handles this differently. The manual instructs the user to run an accelerometer calibration from the app, and says to *"perform this procedure every time you mount the device."* That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
+
+---
+
+## A note about obscure settings and latency tweaks
+
+I've spent a lot of time researching the ESP32, nRF52840 XIAO, MPU-6050, and M100 modules, in service of squeezing every last bit of performance and latency out of the Gnimu firmware builds. There are several places in the code where bus rates get tweaked, various features get turned on or off, and techniques are used to eliminate as much latency and blocking in the code as possible. I'm sure I've missed some opportunities somewhere, but if you see something odd in the code that makes you scratch your head and wonder, there is a high probably that it was done to ensure that the telemetry data flows as fast and (most importantly) as consistently as possible. This kind of device is not very useful if the data flow is inconsistent, so I've focused on consistent performance as a primary design goal.
+
+---
+
+## Repo layout notes
+
+```
+src/
+  Gnimu-ESP32/           ESP32 firmware + README
+  Gnimu-nRF52840/        nRF52840 firmware + README
+  Gnimu-nRF52840-OLED/    nRF52840 + OLED firmware + README
+  tools/
+    check_common.sh      Verifies the modules the two nRF52840 trees share are identical
+    ESP32/               Diagnostic sketches for the ESP32 variant
+    nRF52840/            Diagnostic sketches for the nRF52840 variant
+    nRF52840-OLED/        Diagnostic sketches for the nRF52840-OLED variant
+```
+
+Each sketch folder is named for its variant and contains the `.ino` of the same name, as the Arduino IDE requires. That also means the IDE's window title and tab name identify which variant you have open.
+
+The two nRF52840 trees deliberately duplicate a set of modules and keep them byte-identical (a shared-library approach doesn't fit the Arduino sketch build model). If you change one of those files, apply the same change to the other tree and run `src/tools/check_common.sh` to confirm they still match. The ESP32 tree is deliberately standalone: it has its own copies of some of the same modules, free to diverge, and the script does not check it.
+
+---
+
+## Acknowledgments & Origins
+
+Gnimu began as a derivative of [**Anchit Chandra Sekhar's RaceBox Mini emulator**](https://github.com/anchit92/Open-Source-RaceBox-mini-Emulator). While that repository provided some foundational ideas and initial inspiration, both Gnimu variants have taken on completely different shapes compared to the original single-file Arduino sketch architecture — modular codebases, externalized configuration, and (for Gnimu nRF52840) a full battery/power subsystem and a from-scratch BLE stack port. I am grateful to the original author for the initial implementation that started me down the road on this project.
+
+Protocol details follow the *RaceBox BLE Protocol Description*, [available from RaceBox](https://www.racebox.pro/products/mini-micro-protocol-documentation).
+
+---
+
+## License
+
+Released under the **GNU General Public License v3.0** — see [`LICENSE`](../LICENSE).

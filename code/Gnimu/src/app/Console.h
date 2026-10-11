@@ -1,0 +1,51 @@
+// Gnimu - GNSS+IMU streaming telemetry
+// Copyright (C) 2026 Chris Halstead
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../core/ConsoleEntry.h"
+#include "../core/Report.h"
+#include "../core/StatusLine.h"
+#include "SystemConfig.h"
+
+namespace gnimu {
+
+// One poll() result: a command letter, a status count, or neither.
+struct ConsoleCommand {
+  CommandKind kind = CommandKind::None;
+  bool hasCount = false;
+  uint32_t count = 0;    // valid only when hasCount
+};
+
+// Serial commands in, diagnostics report out. Nothing prints unless asked.
+class Console {
+ public:
+  void begin();
+  // Reads waiting input as entries ended by Enter: 'D' report, 'C' clear,
+  // 'V' version, 'L' toggles status reporting (at most kStatusMaxCount
+  // lines), or a number 0..kStatusMaxCount arms exactly that many status
+  // reports. Anything else is rejected whole, with a message. Each call
+  // handles at most one entry and reads at most the longest valid entry's
+  // bytes, so a paste can't hold up the loop; the rest waits for later calls.
+  ConsoleCommand poll();
+  void printReport(const JobTable& jobs, const DeviceStatus& status);
+  void printStatus(const DeviceStatus& status, const StatusRates& rates);
+  // Boot-time and exception messages; one line each.
+  void log(const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+  // Lets queued output reach the host before a reset or System OFF.
+  void flush();
+  // Bytes thrown away because the host stopped reading; never cleared.
+  uint32_t dropped() const { return dropped_; }
+
+ private:
+  void emit(const char* p, size_t n);
+
+  ConsoleEntry<config::kStatusMaxCount> entry_;
+  uint32_t dropped_ = 0;
+};
+
+}  // namespace gnimu
