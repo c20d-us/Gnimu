@@ -65,9 +65,10 @@ constexpr float kImuGyroAlpha = 0.33f;
 
 // Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
 // is a builder/BOM choice, while the Sense's onboard LSM6DS3TR-C is fixed to
-// the XIAO, so its map follows which way the XIAO faces in the device (the
-// default suits the build guide's layout). Output axis i is input axis src[i]
-// times sign[i]; src must be a permutation of 0, 1, 2.
+// the XIAO, so its map follows which way the XIAO faces in the device. The
+// default is for the XIAO's USB connector toward the rear of the vehicle,
+// verified on hardware. Output axis i is input axis src[i] times sign[i]; src
+// must be a permutation of 0, 1, 2.
 constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
 constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
 constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};

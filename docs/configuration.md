@@ -79,7 +79,7 @@ The IMU is sampled at 100 Hz and smoothed before it's sent. Alpha of `1.0` is th
 
 These map the sensor's axes onto the vehicle's. Output axis *i* is sensor axis `Src[i]` multiplied by `Sign[i]`. `Src` must use each of 0, 1 and 2 exactly once.
 
-The XIAO's sensor is soldered to the board, so its mapping is fixed by how the board sits in the build described in the [XIAO nRF52840 build guide](build-nrf52840.md). On the ESP32 the MPU-6050 is a separate module, and you may have mounted it differently than the [ESP32 build guide](build-esp32.md) shows. If an axis reads backwards in your app, flip its sign; if two are swapped, swap their `Src` entries.
+The XIAO's sensor is soldered to the board, so its mapping follows which way the XIAO faces. The default is for the XIAO's USB connector pointing toward the rear of the car, as in the [XIAO nRF52840 build guide](build-nrf52840.md). On the ESP32 the MPU-6050 is a separate module, and you may have mounted it differently than the [ESP32 build guide](build-esp32.md) shows. If an axis reads backwards in your app, flip its sign; if two are swapped, swap their `Src` entries.
 
 This is for getting the axes pointing the right way. Small tilts, up to about 15°, are measured and corrected automatically while the car is parked; see the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 

@@ -57,8 +57,8 @@ These parts are the same whichever way you build it.
     <td>A u-blox M10-class GNSS receiver. Reference unit: <a href="https://www.hglrc.com/products/m100-5883-gps">HGLRC M100-5883</a>. The compass pins are unused.</td>
   </tr>
   <tr>
-    <td><a href="https://www.amazon.com/EC-Buying-Buck-Boost-Microcontroller-TPS63070/dp/B0G3FSY393"><strong>TPS63070 buck-boost regulator module</strong></td>
-    <td>Supplies the GNSS a stable 3.3V rail across the full LiPo voltage range. It powers only the GNSS; the XIAO runs directly from the battery. Its EN pin goes to the XIAO, which uses it to switch the GNSS on and off. The carrier PCB is laid out for the XL63070 module.</td>
+    <td><a href="https://www.amazon.com/EC-Buying-Buck-Boost-Microcontroller-TPS63070/dp/B0G3FSY393"><strong>TPS63070 buck-boost regulator module</strong></a></td>
+    <td>Supplies the GNSS a stable 3.3V rail across the full LiPo voltage range. It powers only the GNSS; the XIAO runs directly from the battery. Its EN pin goes to the XIAO, which uses it to switch the GNSS on and off. Use the <strong>3.3V</strong> version. The GNSS module accepts 3.3V or 5V, but it regulates down to 3.3V internally, so feeding it 3.3V is the more efficient choice. The linked module ships set to 3.3V; the same module may also be available pre-set to 5V or 9V, and <strong>9V will destroy the GNSS module</strong>. Its <strong>PS</strong> solder jumper comes open; leave it that way. The carrier PCB is laid out for the XL63070 module.</td>
   </tr>
   <tr>
     <td><a href="https://www.amazon.com/dp/B0FR9LK28P"><strong>3.7V LiPo battery</strong></a></td>
@@ -116,30 +116,32 @@ The power wiring:
 
 ## Building it on the carrier PCB
 
-The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https://github.com/c20d-us/Gnimu-PCB) repository, in the `gnimu-carrier-xiao-*` folders, one per board revision. Each has a KiCad project and a `fabrication/` folder with gerbers ready to send to a board house. Use the latest revision.
+The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https://github.com/c20d-us/Gnimu-PCB) repository, in the `gnimu-carrier-xiao-*` folders, one per board revision. Each has a KiCad project and a `fabrication/` folder with gerbers ready to send to a board house. Use the latest revision. Revision v1.1 differs from v1 only in its larger mounting holes (2.7mm, up from 2.2mm) and a printed reminder of the regulator's settings, `PS open · 3V3`; the two are wired identically.
 
-Everything on it is through-hole. You solder on:
+Everything on it is through-hole, and every position is labelled on the silkscreen. You solder on:
 
-| Reference | Part |
+| Silkscreen | Part |
 |---|---|
-| **U1** | The XIAO nRF52840 Sense, by its 14 edge pins. |
-| **U2** | The XL63070 (TPS63070) buck-boost module. |
-| **R1**, **R2** | The two 510kΩ resistors. |
+| **XIAO nRF52840 Sense** | The XIAO, by its 14 edge pins, with its USB connector at the board edge marked **USB**. |
+| **XL63070** | The XL63070 (TPS63070) buck-boost module, the 3.3V version, with its PS solder jumper left open as supplied. |
+| **510kΩ** (two positions) | The two 510kΩ resistors. |
 
 and connect the rest to its labelled pads:
 
-| Connector | Pins | Connects to |
+| Silkscreen | Pads | Connects to |
 |---|---|---|
-| **J1 GNSS** | 1 GND · 2 3.3V · 3 GNSS TX · 4 GNSS RX | The GNSS module. |
-| **J6 BATT** | 1 battery + · 2 battery − | The LiPo. |
-| **J4 Switch** | 1 on · 2 common · 3 off | The slide switch: common to pin 2, the two throws to pins 1 and 3. |
-| **J5 XIAO_BATT** | 1 BAT+ · 2 BAT− | The battery pads on the underside of the XIAO. |
-| **J2 I2C** | 1 GND · 2 3.3V · 3 SDA · 4 SCL | Spare. Not used by the firmware. |
-| **J3 GPIO** | 1 GND · 2 D10 · 3 D9 · 4 D8 · 5 D2 · 6 D3 | Spare. Not used by the firmware. |
+| **GNSS** | G · V · TX · RX | The GNSS module: ground, 3.3V power, and the module's own TX and RX pins. |
+| **BATT** | + · − | The LiPo. |
+| **Switch** | ON · COMMON · OFF | The slide switch: its common terminal to COMMON, its two throws to ON and OFF. |
+| **XIAO BATT** | + · − | The battery pads on the underside of the XIAO. |
+| **I2C** | GND · 3V3 · SDA · SCL | Spare. Not used by the firmware. |
+| **GPIO** | GND · D10 · D9 · D8 · D2 · D3 | Spare. Not used by the firmware. |
 
-Pin 3 of J1 goes to the GNSS module's **TX** and pin 4 to its **RX**; the crossover to the XIAO is done on the board.
+The **TX** and **RX** pads are named for the GNSS module's pins: wire the module's TX to TX and its RX to RX. The crossover to the XIAO is done on the board.
 
-The XIAO's battery pads are on its underside and aren't part of its edge pins, so **J5** carries the switched battery to them with two short wires.
+The XIAO's battery pads are on its underside and aren't part of its edge pins, so **XIAO BATT** carries the switched battery to them with two short wires.
+
+The **IMU** axes printed beside the XIAO show how the device must sit in the car: the **X** arrow points to the front of the car and the **Y** arrow to its left, with the component side of the board facing up. That puts the XIAO's USB connector toward the rear.
 
 ---
 
@@ -154,7 +156,18 @@ Without the carrier, make the connections in [How it's connected](#how-its-conne
 5. Wire the regulator's **VOUT** to the GNSS **VCC**, and its **EN** to the XIAO's **D1**.
 6. Wire the XIAO's **D6** to the GNSS **RX**, and **D7** to the GNSS **TX**.
 
-Check the regulator's output is 3.3V before connecting the GNSS module to it.
+
+## Check the regulator before connecting the GNSS
+
+> [!WARNING]
+> **Never feed the GNSS module 9V.** The regulator module can be configured for a 9V output, and may be available pre-set that way; 9V will destroy the GNSS module. Confirm the regulator's output before the GNSS is connected to it:
+>
+> 1. Look at the module and confirm its output setting is marked 3.3V.
+> 2. Power it from the battery with the GNSS disconnected, and measure **VOUT** to **GND** with a multimeter. It should read 3.3V.
+>
+> The GNSS module also runs from 5V, so a regulator set to 5V won't harm it. 3.3V is still the setting to use: the module regulates down to 3.3V internally, so anything above that is lost as heat.
+>
+> This applies to both the carrier PCB and a hand-wired build.
 
 ---
 
@@ -230,7 +243,7 @@ The thresholds are in [Configuration](configuration.md#battery), and the full se
 ## Usage
 
 1. Charge the LiPo before using the device away from USB.
-2. Mount the device, slide the switch on, and give the GNSS time to acquire a fix. The LED **blinks blue** while waiting for an app.
+2. Mount the device level, with the XIAO's **USB connector toward the rear of the car**, slide the switch on, and give the GNSS time to acquire a fix. The LED **blinks blue** while waiting for an app.
 3. The M100's own LEDs report GNSS status (see the table below).
 4. In the **RaceBox app** (or another RaceBox-compatible client), scan for and connect to the device. It advertises as `RaceBox Mini` followed by a 10-digit ID, which the boot log prints as `Device ID`.
 5. On connect, the LED turns **solid blue** and the device begins streaming data packets.
