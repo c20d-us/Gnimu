@@ -1,5 +1,5 @@
 <p>
-  <img src="branding/svg/gnimu-icon-default.svg" alt="Gnimu icon" height="72">
+  <img src="branding/svg/gnimu-icon-default-rounded.svg" alt="Gnimu icon" height="72">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="branding/wordmark/gnimu-wordmark-transparent-white.svg">
     <img src="branding/wordmark/gnimu-wordmark-transparent-navy.svg" alt="gnimu" height="72">
