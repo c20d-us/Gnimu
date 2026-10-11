@@ -25,7 +25,6 @@ struct DeviceStatus {
   uint64_t uptimeUs;
   ResetRecord reset;  // how this boot started; fixed for the whole run
   struct Gnss {
-    const char* settings;        // e.g. "GPS+Galileo, 20 Hz, automotive"; nullptr omits the line
     const EpochTracker* epochs;  // always set
     const GnssEpoch* latest;     // nullptr until the first epoch
   } gnss;

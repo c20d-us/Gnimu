@@ -20,6 +20,8 @@ class Mpu6050 {
   // One sample in physical units (m/s^2, rad/s), remapped to vehicle axes.
   // False on a failed or all-zero read.
   bool read(ImuSample& out);
+  // The sensor-to-vehicle axis map this build applies.
+  static const AxisMap& axisMap();
   // Wired straight to the supply, so there's nothing to power off.
   void end() {}
 };

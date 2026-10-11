@@ -119,7 +119,7 @@ code/Gnimu/              The firmware sketch
     app/                 Wiring it all together: jobs, states, console
 tools/                   GNSS utility sketches: identity report, factory reset, OTP clock
 tests/                   Host-side unit tests (tests/run.sh)
-scripts/                 build.sh, which builds both boards with arduino-cli
+scripts/                 build.sh and flash.sh: build and upload with arduino-cli
 docs/                    Build guides and reference documentation
 classic/                 The original firmware, deprecated (see below)
 ```

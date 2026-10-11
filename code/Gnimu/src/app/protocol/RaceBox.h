@@ -25,6 +25,7 @@ class RaceBoxProtocol {
   using Packet = uint8_t[kPacketBytes];
 
   static const BleProfile& profile() { return kRaceBoxProfile; }
+  static const char* name() { return "RaceBox"; }
 
   // `battery` is nullptr on boards without one.
   void encode(const GnssEpoch& e, const ImuSample& imu, const BatteryStatus* battery, bool usbPresent,

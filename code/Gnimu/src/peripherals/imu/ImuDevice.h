@@ -62,6 +62,9 @@ class ImuDevice {
   float trimTiltDegrees() const { return trim_.tiltDegrees(); }
   bool trimConverged() const { return trim_.converged(); }
 
+  // The sensor-to-vehicle axis map this build applies.
+  static const AxisMap& axisMap() { return ImuChip::axisMap(); }
+
  private:
   ImuChip chip_;
   ImuFilter filter_{0, 0};  // re-constructed with real alphas in begin()

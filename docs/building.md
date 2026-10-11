@@ -57,7 +57,7 @@ If an upload to the XIAO can't reset the board into its bootloader, **double-tap
 
 ### The build stamp
 
-Every boot prints a `BUILD` line with the firmware's version, git revision, and build time. Those values are filled in by the build script described below. The Arduino IDE doesn't run that script, so an IDE build reports placeholders instead:
+Every boot prints a `BUILD` line with the firmware's version, git revision, and build time. Those values are filled in by the build script described below, and reach a device when it is [flashed from the command line](#flashing-from-the-command-line). The Arduino IDE doesn't run that script, so an IDE build reports placeholders instead:
 
 ```
 BUILD,version=0.0.0-dev,revision=IDE-UNSTAMPED,dirty=unknown,utc=unknown,target=...
@@ -97,7 +97,56 @@ arduino-cli lib install "Seeed Arduino LSM6DS3@2.0.7"
 
 [`arduino-cli.yaml`](../arduino-cli.yaml), in the repository root, carries the Seeed boards manager URL. If you already installed everything through the Arduino IDE, `arduino-cli` shares those installs and there is nothing more to do.
 
-The script only builds. To flash from the command line, use `arduino-cli upload` with your board's port, or simply upload from the IDE.
+### Flashing from the command line
+
+[`scripts/flash.sh`](../scripts/flash.sh) uploads what `build.sh` last built for a board. It doesn't build anything itself, so what reaches the device is exactly the firmware in `build/<board>/`, stamp included.
+
+```bash
+scripts/build.sh nrf52840
+scripts/flash.sh nrf52840
+```
+
+**XIAO nRF52840.** With one XIAO connected, the script finds its port by itself. The upload resets the board into its bootloader, as it does from the IDE; if that fails, double-tap the XIAO's reset button and run the script again.
+
+**ESP32.** A dev board's USB-serial chip doesn't say what board it's on, so name the port:
+
+```bash
+scripts/build.sh esp32
+scripts/flash.sh esp32 /dev/cu.usbserial-0001
+```
+
+To see which ports are connected:
+
+```bash
+arduino-cli board list
+```
+
+On macOS they look like `/dev/cu.usbmodem1101` or `/dev/cu.usbserial-0001`; on Linux, `/dev/ttyACM0` or `/dev/ttyUSB0`; on Windows, `COM3`.
+
+Close the IDE's Serial Monitor, or any other serial terminal on that port, before flashing. An open terminal can block the upload.
+
+A device flashed this way reports a stamped `BUILD` line, at boot and whenever you type `V`:
+
+```
+BUILD,version=classic-final-32-gc45f72e-dirty,revision=c45f72e587cf,dirty=1,utc=2026-10-11T17:03:40Z,target=nrf52840
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | `git describe`: the nearest tag, the number of commits since it, and the commit. |
+| `revision` | The commit the firmware was built from. |
+| `dirty` | `1` if the working tree had uncommitted changes when it was built, `0` if it was clean. |
+| `utc` | When it was built. |
+
+That line settles which firmware a device is running, which an IDE build's `IDE-UNSTAMPED` cannot.
+
+The script is a thin wrapper. The command underneath is:
+
+```bash
+arduino-cli upload --config-file arduino-cli.yaml --fqbn <board> --port <port> --input-dir build/<board>
+```
+
+with `esp32:esp32:esp32` or `Seeeduino:nrf52:xiaonRF52840Sense` as the board.
 
 ---
 

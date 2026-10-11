@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../code/Gnimu/src/core/ImuFilter.h"
 #include "../code/Gnimu/src/core/ImuHealth.h"
@@ -42,6 +43,23 @@ static void testRemapDoesNotClobberDuringPermutation() {
 
 // Only all three accel axes at exactly zero is rejected. A negative zero from
 // a sign-flipping remap counts too: the drivers check after the remap.
+static void testFormatAxisMap() {
+  char buf[24];
+  const AxisMap identity = {{0, 1, 2}, {+1.0f, +1.0f, +1.0f}};
+  assert(formatAxisMap(buf, sizeof(buf), identity) == 14);
+  assert(strcmp(buf, "X=+x Y=+y Z=+z") == 0);
+  const AxisMap flipped = {{0, 1, 2}, {-1.0f, -1.0f, +1.0f}};
+  formatAxisMap(buf, sizeof(buf), flipped);
+  assert(strcmp(buf, "X=-x Y=-y Z=+z") == 0);
+  const AxisMap swapped = {{2, 0, 1}, {+1.0f, -1.0f, +1.0f}};
+  formatAxisMap(buf, sizeof(buf), swapped);
+  assert(strcmp(buf, "X=+z Y=-x Z=+y") == 0);
+  // Too small a buffer truncates and still terminates.
+  char tiny[6];
+  assert(formatAxisMap(tiny, sizeof(tiny), identity) == 5);
+  assert(strcmp(tiny, "X=+x ") == 0);
+}
+
 static void testZeroAccel() {
   ImuSample s;
   assert(isZeroAccel(s));
@@ -112,6 +130,7 @@ int main() {
   testRemapIdentity();
   testRemapPermutationAndSign();
   testRemapDoesNotClobberDuringPermutation();
+  testFormatAxisMap();
   testZeroAccel();
   testFilterSeedThenConverge();
   testHealthStartsDownAndNeedsMarkUp();

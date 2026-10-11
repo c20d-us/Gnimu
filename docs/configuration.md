@@ -6,6 +6,8 @@ Every setting is checked when the firmware compiles. A value that's out of range
 
 After changing a setting, rebuild and upload. See [Building and flashing](building.md).
 
+To see the settings a device is actually running, type `V` in the console. It prints them as [`Config:` lines](console.md#what-the-device-is), which is the quickest way to confirm that the firmware you flashed is the one you edited.
+
 ---
 
 ## GNSS

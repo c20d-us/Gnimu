@@ -86,6 +86,8 @@ int16_t rawPair(const uint8_t *p) {
 
 } // namespace
 
+const AxisMap& Mpu6050::axisMap() { return kAxisMap; }
+
 // One burst of the 14 data registers from ACCEL_XOUT_H: accel X/Y/Z,
 // temperature (skipped), gyro X/Y/Z. False on a short or all-zero read.
 bool Mpu6050::read(ImuSample &out) {

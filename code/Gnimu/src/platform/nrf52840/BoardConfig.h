@@ -25,6 +25,8 @@ constexpr int kImuPowerPin = PIN_LSM6DS3TR_C_POWER;
 enum class Wiring : uint8_t { V2, Classic };
 constexpr Wiring kWiring = Wiring::V2;
 // constexpr Wiring kWiring = Wiring::Classic;
+// As the console's V command shows it.
+constexpr const char* kWiringName = kWiring == Wiring::V2 ? "V2" : "Classic";
 
 // EN of the regulator that powers only the GNSS module (TPS63070 on V2,
 // TPS63020 on Classic). LOW disables it; released to an input, the

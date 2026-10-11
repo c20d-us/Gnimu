@@ -40,7 +40,6 @@ static void testReport() {
   const JobTable t = {jobs, stats, 1, 12345};
   DeviceStatus v = {};
   v.uptimeUs = 355400000;
-  v.gnss.settings = "GPS+Galileo, 20 Hz, automotive";
   v.reset = makeResetRecord(ResetCause::Software, restartCode(RestartReason::GnssSilent));
   v.gnss.epochs = &epochs;
   v.gnss.latest = &latest;
@@ -60,9 +59,8 @@ static void testReport() {
   assert(strstr(buf, "| job  | runs | skipped | overruns | max \xCE\xBCs | mean \xCE\xBCs | max late \xCE\xBCs |\n"));
   assert(strstr(buf, "| gnss |    4 |       1 |        2 |    900 |     500 |        1530 |\n"));
   assert(strstr(buf, "| RT:                        355s | Loops:                    12345 |\n"));
-  assert(strstr(buf, "=\nReset: software (GNSS: epochs stopped)\nGNSS: GPS+Galileo"));
+  assert(strstr(buf, "=\nReset: software (GNSS: epochs stopped)\nGNSS: epochs 0,"));
   assert(strstr(buf, "GNSS: epochs 0, missed 0, max gap 0\xCE\xBCs, time steps 0\n"));
-  assert(strstr(buf, "\nGNSS: GPS+Galileo, 20 Hz, automotive\nGNSS: epochs 0,"));
   assert(strstr(buf, "GNSS: 3D fix, 17 SVs, hAcc 210mm, tAcc 42ns, pDOP 1.05\n"));
   // A fix outside the receiver's accuracy limits says so; "no fix" never does.
   latest.gnssFixOk = false;
@@ -77,10 +75,7 @@ static void testReport() {
   latest.gnssFixOk = true;
   latest.hAccMm = 210;
   latest.tAccNs = 42;
-  v.gnss.settings = nullptr;
   formatReport(buf, sizeof(buf), t, v);
-  assert(!strstr(buf, "automotive"));
-  v.gnss.settings = "GPS+Galileo, 20 Hz, automotive";
   assert(strstr(buf, "IMU: up, Accel XYZ mG -12 3 998, Gyro XYZ c\xC2\xB0/s 5 -2 1\n"));
   assert(strstr(buf, "IMU: trim locked, tilt 12.3\xC2\xB0\n"));
   assert(strstr(buf, "BLE: connected, sent 42, failed 5, refused 2, max send 850\xCE\xBCs, rx 7 bytes, "
@@ -241,7 +236,6 @@ static void testWorstCaseFits() {
   v.reset.cause = ResetCause::Software;
   v.reset.restartKnown = true;
   v.reset.restart = RestartReason::GnssSilent;
-  v.gnss.settings = "GPS+Galileo+BeiDou+GLONASS, 25 Hz, airborne <4g";
   v.gnss.epochs = &epochs;
   v.gnss.latest = &latest;
   v.imu.sample = sampleShowing(-4999, -4999, -4999, -59999, -59999, -59999);

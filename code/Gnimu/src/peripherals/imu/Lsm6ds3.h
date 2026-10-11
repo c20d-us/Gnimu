@@ -24,6 +24,8 @@ class Lsm6ds3 {
   // One sample in physical units (m/s^2, rad/s), remapped to vehicle axes.
   // False on a failed or all-zero read.
   bool read(ImuSample& out);
+  // The sensor-to-vehicle axis map this build applies.
+  static const AxisMap& axisMap();
   // Powers the chip back off, as at boot.
   void end();
 };

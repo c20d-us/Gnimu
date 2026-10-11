@@ -4,7 +4,9 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 namespace gnimu {
 
@@ -63,6 +65,17 @@ inline void remapAxes(float v[3], const AxisMap& m) {
   v[0] = in[m.src[0]] * m.sign[0];
   v[1] = in[m.src[1]] * m.sign[1];
   v[2] = in[m.src[2]] * m.sign[2];
+}
+
+// The map as text, e.g. "X=+x Y=-z Z=+y": each vehicle axis, then the signed
+// sensor axis that feeds it. Returns the length written.
+inline size_t formatAxisMap(char* buf, size_t cap, const AxisMap& m) {
+  const int n = snprintf(buf, cap, "X=%c%c Y=%c%c Z=%c%c",
+                         m.sign[0] < 0 ? '-' : '+', "xyz"[m.src[0]],
+                         m.sign[1] < 0 ? '-' : '+', "xyz"[m.src[1]],
+                         m.sign[2] < 0 ? '-' : '+', "xyz"[m.src[2]]);
+  if (n < 0 || cap == 0) return 0;
+  return static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : cap - 1;
 }
 
 }  // namespace gnimu

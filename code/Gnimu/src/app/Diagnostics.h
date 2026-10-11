@@ -20,7 +20,7 @@
 namespace gnimu {
 
 // The console's reporting side: the D report, the 1 s status line, and the
-// build and device ID lines. It only reads the modules it reports on; App
+// V lines (build, device ID and the build's settings). It only reads the modules it reports on; App
 // routes each command, clears its own state on Clear, and passes every command
 // here too, so each owner resets only what it owns.
 class Diagnostics {
@@ -42,9 +42,7 @@ class Diagnostics {
         battery_(battery),
         machine_(machine),
         deviceId_(deviceId),
-        reset_(reset) {
-    formatGnssSettings();
-  }
+        reset_(reset) {}
 
   // One poll's result: Report, Version, ToggleStatus and a count act here;
   // Clear re-baselines the status line's rate trackers (App clears the
@@ -53,16 +51,18 @@ class Diagnostics {
   // Prints the status line when one is due.
   void tick(uint64_t nowUs);
 
-  void printBuild();
-  void printDeviceId();
+  // What this device is: the build, the device ID, and the settings the build
+  // was compiled with. The V command, and the top of the boot log.
+  void printVersion();
 
  private:
   // Arms (or disarms, with count == 0) periodic status reporting and resets
   // the rate trackers' baseline so the first line's Hz reflects only the
   // interval after arming, not however long events have been accumulating.
   void armStatus(uint32_t count);
-  // The configured GNSS settings line: fixed for the build.
-  void formatGnssSettings();
+  // One "Config:" line per group of settings. They are compile-time values,
+  // shown so a device can be asked what it was built with.
+  void printConfig();
   // The device's state now, for the D report and the status line alike.
   DeviceStatus snapshot(uint64_t nowUs) const;
   void printReport();
@@ -80,7 +80,6 @@ class Diagnostics {
   const RunStateMachine& machine_;
   const char* deviceId_;
   const ResetRecord& reset_;
-  char gnssSettings_[64] = {};  // e.g. "GPS+Galileo, 20 Hz, automotive"
 
   RateTracker gnssRate_;  // status line: epochs/s
   RateTracker bleRate_;   // status line: packets sent/s

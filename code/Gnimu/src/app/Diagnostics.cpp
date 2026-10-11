@@ -7,9 +7,11 @@
 #include "../core/GnssNames.h"
 #include "../core/TextOut.h"
 #include "../platform/BatteryPort.h"
+#include "../platform/Board.h"
 #include "../platform/Clock.h"
 #include "BuildInfo.h"
 #include "SystemConfig.h"
+#include "protocol/Protocol.h"
 
 namespace gnimu {
 
@@ -49,8 +51,7 @@ void Diagnostics::handle(const ConsoleCommand& cmd) {
       }
       break;
     case CommandKind::Version:
-      printBuild();
-      printDeviceId();
+      printVersion();
       break;
     case CommandKind::ToggleStatus:
       // A second 'L' stops whatever's running; otherwise it starts the
@@ -88,21 +89,10 @@ void Diagnostics::armStatus(uint32_t count) {
   }
 }
 
-// The constellations in priority order, the nav rate and the dynamic model:
-// the targets the boot configuration verified, not a live readback.
-void Diagnostics::formatGnssSettings() {
-  detail::Out o{gnssSettings_, sizeof(gnssSettings_), 0};
-  for (unsigned i = 0; i < config::kConstellationCount; i++)
-    o.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
-  o.put(", %u Hz, %s", static_cast<unsigned>(config::kGnssNavRateHz),
-        dynamicModelName(config::kGnssDynamicModel));
-}
-
 DeviceStatus Diagnostics::snapshot(uint64_t nowUs) const {
   DeviceStatus s = {};
   s.uptimeUs = nowUs;
   s.reset = reset_;
-  s.gnss.settings = gnssSettings_;
   s.gnss.epochs = &feed_.epochs();
   s.gnss.latest = feed_.latest();
   s.imu.up = imu_.up();
@@ -129,12 +119,54 @@ void Diagnostics::printStatus(uint64_t nowUs) {
   console_.printStatus(snapshot(nowUs), rates);
 }
 
-void Diagnostics::printBuild() {
+void Diagnostics::printVersion() {
   char line[192];
   formatBuildLine(line, sizeof(line), buildInfo());
   console_.log("%s", line);
+  console_.log("Device ID: %s", deviceId_);
+  printConfig();
 }
 
-void Diagnostics::printDeviceId() { console_.log("Device ID: %s", deviceId_); }
+namespace {
+
+// Hundredths, rounded: the settings below are all two-decimal values, and the
+// console prints integers only.
+unsigned centi(float v) { return static_cast<unsigned>(v * 100.0f + 0.5f); }
+
+}  // namespace
+
+void Diagnostics::printConfig() {
+  if (board::kWiringName) {
+    console_.log("Config: board %s, wiring %s", buildInfo().target, board::kWiringName);
+  } else {
+    console_.log("Config: board %s", buildInfo().target);
+  }
+
+  char gnss[64];
+  detail::Out o{gnss, sizeof(gnss), 0};
+  for (unsigned i = 0; i < config::kConstellationCount; i++)
+    o.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
+  console_.log("Config: GNSS %s, %u Hz, %s, min elevation %u\xC2\xB0", gnss,
+               static_cast<unsigned>(config::kGnssNavRateHz), dynamicModelName(config::kGnssDynamicModel),
+               static_cast<unsigned>(config::kGnssMinElevDeg));
+
+  char axes[24];
+  formatAxisMap(axes, sizeof(axes), ImuDevice::axisMap());
+  const unsigned accel = centi(config::kImuAccelAlpha), gyro = centi(config::kImuGyroAlpha);
+  console_.log("Config: IMU axes %s, smoothing accel %u.%02u gyro %u.%02u", axes, accel / 100,
+               accel % 100, gyro / 100, gyro % 100);
+
+  console_.log("Config: BLE %s, TX power %d dBm", Protocol::name(), config::kBleTxPowerDbm);
+
+  if (board::kHasBattery) {
+    const unsigned cutoff = centi(config::kBatteryCutoffV), critical = centi(config::kBatteryCriticalV),
+                   warning = centi(config::kBatteryWarningV), scale = centi(config::kBatteryFullScaleV),
+                   full = centi(config::kBatteryChargeFullV);
+    console_.log("Config: battery cutoff %u.%02uV, critical %u.%02uV, warning %u.%02uV, "
+                 "100%% at %u.%02uV, charged at %u.%02uV",
+                 cutoff / 100, cutoff % 100, critical / 100, critical % 100, warning / 100,
+                 warning % 100, scale / 100, scale % 100, full / 100, full % 100);
+  }
+}
 
 }  // namespace gnimu

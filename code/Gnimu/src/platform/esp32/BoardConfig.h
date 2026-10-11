@@ -13,6 +13,8 @@ namespace board {
 // straight to 3.3 V.
 constexpr bool kHasBattery = false;
 constexpr bool kHasSwitchedPower = false;
+// One wiring only, so the console's V command has nothing to name.
+constexpr const char* kWiringName = nullptr;
 
 constexpr int kGnssRxPin = 16;
 constexpr int kGnssTxPin = 17;

@@ -66,8 +66,7 @@ void App::begin() {
   console_.begin();
   Watchdog::feed();
   decimalDeviceId(hardwareId(), deviceId_);
-  diagnostics_.printBuild();
-  diagnostics_.printDeviceId();
+  diagnostics_.printVersion();
   console_.log("Gnimu starting");
   char reset[64];
   formatReset(reset, sizeof(reset), reset_);

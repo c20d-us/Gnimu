@@ -89,6 +89,8 @@ int16_t rawPair(const uint8_t *p) {
 
 } // namespace
 
+const AxisMap& Lsm6ds3::axisMap() { return kAxisMap; }
+
 // One 12-byte burst, gyro X/Y/Z then accel X/Y/Z (OUTX_L_G..OUTZ_H_XL), rather
 // than six separate two-transaction reads. BDU (enabled in begin()) freezes
 // each 16-bit pair against a mid-read sample rollover, but only within that

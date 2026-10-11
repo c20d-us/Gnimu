@@ -127,8 +127,6 @@ inline size_t formatReport(char *buf, size_t cap, const JobTable &t, const Devic
   char reset[64];
   formatReset(reset, sizeof(reset), d.reset);
   o.put("Reset: %s\n", reset);
-  if (d.gnss.settings)
-    o.put("GNSS: %s\n", d.gnss.settings);
   o.put("GNSS: epochs %lu, missed %lu, max gap %luμs, time steps %lu\n",
         static_cast<unsigned long>(d.gnss.epochs->epochs()),
         static_cast<unsigned long>(d.gnss.epochs->missed()),
