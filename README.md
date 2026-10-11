@@ -1,4 +1,12 @@
-# Gnimu: GNSS+IMU motorsports telemetry
+<p>
+  <img src="branding/svg/gnimu-icon-default.svg" alt="Gnimu icon" height="72">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/wordmark/gnimu-wordmark-transparent-white.svg">
+    <img src="branding/wordmark/gnimu-wordmark-transparent-navy.svg" alt="gnimu" height="72">
+  </picture>
+</p>
+
+# GNSS+IMU motorsports telemetry
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
