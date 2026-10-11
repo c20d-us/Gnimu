@@ -88,48 +88,48 @@ Before you rely on the GNSS module at 20Hz or more, read the notes on GNSS modul
 Photos of the reference build, from loose components to the finished, enclosed unit. Several shots show an **RF shield** fitted over the electronics. It's a hardware counterpart to the firmware's reduced BLE power, further isolating the GNSS receiver from radio noise (see [A note on BLE power and GNSS lock](#a-note-on-ble-power-and-gnss-lock)).
 
 <div align="center">
-  <img src="../classic/images/ESP32/completed-emulator.jpeg" alt="The finished RaceBox Mini emulator" width="520"><br>
+  <img src="../images/ESP32/completed-emulator.jpeg" alt="The finished RaceBox Mini emulator" width="520"><br>
   <sub>The completed emulator, decorated with the stickers that came with the GNSS module<br>and an indicator of which end points forward (for Gyro/Accelerometer).</sub><br>&nbsp;
 </div>
 
 <table>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/components-and-box.jpeg" alt="Components laid out with the enclosure" width="340"><br>
+      <img src="../images/ESP32/components-and-box.jpeg" alt="Components laid out with the enclosure" width="340"><br>
       <sub>Components and enclosure prior to assembly.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/GNSS-and-lid.jpeg" alt="GNSS module with mounting hole in the lid" width="340"><br>
+      <img src="../images/ESP32/GNSS-and-lid.jpeg" alt="GNSS module with mounting hole in the lid" width="340"><br>
       <sub>GNSS module with mounting hole in the lid.</sub><br>&nbsp;
     </td>
   </tr>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/components-wired.jpeg" alt="Components wired together" width="340"><br>
+      <img src="../images/ESP32/components-wired.jpeg" alt="Components wired together" width="340"><br>
       <sub>Components wired together, using header pins<br>underneath the ESP32 board. Extra unused<br>pins were clipped off.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/assembled-without-shield.jpeg" alt="Assembly without the RF shield" width="340"><br>
+      <img src="../images/ESP32/assembled-without-shield.jpeg" alt="Assembly without the RF shield" width="340"><br>
       <sub>Assembled, using hardening epoxy putty<br>to firmly affix the components.</sub>
     </td>
   </tr>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/shield-test-fit.jpeg" alt="RF shield test fit" width="340"><br>
+      <img src="../images/ESP32/shield-test-fit.jpeg" alt="RF shield test fit" width="340"><br>
       <sub>RF shield test fit, not yet grounded or affixed.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/shield-grounded.jpeg" alt="RF shield grounded" width="340"><br>
+      <img src="../images/ESP32/shield-grounded.jpeg" alt="RF shield grounded" width="340"><br>
       <sub>RF shield grounded; I used two-sided tape to mount the shield.</sub><br>&nbsp;
     </td>
   </tr>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/box-closed.jpeg" alt="Enclosure closed" width="340"><br>
+      <img src="../images/ESP32/box-closed.jpeg" alt="Enclosure closed" width="340"><br>
       <sub>Enclosure closed up, ready to test (before stickers!).</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/ESP32/powered-up.jpeg" alt="Connected and working" width="340"><br>
+      <img src="../images/ESP32/powered-up.jpeg" alt="Connected and working" width="340"><br>
       <sub>Connected to power, LEDs lit up.</sub><br>&nbsp;
     </td>
   </tr>

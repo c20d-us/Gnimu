@@ -118,6 +118,19 @@ The power wiring:
 
 The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https://github.com/c20d-us/Gnimu-PCB) repository, in the `gnimu-carrier-xiao-*` folders, one per board revision. Each has a KiCad project and a `fabrication/` folder with gerbers ready to send to a board house. Use the latest revision. Revision v1.1 differs from v1 only in its larger mounting holes (2.7mm, up from 2.2mm) and a printed reminder of the regulator's settings, `PS open · 3V3`; the two are wired identically.
 
+<table>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="../images/PCB/gnimu-carrier-pcb-v1.jpeg" alt="The bare Gnimu carrier PCB, front and back" width="340"><br>
+      <sub>The bare carrier (revision v1), front and back.</sub><br>&nbsp;
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="../images/PCB/gnimu-carrier-pcb-loaded.jpeg" alt="The Gnimu carrier PCB with the XIAO, regulator, resistors and leads fitted" width="340"><br>
+      <sub>Loaded: the XIAO, the XL63070 regulator, the two resistors, and leads<br>for the GNSS, battery, XIAO battery pads and switch.</sub><br>&nbsp;
+    </td>
+  </tr>
+</table>
+
 Everything on it is through-hole, and every position is labelled on the silkscreen. You solder on:
 
 | Silkscreen | Part |
@@ -178,31 +191,31 @@ These photos are of a hand-wired build made for Gnimu Classic. The parts and lay
 <table>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/loose-components.jpeg" alt="Loose components before assembly" width="340"><br>
+      <img src="../images/nRF52840/loose-components.jpeg" alt="Loose components before assembly" width="340"><br>
       <sub>Components before assembly.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/buck-boost-wired.jpeg" alt="Buck-boost regulator wired to the battery and GNSS leads" width="340"><br>
+      <img src="../images/nRF52840/buck-boost-wired.jpeg" alt="Buck-boost regulator wired to the battery and GNSS leads" width="340"><br>
       <sub>Buck-boost regulator wired to the battery and GNSS.</sub><br>&nbsp;
     </td>
   </tr>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/bench-testing.jpeg" alt="Bench testing on a breadboard" width="340"><br>
+      <img src="../images/nRF52840/bench-testing.jpeg" alt="Bench testing on a breadboard" width="340"><br>
       <sub>Bench testing on a breadboard.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/inside-view.jpeg" alt="Components wired and installed in case, held firm by hardening putty." width="340"><br>
+      <img src="../images/nRF52840/inside-view.jpeg" alt="Components wired and installed in case, held firm by hardening putty." width="340"><br>
       <sub>Components wired and installed in case, held firm by hardening putty.</sub><br>&nbsp;
     </td>
   </tr>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/device-complete-right.jpeg" alt="The completed device, powered on." width="340"><br>
+      <img src="../images/nRF52840/device-complete-right.jpeg" alt="The completed device, powered on." width="340"><br>
       <sub>The completed device, powered on and showing USB port.</sub><br>&nbsp;
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="../classic/images/nRF52840/device-complete-left.jpeg" alt="The completed device, powered on." width="340"><br>
+      <img src="../images/nRF52840/device-complete-left.jpeg" alt="The completed device, powered on." width="340"><br>
       <sub>The completed device, powered on and showing slide switch.</sub><br>&nbsp;
     </td>
   </tr>

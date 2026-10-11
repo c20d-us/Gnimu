@@ -121,6 +121,7 @@ tools/                   GNSS utility sketches: identity report, factory reset, 
 tests/                   Host-side unit tests (tests/run.sh)
 scripts/                 build.sh and flash.sh: build and upload with arduino-cli
 docs/                    Build guides and reference documentation
+images/                  Build photos for the current guides
 classic/                 The original firmware, deprecated (see below)
 ```
 
