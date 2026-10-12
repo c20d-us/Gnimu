@@ -8,7 +8,7 @@
 
 # GNSS+IMU motorsports telemetry
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: GPL v3+](https://img.shields.io/badge/License-GPLv3%2B-blue.svg)](LICENSE)
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
@@ -147,4 +147,4 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 ## License
 
-Released under the **GNU General Public License v3.0** — see [`LICENSE`](LICENSE).
+Released under the **GNU General Public License, version 3 or (at your option) any later version** — see [`LICENSE`](LICENSE).
