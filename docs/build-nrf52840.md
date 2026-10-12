@@ -117,7 +117,7 @@ The power wiring:
 
 ## Building it on the carrier PCB
 
-The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https://github.com/c20d-us/Gnimu-PCB) repository, in the `gnimu-carrier-xiao-*` folders, one per board revision. Each has a KiCad project and a `fabrication/` folder with gerbers ready to send to a board house. Use the latest revision. Revision v1.1 differs from v1 only in its larger mounting holes (2.7mm, up from 2.2mm) and a printed reminder of the regulator's settings, `PS open · 3V3`; the two are wired identically.
+The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https://github.com/c20d-us/Gnimu-PCB) repository, under [`boards/gnimu/`](https://github.com/c20d-us/Gnimu-PCB/tree/main/boards/gnimu), one folder per board revision. Each is a KiCad project, and a revision that has been sent out for fabrication also has a `fabrication/` folder with gerbers ready to send to a board house. Use the latest revision that has one. Revision v1.1 differs from v1 only in its larger mounting holes (2.7mm, up from 2.2mm) and a printed reminder of the regulator's settings, `PS open · 3V3`; the two are wired identically.
 
 <table>
   <tr>
