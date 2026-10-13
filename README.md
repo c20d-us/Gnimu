@@ -12,18 +12,20 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a device that emulates the streaming-telemetry function of a [RaceBox Mini](https://www.racebox.pro/products/racebox-mini) motorsports telemetry device. The official RaceBox app and other RaceBox-compatible tools can connect to it over BLE (Bluetooth Low Energy) and read live position, speed, and motion data at up to 25Hz. Emulation does *not* include command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability, so telemetry apps and tools that read that protocol can use it. Only the streaming data is implemented, not the command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
 
-It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, the RaceBox BLE protocol, and sensor fusion built from inexpensive off-the-shelf parts.
+It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, BLE telemetry protocols, and sensor fusion built from inexpensive off-the-shelf parts.
 
 I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
 
 I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
 
-**Note: multi-protocol compatibility.** Right now, Gnimu only emits RaceBox Mini-compatible BLE messages. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats (such as [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device)) to be wired in. I do intend to implement the RaceChrono protocols in a future version, so keep an eye out for that update.
+**Note: multi-protocol compatibility.** Right now, Gnimu streams the RaceBox data protocol only. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats to be wired in, and [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next one I intend to implement. I also intend to implement a from-scratch, purpose-built, Open Source telemetry protocol that stands on its own and delivers GNSS+IMU data in an extensible format. Keep an eye out for those updates.
+
+**Note: the advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` (and `kBleManufacturer`) appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
 
 > [!IMPORTANT]
-> **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
+> **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner, and are used here only to describe the protocol this firmware is compatible with. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
 
 > [!NOTE]
 > **Looking for the original firmware?** The first generation of Gnimu, including the OLED build, now lives in [`classic/`](classic/README.md). It still works, but it is deprecated and no longer receives updates or fixes. See [Gnimu Classic](#gnimu-classic) below.
@@ -32,7 +34,7 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## Supported boards
 
-One firmware, in [`code/Gnimu/`](code/Gnimu/), builds for both boards. The board you select in the Arduino IDE decides which hardware support is compiled in; there is nothing to edit to switch between them. Both advertise the same BLE identity and RaceBox Data Message protocol, so any RaceBox-compatible app should work with either.
+One firmware, in [`code/Gnimu/`](code/Gnimu/), builds for both boards. The board you select in the Arduino IDE decides which hardware support is compiled in; there is nothing to edit to switch between them. Both advertise the same BLE identity and stream the same data protocol, so the same apps work with either.
 
 | | [**ESP32**](docs/build-esp32.md) | [**XIAO nRF52840**](docs/build-nrf52840.md) |
 |---|---|---|
@@ -96,11 +98,11 @@ A few practical notes:
 - If you're connected to serial, **watch the `Trim:` field** on the status line. `⏳` means it hasn't locked yet; `🔒` means it has, and the number beside it is the mounting tilt it measured.
 - **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting. If `Trim:` shows an angle above 15° and stays at `⏳`, the mount is the problem, not the firmware.
 - **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car, so try to not have the calibration step happen when parked on any amount of slope.
-- **A future update will allow on-demand calibration.** Adding on-demand calibration is on my to-do list. I will likely have that triggered by capturing the same BLE write that the RaceBox app does to trigger calibration in the emulated device. Stay tuned.
+- **A future update will allow on-demand calibration.** Adding on-demand calibration is on my to-do list. Stay tuned.
 
 Engine vibration doesn't interfere with the calibration process, so it doesn't matter whether you start the car before calibration or calibrate first.
 
-For what it's worth, the real RaceBox Mini handles this differently. The manual instructs the user to run an accelerometer calibration from the app, and says to *"perform this procedure every time you mount the device."* That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
+For what it's worth, some commercial devices handle this differently, by having the user run an accelerometer calibration from the app every time the device is mounted. That works, but it's a step you can forget, and forgetting it silently tilts your g-force data for the whole session. Doing it in firmware seemed like the better trade, even though it costs some stationary time up front.
 
 The reasoning behind the design is written up in [`docs/imu-trim.md`](docs/imu-trim.md).
 

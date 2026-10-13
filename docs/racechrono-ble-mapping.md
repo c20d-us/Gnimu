@@ -31,13 +31,13 @@ Practical consequences:
 - **No device identity requirements.** No Device Information Service strings, no
   model-name matching, no serial-number range rule. The device name is free-form
   (the reference uses `"RC DIY #A5B2"`, from the low MAC bytes). Contrast with
-  RaceBox, where the DIS strings and the `DEVICE_ID < 4000000000` rule are
-  compatibility requirements.
+  RaceBox, where apps match on the advertised name, the DIS strings and the
+  `DEVICE_ID < 4000000000` rule.
 - **No fragmentation concerns.** The largest frame is 20 bytes, which fits the
   default 23-byte ATT MTU. None of the MTU-raising machinery the RaceBox path
   needs applies here.
 - **This is a published, sanctioned API** for third-party DIY devices — a
-  categorically different posture from emulating a commercial product.
+  categorically different posture from interoperating with a commercial product's protocol.
 
 ---
 

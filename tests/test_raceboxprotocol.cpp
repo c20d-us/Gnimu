@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../code/Gnimu/Config.h"
 #include "../code/Gnimu/src/app/protocol/RaceBox.h"
 
 using namespace gnimu;
@@ -46,7 +47,18 @@ static void testEncodeMatchesTheEncoder() {
   assert(memcmp(viaProtocol, direct, sizeof(direct)) == 0);
 }
 
+static void testDefaultIdentityIsNotRaceBox() {
+  // The shipped identity is Gnimu's own; a build that needs another name
+  // edits Config.h.
+  assert(strncmp(config::kBleNamePrefix, "RaceBox", 7) != 0);
+  assert(strncmp(config::kBleManufacturer, "RaceBox", 7) != 0);
+  // The profile leaves identity to Config.h, so it can't carry one of its own.
+  assert(RaceBoxProtocol::profile().model[0] == '\0');
+  assert(RaceBoxProtocol::profile().manufacturer[0] == '\0');
+}
+
 int main() {
+  testDefaultIdentityIsNotRaceBox();
   testBatteryByte();
   testEncodeMatchesTheEncoder();
   puts("raceboxprotocol: all tests passed");

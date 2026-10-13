@@ -196,6 +196,11 @@ static_assert(kConstellationPriority[0] != kConstellationPriority[1] &&
                   kConstellationPriority[1] != kConstellationPriority[3] &&
                   kConstellationPriority[2] != kConstellationPriority[3],
               "constellation priority must list each system exactly once");
+static_assert(sizeof(kBleNamePrefix) >= 2 && sizeof(kBleNamePrefix) <= 21,
+              "BLE name prefix must be 1-20 characters so the advertised name "
+              "fits in 31 bytes");
+static_assert(sizeof(kBleManufacturer) >= 2,
+              "BLE manufacturer string must not be empty");
 static_assert(kStatusPeriodUs > 0, "status period must be positive");
 static_assert(kGnssSilenceMs > 1000 &&
                   kGnssSilenceMs >= 10 * (1000 / kGnssNavRateHz),

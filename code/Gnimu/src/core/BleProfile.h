@@ -20,11 +20,12 @@ struct BleProfile {
   const char *rxUuid;  // write / write-without-response: phone -> device
 };
 
-// RaceBox compatibility requirements: scanners match the
-// "RaceBox Mini <10 digits>" name plus these services and DIS fields.
+// The RaceBox data protocol's BLE layout. The model and manufacturer are
+// left empty: App fills them from Config.h, the one place the device's
+// identity is set.
 constexpr BleProfile kRaceBoxProfile = {
-    "RaceBox Mini",
-    "RaceBox",
+    "",
+    "",
     "3.3",
     "1",
     "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",

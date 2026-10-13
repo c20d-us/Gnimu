@@ -51,6 +51,12 @@ constexpr unsigned kConstellationCount = 2;
 // ESP32: -12 to +9 dBm in 3 dB steps
 // nRF52840: -40, -20, -16, -12, -8, -4, 0 or 2..8 dBm
 constexpr int kBleTxPowerDbm = -12;
+// Advertised name is "<prefix> <10-digit device ID>"; the prefix is also the
+// Device Information model string. Some apps pick devices out of a scan by
+// the name they expect, so change it if yours does. Up to 20 characters.
+constexpr char kBleNamePrefix[] = "Gnimu-RB";
+// Device Information manufacturer string.
+constexpr char kBleManufacturer[] = "Gnimu";
 
 // IMU
 

@@ -51,7 +51,12 @@ Each board accepts only the levels its radio supports:
 - **ESP32:** -12 to +9 dBm, in 3 dB steps.
 - **XIAO nRF52840:** -40, -20, -16, -12, -8, -4, 0, or 2 to 8 dBm.
 
-The BLE name is not a setting. It is `RaceBox Mini` followed by a 10-digit ID derived from the chip's hardware ID, so every device has a stable name of its own from the same firmware image.
+The advertised BLE name is `kBleNamePrefix` followed by a 10-digit ID derived from the chip's hardware ID, so every device has a stable name of its own from the same firmware image. The prefix is also the Device Information model string.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `kBleNamePrefix` | `"Gnimu-RB"` | The advertised-name prefix, up to 20 characters. Some apps pick devices out of a scan by the name they expect, so change it if yours does. |
+| `kBleManufacturer` | `"Gnimu"` | The Device Information manufacturer string. |
 
 ---
 
@@ -109,7 +114,7 @@ The percentage is a straight line from the cutoff (0%) to full scale (100%). The
 |---|---|---|
 | `kProtocol` | `Protocol::RaceBox` | Which BLE protocol the firmware speaks. |
 
-RaceBox is the only protocol available today.
+The RaceBox data protocol is the only one available today. [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is planned.
 
 ---
 

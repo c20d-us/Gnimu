@@ -15,7 +15,7 @@
 
 namespace gnimu {
 
-// The RaceBox Mini protocol: its BLE layout, its 88-byte data packet, and its
+// The RaceBox data protocol: its BLE layout, its 88-byte data packet, and its
 // inbound commands (none handled yet). Pure - no hardware - so it's
 // host-testable; App hands the encoded packet to BLE.
 class RaceBoxProtocol {

@@ -103,7 +103,7 @@ GNSS: PVT callback and auto PVT output enabled ✅
 IMU: MPU-6050 detected ✅
 IMU: configured, 4g 500deg/s ✅
 BLE: TX power -12 dBm (advertising and connected) ✅
-BLE: advertising as "RaceBox Mini 0301821570" ✅
+BLE: advertising as "Gnimu-RB 0301821570" ✅
 Clock: crystal ✅
 Job gnss: every 1000 us, budget 4000 us
 Job imu: every 10000 us, budget 1000 us
@@ -178,7 +178,7 @@ GNSS: PVT callback and auto PVT output enabled ✅
 IMU: LSM6DS3TR-C detected ✅
 IMU: configured, 4g 500deg/s ✅
 BLE: TX power -12 dBm ✅
-BLE: advertising as "RaceBox Mini 1120954722" ✅
+BLE: advertising as "Gnimu-RB 1120954722" ✅
 Clock: crystal ✅
 Job gnss: every 1000 us, budget 4000 us
 Job imu: every 10000 us, budget 1000 us
@@ -197,7 +197,7 @@ Commands end with Enter: D = report, C = clear statistics counters, V = version,
 
 The `BUILD` line identifies the firmware. See [the build stamp](building.md#the-build-stamp) for why an Arduino IDE build shows placeholders in it.
 
-The **device ID** is a 10-digit number derived from the chip's own hardware ID. It is the same on every boot and different on every board, and it is the number in the BLE name the device advertises: `RaceBox Mini <device ID>`.
+The **device ID** is a 10-digit number derived from the chip's own hardware ID. It is the same on every boot and different on every board, and it is the number in the BLE name the device advertises: `Gnimu-RB <device ID>`.
 
 ### GNSS settings
 

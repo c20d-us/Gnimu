@@ -16,7 +16,7 @@ You don't have to migrate. Classic still works on the hardware it was written fo
 
 **Write down the settings you changed.** If you edited Classic's `config.h`, note the values you changed from the defaults. The settings are in a different file with different names now; the tables below map them.
 
-**Expect a new BLE name.** Classic advertised as `RaceBox Mini` followed by the `DEVICE_ID` you chose. The current firmware derives that number from the chip's hardware ID instead, so your device will show up under a different name. Connect to the new name in your app, and remove the old device from the app if it keeps a list. The new name is stable: it will be the same on every boot from now on. The boot log prints it as `Device ID`.
+**Expect a new BLE name.** Classic advertised as `RaceBox Mini` followed by the `DEVICE_ID` you chose. The current firmware advertises as `Gnimu-RB` followed by a number derived from the chip's hardware ID instead, so your device will show up under a different name. Connect to the new name in your app, and remove the old device from the app if it keeps a list. The new name is stable: it will be the same on every boot from now on. The prefix can be changed in `Config.h` (`kBleNamePrefix`) for apps that look for a particular name. The boot log prints it as `Device ID`.
 
 Then build and flash as described in [Building and flashing](building.md). There is nothing you have to edit first on an ESP32.
 

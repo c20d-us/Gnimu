@@ -20,9 +20,9 @@ This page covers the hardware. For the software side, see [Building and flashing
 
 - Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
 - Reads **acceleration and rotation** from the XIAO's **onboard 6-axis IMU** (LSM6DS3TR-C) at 100Hz, levels it and removes gyro bias with a calibration learned while stationary, and smooths it.
-- Packs the GNSS and IMU data into a **RaceBox Data Message** and streams it over **BLE** to a RaceBox-compatible client, one packet per GNSS update.
+- Packs the GNSS and IMU data into a **RaceBox Data Message** and streams it over **BLE** to a compatible telemetry app, one packet per GNSS update.
 - **Runs on battery.** Reads its own LiPo voltage, reports state of charge and charging status in the RaceBox protocol's battery byte, and enforces a **firmware low-voltage cutoff** to protect the cell.
-- Advertises a BLE **Device Information Service** and a **Battery Service**, so official apps recognize it, pair with it, and display the cell's state.
+- Advertises a BLE **Device Information Service** and a **Battery Service**, so apps can identify it, pair with it, and display the cell's state.
 - Drives an **RGB status LED** for advertising, connected, low battery, charging, and faults.
 - Reports what it's doing over **USB serial**: a boot log, an on-demand diagnostics report, and an optional 1Hz status line.
 
@@ -34,7 +34,7 @@ flowchart LR
     VDIV["510kΩ + 510kΩ divider"] -- "to A0" --> XIAO
     XIAO -. "D1 to EN" .-> BB["TPS63070 buck-boost"]
     BB -- "3.3V" --> GNSS
-    XIAO -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
+    XIAO -- "BLE notify · RaceBox data protocol" --> App["telemetry app"]
 ```
 
 ---
@@ -259,7 +259,7 @@ The thresholds are in [Configuration](configuration.md#battery), and the full se
 1. Charge the LiPo before using the device away from USB.
 2. Mount the device level, with the XIAO's **USB connector toward the rear of the car**, slide the switch on, and give the GNSS time to acquire a fix. The LED **blinks blue** while waiting for an app.
 3. The M100's own LEDs report GNSS status (see the table below).
-4. In the **RaceBox app** (or another RaceBox-compatible client), scan for and connect to the device. It advertises as `RaceBox Mini` followed by a 10-digit ID, which the boot log prints as `Device ID`.
+4. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID`. If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
 5. On connect, the LED turns **solid blue** and the device begins streaming data packets.
 6. Leave it parked and still for the first minute or two so it can calibrate itself to its mounting. See the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 7. Optional: with USB connected and a serial monitor open, type `L` and Enter for a 1Hz status line. See [Console and diagnostics](console.md).

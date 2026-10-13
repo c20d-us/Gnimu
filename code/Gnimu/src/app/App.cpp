@@ -169,9 +169,12 @@ Transition App::enter(RunState s) {
       if (Protocol::kUsesImu) imu_.begin(console_);
       Watchdog::feed();
       // Last: advertise only once there's something to stream.
+      BleProfile profile = Protocol::profile();
+      profile.model = config::kBleNamePrefix;
+      profile.manufacturer = config::kBleManufacturer;
       char name[32];
-      snprintf(name, sizeof(name), "%s %s", Protocol::profile().model, deviceId_);
-      const bool advertising = ble_.begin(Protocol::profile(), name, deviceId_, console_);
+      snprintf(name, sizeof(name), "%s %s", profile.model, deviceId_);
+      const bool advertising = ble_.begin(profile, name, deviceId_, console_);
       // After BLE: once the nRF's SoftDevice runs, the clock request has to
       // go through it. Boot until here runs on whatever clock is up.
       console_.log("Clock: crystal %s",

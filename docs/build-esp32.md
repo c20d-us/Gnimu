@@ -13,15 +13,15 @@ This page covers the hardware. For the software side, see [Building and flashing
 
 - Reads a live [**GNSS fix**](https://en.wikipedia.org/wiki/Satellite_navigation) (position, altitude, speed, heading, accuracy, fix status, satellite count) from a u-blox GNSS receiver.
 - Reads **acceleration and rotation** from a 6-axis [**IMU**](https://en.wikipedia.org/wiki/Inertial_measurement_unit) at 100Hz, levels it and removes gyro bias with a calibration learned while stationary, and smooths it.
-- Packs the GNSS and IMU data into a **RaceBox Data Message** and streams it over **BLE** to a RaceBox-compatible client, one packet per GNSS update.
-- Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so official apps recognize and pair with it.
+- Packs the GNSS and IMU data into a **RaceBox Data Message** and streams it over **BLE** to a compatible telemetry app, one packet per GNSS update.
+- Advertises a BLE **Device Information Service** (model, serial, firmware, hardware, manufacturer) so apps can identify and pair with it.
 - Reports what it's doing over **USB serial**: a boot log, an on-demand diagnostics report, and an optional 1Hz status line.
 
 ```mermaid
 flowchart LR
     GNSS["u-blox GNSS module"] -- "UART · 115200 baud" --> ESP32["ESP32"]
     IMU["accel + gyro"] -- "I²C" --> ESP32
-    ESP32 -- "BLE notify · RaceBox UBX packets" --> App["RaceBox-compatible app"]
+    ESP32 -- "BLE notify · RaceBox data protocol" --> App["telemetry app"]
 ```
 
 ---
@@ -88,8 +88,8 @@ Before you rely on the GNSS module at 20Hz or more, read the notes on GNSS modul
 Photos of the reference build, from loose components to the finished, enclosed unit. Several shots show an **RF shield** fitted over the electronics. It's a hardware counterpart to the firmware's reduced BLE power, further isolating the GNSS receiver from radio noise (see [A note on BLE power and GNSS lock](#a-note-on-ble-power-and-gnss-lock)).
 
 <div align="center">
-  <img src="../images/ESP32/completed-emulator.jpeg" alt="The finished RaceBox Mini emulator" width="520"><br>
-  <sub>The completed emulator, decorated with the stickers that came with the GNSS module<br>and an indicator of which end points forward (for Gyro/Accelerometer).</sub><br>&nbsp;
+  <img src="../images/ESP32/completed-emulator.jpeg" alt="The finished Gnimu device" width="520"><br>
+  <sub>The completed device, decorated with the stickers that came with the GNSS module<br>and an indicator of which end points forward (for Gyro/Accelerometer).</sub><br>&nbsp;
 </div>
 
 <table>
@@ -148,7 +148,7 @@ Open the Serial Monitor at **115200 baud** for the first boot. The [boot log](co
 ## Usage
 
 1. Power the assembled device over USB and give the GNSS module time to acquire a fix. The onboard LED blinks slowly while no app is connected.
-2. In the **RaceBox app** (or another RaceBox-compatible client), scan for and connect to the device. It advertises as `RaceBox Mini` followed by a 10-digit ID, which the boot log prints as `Device ID`.
+2. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID`. If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
 3. On connect, the LED goes solid and the device begins streaming data packets.
 4. Leave it parked and still for the first minute or two so it can calibrate itself to its mounting. See the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 5. Optional: keep a serial monitor open and type `L` and Enter for a 1Hz status line. See [Console and diagnostics](console.md).
