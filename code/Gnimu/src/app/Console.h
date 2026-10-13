@@ -42,7 +42,8 @@ class Console {
   uint32_t dropped() const { return dropped_; }
 
  private:
-  void emit(const char* p, size_t n);
+  void emit(const char* text, size_t n);
+  void sendLine(const char* line, size_t len);
 
   ConsoleEntry<config::kStatusMaxCount> entry_;
   uint32_t dropped_ = 0;

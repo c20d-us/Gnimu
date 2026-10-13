@@ -26,9 +26,10 @@ struct StatusRates {
 };
 
 // The longest status line, newline included, plus its terminator. The console
-// sends a line whole or not at all, and the nRF's USB transmit FIFO is 256
-// bytes, so a longer line could never be sent there. test_statusline checks
-// the worst case fits.
+// sends a line whole or not at all, with the newline as CR+LF, and the nRF's
+// USB transmit FIFO is 256 bytes: 254 bytes of text plus CR+LF fills it
+// exactly, and a longer line could never be sent there. test_statusline
+// checks the worst case fits.
 constexpr size_t kStatusLineMaxBytes = 256;
 
 namespace detail {

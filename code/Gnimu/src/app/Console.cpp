@@ -52,22 +52,12 @@ void Console::printReport(const JobTable& jobs, const DeviceStatus& status) {
   // Static rather than on the loop task's stack, which is only a few KB on
   // the nRF.
   static char buf[kReportMaxBytes];
-  const size_t n = formatReport(buf, sizeof(buf), jobs, status);
-  // A line at a time: the whole report is bigger than the USB buffer, but
-  // each line fits, so emit() can send or drop it whole.
-  size_t start = 0;
-  for (size_t i = 0; i < n; i++) {
-    if (buf[i] != '\n') continue;
-    emit(buf + start, i + 1 - start);
-    start = i + 1;
-  }
-  if (start < n) emit(buf + start, n - start);
+  emit(buf, formatReport(buf, sizeof(buf), jobs, status));
 }
 
 void Console::printStatus(const DeviceStatus& status, const StatusRates& rates) {
   char buf[kStatusLineMaxBytes];
-  const size_t n = formatStatus(buf, sizeof(buf), status, rates);
-  emit(buf, n);
+  emit(buf, formatStatus(buf, sizeof(buf), status, rates));
 }
 
 void Console::flush() {
@@ -78,37 +68,51 @@ void Console::flush() {
 }
 
 void Console::log(const char* fmt, ...) {
-  // Formatted into the first 160 bytes, then CR+LF, so the line goes out in
-  // one emit().
-  char buf[162];
+  char buf[160];
   va_list ap;
   va_start(ap, fmt);
-  const int r = vsnprintf(buf, 160, fmt, ap);
+  const int r = vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
-  size_t n = r < 0 ? 0 : (r < 160 ? static_cast<size_t>(r) : 159);
-  buf[n++] = '\r';
-  buf[n++] = '\n';
-  emit(buf, n);
+  // vsnprintf returns the untruncated length; the buffer holds one less than
+  // its size.
+  const size_t n = r < 0 ? 0 : static_cast<size_t>(r);
+  emit(buf, n < sizeof(buf) ? n : sizeof(buf) - 1);
 }
 
-// Sends a line whole or drops it whole, waiting at most kConsoleWaitUs for
-// room, so a host that holds the port open without reading can't stall the
-// loop. Every line is under the nRF's 256-byte USB buffer, so it always fits
-// once the host reads. With no host listening (no DTR on native USB) output is
-// discarded uncounted; the ESP32's UART is
-// always "listening".
-void Console::emit(const char* p, size_t n) {
-  if (n == 0 || !Serial) return;
+// Sends text to the console a line at a time, each ending in CR+LF whatever
+// the text used: '\n' separates lines, and a last line without one is sent
+// the same way. The whole report is bigger than the nRF's 256-byte USB buffer,
+// which is why output goes a line at a time. With no host listening (no DTR on
+// native USB) output is discarded uncounted; the ESP32's UART is always
+// "listening".
+void Console::emit(const char* text, size_t n) {
+  if (!Serial) return;
+  size_t start = 0;
+  for (size_t i = 0; i < n; i++) {
+    if (text[i] != '\n') continue;
+    sendLine(text + start, i - start);
+    start = i + 1;
+  }
+  if (start < n) sendLine(text + start, n - start);
+}
+
+// Sends one line and its CR+LF whole, or drops both, waiting at most
+// kConsoleWaitUs for room, so a host that holds the port open without reading
+// can't stall the loop. Every line with its CR+LF fits the nRF's USB buffer,
+// so it's always sent once the host reads.
+void Console::sendLine(const char* line, size_t len) {
+  const size_t wire = len + 2;
   // PlatformClock, not micros(): the nRF core's micros() only advances once
   // per 1 ms RTOS tick, too coarse to time a 2 ms wait.
   const uint64_t start = PlatformClock::nowUs();
-  while (static_cast<size_t>(Serial.availableForWrite()) < n) {
+  while (static_cast<size_t>(Serial.availableForWrite()) < wire) {
     if (PlatformClock::nowUs() - start >= config::kConsoleWaitUs) {
-      dropped_ += n;
+      dropped_ += wire;
       return;
     }
   }
-  Serial.write(reinterpret_cast<const uint8_t*>(p), n);
+  Serial.write(reinterpret_cast<const uint8_t*>(line), len);
+  Serial.write(reinterpret_cast<const uint8_t*>("\r\n"), 2);
 }
 
 }  // namespace gnimu
