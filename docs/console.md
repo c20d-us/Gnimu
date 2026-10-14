@@ -116,7 +116,8 @@ Job ble: every 10000 us, budget 2000 us
 Job led: every 25000 us, budget 500 us
 Job console: every 10000 us, budget 2000 us
 Running.
-Commands end with Enter: D = report, C = clear statistics counters, V = version, L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
+Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart.
+L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 ```
 
 </details>
@@ -191,7 +192,8 @@ Job ble: every 10000 us, budget 2000 us
 Job led: every 25000 us, budget 500 us
 Job console: every 10000 us, budget 2000 us
 Running.
-Commands end with Enter: D = report, C = clear statistics counters, V = version, L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
+Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart, O = System OFF.
+L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 ```
 
 </details>

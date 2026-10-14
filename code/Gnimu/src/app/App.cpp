@@ -115,10 +115,13 @@ void App::begin() {
     }
   }
   scheduler_.start();
-  // Two lines: together they'd pass Console::log's 160-character limit.
+  // Separate lines: together they'd pass Console::log's 160-character limit.
   console_.log("%s.", stateName(machine_.state()));
+  // O only where System OFF exists: elsewhere it just says it isn't available.
   console_.log("Commands end with Enter: D = report, C = clear statistics counters, V = version, "
-               "L = 1s status on/off (up to %lu lines), N = N status reports (0-%lu).",
+               "T = re-trim IMU, R = restart%s.",
+               board::kHasBattery ? ", O = System OFF" : "");
+  console_.log("L = 1s status on/off (up to %lu lines), N = N status reports (0-%lu).",
                static_cast<unsigned long>(config::kStatusMaxCount),
                static_cast<unsigned long>(config::kStatusMaxCount));
 }
