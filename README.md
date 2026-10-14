@@ -69,6 +69,7 @@ This firmware is a ground-up rewrite of the original Gnimu. The device does the 
 - **Nothing to set per device.** The BLE name is derived from the chip's hardware ID, so every unit gets a stable, unique name from the same firmware image.
 - **Faults instead of hangs.** A missing or silent GNSS receiver puts the device into a fault state with a red LED and a working console, and a watchdog restarts the firmware if it ever stalls.
 - **A serial console.** A boot log that reports every step, an on-demand diagnostics report, and an optional 1Hz status line.
+- **Device commands.** Re-trim the IMU, restart, or switch the device off, from the serial console or over BLE. See [Device commands](docs/device-commands.md).
 - **Simpler power states on battery.** Running, waiting for the switch, charge-only, and a low-voltage cutoff that protects the cell.
 - **Tests.** The hardware-independent logic is unit-tested on the host, and CI builds both boards.
 
