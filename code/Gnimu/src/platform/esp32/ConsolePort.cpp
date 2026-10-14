@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 
+#include "../../app/SystemConfig.h"
 #include "../ConsolePort.h"
 
 namespace gnimu {
@@ -20,8 +21,10 @@ void consoleOpen() {
   // The core's default is no TX buffer, only the UART's 128-byte FIFO, so any
   // longer print blocks the loop until it's on the wire (~15 ms for a status
   // line, ~95 ms for D at 115200). With a buffer, writes return at once and
-  // the UART interrupt drains it. Must be set before begin().
-  Serial.setTxBufferSize(2048);
+  // the UART interrupt drains it. Must be set before begin(). It has to hold
+  // a whole D report, or the lines that don't fit are dropped after a wait
+  // that stalls the loop.
+  Serial.setTxBufferSize(config::kConsoleTxBufferBytes);
   Serial.begin(115200);
   delay(750);
 }

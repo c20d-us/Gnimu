@@ -18,7 +18,7 @@ Type a command and press **Enter**. Set the terminal to send a line ending (CR, 
 |---|---|
 | `D` | Prints the [diagnostics report](#the-diagnostics-report). |
 | `C` | Clears the statistics counters, so the next report covers only what happens from now on. |
-| `V` | Prints [what the device is](#what-the-device-is): the build line, the device ID, and the settings the firmware was built with. |
+| `V` | Prints [what the device is](#what-the-device-is): the build line, the device ID, and the settings the firmware was built with. A BLE client can [read the same text](device-commands.md#reading-the-configuration). |
 | `L` | Turns the [status line](#the-status-line) on or off. Left on, it stops by itself after 3600 lines (one hour). |
 | `T` | Drops the locked [IMU trim](imu-trim.md) and measures a new one at the next stop. Does nothing if no trim has locked yet. |
 | `R` | Restarts the device. The next boot's `Reset:` line says `Restart requested`. |

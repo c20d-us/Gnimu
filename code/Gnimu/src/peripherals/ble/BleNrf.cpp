@@ -38,6 +38,8 @@ constexpr uint16_t kAdvFastTimeoutS = 30;
 BLEService* service = nullptr;
 BLECharacteristic* tx = nullptr;
 BLECharacteristic* rx = nullptr;
+BLEService* gnimuService = nullptr;
+BLECharacteristic* configChar = nullptr;
 BLEDis deviceInfo;
 BLEBas batteryService;
 std::atomic<bool> linkUp{false};
@@ -103,6 +105,20 @@ bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Co
     rx->setMaxLen(maxMtu);
     rx->setWriteCallback(onRxWrite, true);
     rx->begin();
+
+    // The Gnimu service: its configuration as text, read on demand. Its own
+    // service, so RaceBox-protocol clients never see anything unfamiliar in
+    // theirs. A value longer than the MTU is read in pieces by the stack.
+    if (p.configReport) {
+      gnimuService = new BLEService(BLEUuid(kGnimuServiceUuid));
+      gnimuService->begin();
+      configChar = new BLECharacteristic(BLEUuid(kGnimuConfigUuid));
+      configChar->setProperties(CHR_PROPS_READ);
+      configChar->setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+      configChar->setMaxLen(kConfigReportMaxBytes);
+      configChar->begin();
+      configChar->write(p.configReport, static_cast<uint16_t>(strlen(p.configReport)));
+    }
 
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();

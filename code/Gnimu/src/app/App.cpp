@@ -172,6 +172,11 @@ Transition App::enter(RunState s) {
       BleProfile profile = Protocol::profile();
       profile.model = config::kBleNamePrefix;
       profile.manufacturer = config::kBleManufacturer;
+      // The transport copies it, so a static local the begin() call outlives
+      // is enough; static to keep it off the loop's few-KB stack.
+      static char configReport[kConfigReportMaxBytes];
+      diagnostics_.formatVersion(configReport, sizeof(configReport));
+      profile.configReport = configReport;
       char name[32];
       snprintf(name, sizeof(name), "%s %s", profile.model, deviceId_);
       const bool advertising = ble_.begin(profile, name, deviceId_, console_);

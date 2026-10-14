@@ -115,6 +115,15 @@ bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, 
       info->createCharacteristic(f.uuid, BLECharacteristic::PROPERTY_READ)->setValue(f.value);
     info->start();
 
+    // The Gnimu service: its configuration as text, read on demand, kept
+    // apart from the protocol's service. Not advertised; found by discovery.
+    if (p.configReport) {
+      BLEService* gnimu = server->createService(kGnimuServiceUuid);
+      gnimu->createCharacteristic(kGnimuConfigUuid, BLECharacteristic::PROPERTY_READ)
+          ->setValue(reinterpret_cast<uint8_t*>(const_cast<char*>(p.configReport)), strlen(p.configReport));
+      gnimu->start();
+    }
+
     BLEAdvertising* adv = BLEDevice::getAdvertising();
     adv->addServiceUUID(p.serviceUuid);
     adv->addServiceUUID(kDeviceInfoUuid);

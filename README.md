@@ -53,7 +53,7 @@ Start with the build guide for whichever hardware you're building (links at the 
 | [Building and flashing](docs/building.md) | Arduino IDE and `arduino-cli` setup, library versions, the build script, and the host tests |
 | [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing and mounting, battery thresholds |
 | [Console and diagnostics](docs/console.md) | The boot log, the serial commands, the diagnostics report, and the 1Hz status line |
-| [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE |
+| [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE, and reading the configuration over BLE |
 | [Architecture](docs/architecture.md) | How the code is organized, the fixed-rate scheduler, and the run and power states |
 | [Migrating from Classic](docs/migrating-from-classic.md) | What changes if you already have a Classic build |
 
@@ -69,7 +69,7 @@ This firmware is a ground-up rewrite of the original Gnimu. The device does the 
 - **Nothing to set per device.** The BLE name is derived from the chip's hardware ID, so every unit gets a stable, unique name from the same firmware image.
 - **Faults instead of hangs.** A missing or silent GNSS receiver puts the device into a fault state with a red LED and a working console, and a watchdog restarts the firmware if it ever stalls.
 - **A serial console.** A boot log that reports every step, an on-demand diagnostics report, and an optional 1Hz status line.
-- **Device commands.** Re-trim the IMU, restart, or switch the device off, from the serial console or over BLE. See [Device commands](docs/device-commands.md).
+- **Device commands.** Re-trim the IMU, restart, or switch the device off, from the serial console or over BLE, and read the device's configuration over BLE. See [Device commands](docs/device-commands.md).
 - **Simpler power states on battery.** Running, waiting for the switch, charge-only, and a low-voltage cutoff that protects the cell.
 - **Tests.** The hardware-independent logic is unit-tested on the host, and CI builds both boards.
 

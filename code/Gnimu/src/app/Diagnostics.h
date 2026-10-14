@@ -13,6 +13,7 @@
 #include "../core/ResetReason.h"
 #include "../core/RunStateMachine.h"
 #include "../core/Scheduler.h"
+#include "../core/TextOut.h"
 #include "../peripherals/ble/BleTransport.h"
 #include "../peripherals/imu/ImuDevice.h"
 #include "Console.h"
@@ -54,6 +55,10 @@ class Diagnostics {
   // What this device is: the build, the device ID, and the settings the build
   // was compiled with. The V command, and the top of the boot log.
   void printVersion();
+  // The same text for `buf`, lines separated by '\n'; truncated, never
+  // overrun. What a BLE client reads from the config characteristic. Returns
+  // the length.
+  size_t formatVersion(char* buf, size_t cap) const;
 
  private:
   // Arms (or disarms, with count == 0) periodic status reporting and resets
@@ -62,7 +67,7 @@ class Diagnostics {
   void armStatus(uint32_t count);
   // One "Config:" line per group of settings. They are compile-time values,
   // shown so a device can be asked what it was built with.
-  void printConfig();
+  void putConfig(detail::Out& o) const;
   // The device's state now, for the D report and the status line alike.
   DeviceStatus snapshot(uint64_t nowUs) const;
   void printReport();

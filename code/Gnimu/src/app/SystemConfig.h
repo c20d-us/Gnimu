@@ -62,6 +62,11 @@ constexpr uint32_t kConsoleBudgetUs = 2000;
 // reading; this keeps every write well inside the time the GNSS RX ring
 // takes to fill (~5 ms on the nRF's 64-byte ring).
 constexpr uint32_t kConsoleWaitUs = 2000;
+// The ESP32's console TX buffer, which has to take a whole report at once: the
+// loop writes it faster than the UART drains it. Each write also costs the
+// buffer a fixed header, and a line is two writes, so Console.h checks it
+// against twice the report's size.
+constexpr size_t kConsoleTxBufferBytes = 4096;
 // BLE housekeeping: connection-edge logging. Sends
 // happen from the GNSS job as each epoch lands, not from this job.
 constexpr uint32_t kBlePeriodUs = 10000;

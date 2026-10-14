@@ -25,3 +25,18 @@ Each command is a single write of its eight bytes; a command split across writes
 The last two bytes are the 8-bit Fletcher checksum over class, id and length, as UBX defines it.
 
 The device requires no pairing, so any client in range can connect and send these. That is acceptable for a device with no protected data, but worth knowing.
+
+## Reading the configuration
+
+A client can also read what the device is, as text: the same lines the console's `V` command prints. It lives in its own service, apart from the telemetry service, so clients that only stream telemetry never see it.
+
+| | UUID |
+|---|---|
+| Gnimu service | `20D21CDE-F59E-41F1-9BCA-5BDE69876C8B` |
+| Configuration (read) | `689E54CD-60B0-473A-B049-A5E02A2716E0` |
+
+- **Not advertised.** Find it by discovering the device's services once connected. A client that cached the device's services before this was added needs to refresh them.
+- **Read the whole value.** It is up to 512 bytes, longer than one BLE packet, so use a long read (most BLE tools do this automatically).
+- **UTF-8 text, one line per `\n`.** The first line is the `BUILD` line, which carries the firmware version and revision; read the rest against that. Lines begin `Device ID:` or `Config:`. New lines may be added in later versions, and a client should ignore any it doesn't recognise.
+- **Fixed at boot.** The values are what the firmware was built with. The device never accepts changes through this characteristic.
+

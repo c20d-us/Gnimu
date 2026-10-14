@@ -124,11 +124,19 @@ void Diagnostics::printStatus(uint64_t nowUs) {
 }
 
 void Diagnostics::printVersion() {
+  // Static, not on the loop's few-KB stack.
+  static char text[kConfigReportMaxBytes];
+  console_.print(text, formatVersion(text, sizeof(text)));
+}
+
+size_t Diagnostics::formatVersion(char* buf, size_t cap) const {
+  detail::Out o{buf, cap, 0};
   char line[192];
   formatBuildLine(line, sizeof(line), buildInfo());
-  console_.log("%s", line);
-  console_.log("Device ID: %s", deviceId_);
-  printConfig();
+  o.put("%s\n", line);
+  o.put("Device ID: %s\n", deviceId_);
+  putConfig(o);
+  return o.len;
 }
 
 namespace {
@@ -139,38 +147,38 @@ unsigned centi(float v) { return static_cast<unsigned>(v * 100.0f + 0.5f); }
 
 }  // namespace
 
-void Diagnostics::printConfig() {
+void Diagnostics::putConfig(detail::Out& o) const {
   if (board::kWiringName) {
-    console_.log("Config: board %s, wiring %s", buildInfo().target, board::kWiringName);
+    o.put("Config: board %s, wiring %s\n", buildInfo().target, board::kWiringName);
   } else {
-    console_.log("Config: board %s", buildInfo().target);
+    o.put("Config: board %s\n", buildInfo().target);
   }
 
   char gnss[64];
-  detail::Out o{gnss, sizeof(gnss), 0};
+  detail::Out g{gnss, sizeof(gnss), 0};
   for (unsigned i = 0; i < config::kConstellationCount; i++)
-    o.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
-  console_.log("Config: GNSS %s, %u Hz, %s, min elevation %u\xC2\xB0", gnss,
-               static_cast<unsigned>(config::kGnssNavRateHz), dynamicModelName(config::kGnssDynamicModel),
-               static_cast<unsigned>(config::kGnssMinElevDeg));
+    g.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
+  o.put("Config: GNSS %s, %u Hz, %s, min elevation %u\xC2\xB0\n", gnss,
+        static_cast<unsigned>(config::kGnssNavRateHz), dynamicModelName(config::kGnssDynamicModel),
+        static_cast<unsigned>(config::kGnssMinElevDeg));
 
   char axes[24];
   formatAxisMap(axes, sizeof(axes), ImuDevice::axisMap());
   const unsigned accel = centi(config::kImuAccelAlpha), gyro = centi(config::kImuGyroAlpha);
-  console_.log("Config: IMU axes %s, smoothing accel %u.%02u gyro %u.%02u", axes, accel / 100,
-               accel % 100, gyro / 100, gyro % 100);
+  o.put("Config: IMU axes %s, smoothing accel %u.%02u gyro %u.%02u\n", axes, accel / 100,
+        accel % 100, gyro / 100, gyro % 100);
 
-  console_.log("Config: BLE %s, name \"%s %s\", TX power %d dBm", Protocol::name(),
-               config::kBleNamePrefix, deviceId_, config::kBleTxPowerDbm);
+  o.put("Config: BLE %s, name \"%s %s\", TX power %d dBm\n", Protocol::name(),
+        config::kBleNamePrefix, deviceId_, config::kBleTxPowerDbm);
 
   if (board::kHasBattery) {
     const unsigned cutoff = centi(config::kBatteryCutoffV), critical = centi(config::kBatteryCriticalV),
                    warning = centi(config::kBatteryWarningV), scale = centi(config::kBatteryFullScaleV),
                    full = centi(config::kBatteryChargeFullV);
-    console_.log("Config: battery cutoff %u.%02uV, critical %u.%02uV, warning %u.%02uV, "
-                 "100%% at %u.%02uV, charged at %u.%02uV",
-                 cutoff / 100, cutoff % 100, critical / 100, critical % 100, warning / 100,
-                 warning % 100, scale / 100, scale % 100, full / 100, full % 100);
+    o.put("Config: battery cutoff %u.%02uV, critical %u.%02uV, warning %u.%02uV, "
+          "100%% at %u.%02uV, charged at %u.%02uV\n",
+          cutoff / 100, cutoff % 100, critical / 100, critical % 100, warning / 100,
+          warning % 100, scale / 100, scale % 100, full / 100, full % 100);
   }
 }
 

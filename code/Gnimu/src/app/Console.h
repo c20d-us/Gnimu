@@ -14,6 +14,9 @@
 
 namespace gnimu {
 
+static_assert(config::kConsoleTxBufferBytes >= 2 * kReportMaxBytes,
+              "the ESP32 console buffer must hold a whole report plus its per-write overhead");
+
 // One poll() result: a command letter, a status count, or neither.
 struct ConsoleCommand {
   CommandKind kind = CommandKind::None;
@@ -34,6 +37,8 @@ class Console {
   ConsoleCommand poll();
   void printReport(const JobTable& jobs, const DeviceStatus& status);
   void printStatus(const DeviceStatus& status, const StatusRates& rates);
+  // Text of several '\n'-separated lines, sent a line at a time like a report.
+  void print(const char* text, size_t n) { emit(text, n); }
   // Boot-time and exception messages; one line each.
   void log(const char* fmt, ...) __attribute__((format(printf, 2, 3)));
   // Lets queued output reach the host before a reset or System OFF.
