@@ -16,8 +16,8 @@ struct BleProfile {
   const char *firmwareRevision;
   const char *hardwareRevision;
   const char *serviceUuid;
-  const char *txUuid;  // notify: device -> phone
-  const char *rxUuid;  // write / write-without-response: phone -> device
+  const char *txUuid;  // notify: device -> client
+  const char *rxUuid;  // write / write-without-response: client -> device
 };
 
 // The RaceBox data protocol's BLE layout. The model and manufacturer are

@@ -11,7 +11,7 @@ namespace gnimu {
 // IMU trim: runtime levelling and gyro de-biasing. While the vehicle is
 // confirmed stationary it learns an accelerometer correction (a rotation onto
 // vehicle-up plus a residual that makes the resting magnitude exactly 1 g,
-// measured once per power cycle and then locked) and the gyro's per-axis zero
+// measured once per power cycle, or on request, and then locked) and the gyro's per-axis zero
 // offsets (refined at every qualifying stop). Why each is handled that way is
 // in docs/imu-trim.md.
 //
@@ -71,6 +71,12 @@ class ImuTrim {
   // True once the orientation has been measured and LOCKED. False at boot,
   // and false as long as every measured tilt has exceeded cfg.maxTiltDeg.
   bool converged() const { return converged_; }
+
+  // Drops a locked orientation and starts qualifying a new one from the next
+  // stop; the gyro offsets are kept, since they refine at every stop anyway.
+  // Returns false, changing nothing, when no orientation is locked: an
+  // unlocked trim is already qualifying.
+  bool retrim();
 
  private:
   void rebuildRotation();

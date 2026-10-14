@@ -20,6 +20,9 @@ Type a command and press **Enter**. Set the terminal to send a line ending (CR, 
 | `C` | Clears the statistics counters, so the next report covers only what happens from now on. |
 | `V` | Prints [what the device is](#what-the-device-is): the build line, the device ID, and the settings the firmware was built with. |
 | `L` | Turns the [status line](#the-status-line) on or off. Left on, it stops by itself after 3600 lines (one hour). |
+| `T` | Drops the locked [IMU trim](imu-trim.md) and measures a new one at the next stop. Does nothing if no trim has locked yet. |
+| `R` | Restarts the device. The next boot's `Reset:` line says `Restart requested`. |
+| `O` | Puts the device into System OFF, on battery boards. Cycle the switch or USB to start it again. Other boards say it isn't available. |
 | a number | Prints exactly that many status lines, 1 to 3600, then stops. `0` stops the status line. |
 
 Anything else is rejected whole and reported, so a stray keypress does nothing:
@@ -57,7 +60,7 @@ Device ID: 0301821570
 Config: board esp32
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
-Config: BLE RaceBox, TX power -12 dBm
+Config: BLE RaceBox, name "Gnimu-RB 0301821570", TX power -12 dBm
 Gnimu starting
 Reset: power-on
 Watchdog: 5000 ms ✅
@@ -127,7 +130,7 @@ Device ID: 1120954722
 Config: board nrf52840, wiring V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
-Config: BLE RaceBox, TX power -12 dBm
+Config: BLE RaceBox, name "Gnimu-RB 1120954722", TX power -12 dBm
 Config: battery cutoff 3.30V, critical 3.35V, warning 3.40V, 100% at 4.10V, charged at 4.10V
 Gnimu starting
 Reset: software (Power: switch on)
@@ -214,7 +217,7 @@ If start-up can't finish, the log says why and the firmware stays in a fault sta
 | `GNSS detected but sending no data. Check its power supply. Everything else stopped.` | The receiver's supply voltage under load. |
 | `BLE failed to start. Power-cycle to retry. Everything else stopped.` | Power-cycle. |
 
-The firmware does not retry by itself in a fault state; power-cycle the device once the cause is fixed. The commands still work, so `D` and `V` are available while you investigate.
+The firmware does not retry by itself in a fault state; power-cycle the device, or send `R`, once the cause is fixed. The commands still work, so `D` and `V` are available while you investigate.
 
 If the receiver was working and then goes quiet for two seconds, the firmware restarts itself instead, which runs the whole start-up again.
 
@@ -230,7 +233,7 @@ Device ID: 1120954722
 Config: board nrf52840, wiring V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
-Config: BLE RaceBox, TX power -12 dBm
+Config: BLE RaceBox, name "Gnimu-RB 1120954722", TX power -12 dBm
 Config: battery cutoff 3.30V, critical 3.35V, warning 3.40V, 100% at 4.10V, charged at 4.10V
 ```
 
@@ -241,7 +244,7 @@ The `BUILD` line and the device ID are described under [the boot log](#the-boot-
 | `Config: board` | The board the firmware was built for. On the XIAO nRF52840, also the [wiring](configuration.md#board-wiring-xiao-nrf52840) it expects. |
 | `Config: GNSS` | The constellations in use, the navigation rate, the receiver's dynamic model, and the minimum satellite elevation. |
 | `Config: IMU` | The axis mapping and the smoothing. `X=+x` means the vehicle's X axis is the sensor's x axis, unchanged; `X=-x` means it is reversed. See [mounting orientation](configuration.md#mounting-orientation). |
-| `Config: BLE` | The protocol and the transmit power. |
+| `Config: BLE` | The protocol, the advertised BLE name and the transmit power. |
 | `Config: battery` | Battery boards only. The cutoff, critical and warning voltages, the voltage shown as 100%, and the voltage at which a finished charge counts as full. |
 
 If the data looks wrong, check these first. An axis that reads backwards, a rate that isn't what you expected, or a device that won't power its GNSS are all settings you can see here.

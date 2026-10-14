@@ -53,6 +53,10 @@ void Diagnostics::handle(const ConsoleCommand& cmd) {
     case CommandKind::Version:
       printVersion();
       break;
+    case CommandKind::Retrim:
+    case CommandKind::Restart:
+    case CommandKind::SystemOff:
+      break;  // App acts on these
     case CommandKind::ToggleStatus:
       // A second 'L' stops whatever's running; otherwise it starts the
       // longest run a typed count allows, so reporting left on by a host that
@@ -156,7 +160,8 @@ void Diagnostics::printConfig() {
   console_.log("Config: IMU axes %s, smoothing accel %u.%02u gyro %u.%02u", axes, accel / 100,
                accel % 100, gyro / 100, gyro % 100);
 
-  console_.log("Config: BLE %s, TX power %d dBm", Protocol::name(), config::kBleTxPowerDbm);
+  console_.log("Config: BLE %s, name \"%s %s\", TX power %d dBm", Protocol::name(),
+               config::kBleNamePrefix, deviceId_, config::kBleTxPowerDbm);
 
   if (board::kHasBattery) {
     const unsigned cutoff = centi(config::kBatteryCutoffV), critical = centi(config::kBatteryCriticalV),

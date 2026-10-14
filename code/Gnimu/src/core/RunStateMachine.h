@@ -20,10 +20,10 @@ namespace gnimu {
 // altogether rather than being a state.
 enum class RunState : uint8_t { Starting, Running, Fault, BatteryWait, ChargeOnly };
 enum class FaultReason : uint8_t { None, GnssMissing, GnssConfigFailed, GnssNoData, BleFailed };
-enum class RestartReason : uint8_t { SwitchOn, UsbRemoved, GnssSilent };
+enum class RestartReason : uint8_t { SwitchOn, UsbRemoved, GnssSilent, Requested };
 // One past the last RestartReason; update it when adding one. Bounds the
 // reason kept across a restart (core/ResetReason.h).
-constexpr uint8_t kRestartReasonCount = static_cast<uint8_t>(RestartReason::GnssSilent) + 1;
+constexpr uint8_t kRestartReasonCount = static_cast<uint8_t>(RestartReason::Requested) + 1;
 
 // What an event leads to. App carries it out: entering a state runs that
 // state's fixed entry effects; Restart and SystemOff never return.
@@ -32,11 +32,14 @@ struct Transition {
   Kind kind;
   RunState to;         // Enter only
   RestartReason why;   // Restart only
+  bool requested;      // SystemOff only: asked for, rather than a battery cutoff
 
-  static Transition stay() { return {Kind::Stay, RunState::Starting, RestartReason::SwitchOn}; }
-  static Transition enter(RunState s) { return {Kind::Enter, s, RestartReason::SwitchOn}; }
-  static Transition restart(RestartReason r) { return {Kind::Restart, RunState::Starting, r}; }
-  static Transition systemOff() { return {Kind::SystemOff, RunState::Starting, RestartReason::SwitchOn}; }
+  static Transition stay() { return {Kind::Stay, RunState::Starting, RestartReason::SwitchOn, false}; }
+  static Transition enter(RunState s) { return {Kind::Enter, s, RestartReason::SwitchOn, false}; }
+  static Transition restart(RestartReason r) { return {Kind::Restart, RunState::Starting, r, false}; }
+  static Transition systemOff(bool requested = false) {
+    return {Kind::SystemOff, RunState::Starting, RestartReason::SwitchOn, requested};
+  }
 };
 
 struct RunConfig {
@@ -115,6 +118,15 @@ class RunStateMachine {
     return Transition::stay();
   }
 
+  // A restart or System OFF someone asked for, from the console or BLE. Both
+  // are taken in every state.
+  Transition restartRequested() const { return Transition::restart(RestartReason::Requested); }
+  // Only for boards with a battery and switch: elsewhere nothing could wake
+  // it, so it stays.
+  Transition systemOffRequested() const {
+    return c_.hasBattery ? Transition::systemOff(true) : Transition::stay();
+  }
+
   RunState state() const { return state_; }
   FaultReason fault() const { return fault_; }
   // Switch readings the power policy rejected as noise (D report); C clears.
@@ -165,7 +177,7 @@ inline LedState ledStateFor(RunState s, const LedInputs& in) {
   switch (s) {
     case RunState::Running:
       // A battery problem outranks the BLE status: it matters whatever the
-      // phone is doing. Charging isn't shown here - only in CHARGE_ONLY.
+      // client is doing. Charging isn't shown here - only in CHARGE_ONLY.
       if (in.batteryCritical) return LedState::BatteryCritical;
       if (in.batteryWarning) return LedState::BatteryWarning;
       return in.bleConnected ? LedState::Connected : LedState::Advertising;
@@ -238,6 +250,8 @@ inline const char* restartReasonText(RestartReason r) {
       return "Power: USB removed";
     case RestartReason::GnssSilent:
       return "GNSS: epochs stopped";
+    case RestartReason::Requested:
+      return "Restart requested";
   }
   return "?";
 }

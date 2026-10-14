@@ -133,6 +133,19 @@ void ImuTrim::rebuildRotation() {
   }
 }
 
+bool ImuTrim::retrim() {
+  if (!converged_) return false;
+  gRef_[0] = 0.0f;
+  gRef_[1] = 0.0f;
+  gRef_[2] = 1.0f;
+  setIdentity(R_);
+  accelZBias_ = 0.0f;
+  tiltDeg_ = 0.0f;
+  converged_ = false;
+  resetWindow();
+  return true;
+}
+
 // Discards any part-accumulated block and the stillness credit earned so far.
 // Called on every gate failure: a window has to be continuous to mean
 // anything, so a single moving sample invalidates everything before it.

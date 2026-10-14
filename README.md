@@ -12,7 +12,7 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability, so telemetry apps and tools that read that protocol can use it. Only the streaming data is implemented, not the command/configuration functions. This firmware produces read-only telemetry and ignores BLE packets written back to it by any app.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability, so telemetry apps and tools that read that protocol can use it. Only the streaming data protocol is implemented, not the RaceBox command/configuration functions. The firmware ignores BLE packets written back to except for three Gnimu-specific command structures (re-trim, device restart and system OFF), described in [device commands](docs/device-commands.md). Only a Gnimu-specific client such as [Gnimu Monitor](https://github.com/c20d-us/Gnimu-Monitor) will send these commands.
 
 It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, BLE telemetry protocols, and sensor fusion built from inexpensive off-the-shelf parts.
 
@@ -22,10 +22,10 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 **Note: multi-protocol compatibility.** Right now, Gnimu streams the RaceBox data protocol only. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats to be wired in, and [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next one I intend to implement. I also intend to implement a from-scratch, purpose-built, Open Source telemetry protocol that stands on its own and delivers GNSS+IMU data in an extensible format. Keep an eye out for those updates.
 
-**Note: the advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` (and `kBleManufacturer`) appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
+**Note: the advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` and `kBleManufacturer` appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
 
 > [!IMPORTANT]
-> **Unofficial project.** This is an independent, educational, and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner, and are used here only to describe the protocol this firmware is compatible with. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
+> **Unofficial project.** This is an independent and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner, and are used here only to describe the protocol this firmware is compatible with. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
 
 > [!NOTE]
 > **Looking for the original firmware?** The first generation of Gnimu, including the OLED build, now lives in [`classic/`](classic/README.md). It still works, but it is deprecated and no longer receives updates or fixes. See [Gnimu Classic](#gnimu-classic) below.
@@ -53,6 +53,7 @@ Start with the build guide for whichever hardware you're building (links at the 
 | [Building and flashing](docs/building.md) | Arduino IDE and `arduino-cli` setup, library versions, the build script, and the host tests |
 | [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing and mounting, battery thresholds |
 | [Console and diagnostics](docs/console.md) | The boot log, the serial commands, the diagnostics report, and the 1Hz status line |
+| [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE |
 | [Architecture](docs/architecture.md) | How the code is organized, the fixed-rate scheduler, and the run and power states |
 | [Migrating from Classic](docs/migrating-from-classic.md) | What changes if you already have a Classic build |
 
@@ -87,7 +88,7 @@ The OLED variant was not carried forward. If you want the display, [Classic](cla
 
 ## A note about mounting and self-calibration
 
-The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point and applies them. The tilt correction is then held until the device is powered off; the gyroscope zero point keeps refining whenever the device is stationary.
+The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point and applies them. The tilt correction is then held until the device is powered off or you ask it to measure again; the gyroscope zero point keeps refining whenever the device is stationary.
 
 This means you don't have to get the mount perfectly level and there's no per-board calibration step before you flash.
 
@@ -98,7 +99,7 @@ A few practical notes:
 - If you're connected to serial, **watch the `Trim:` field** on the status line. `⏳` means it hasn't locked yet; `🔒` means it has, and the number beside it is the mounting tilt it measured.
 - **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting. If `Trim:` shows an angle above 15° and stays at `⏳`, the mount is the problem, not the firmware.
 - **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car, so try to not have the calibration step happen when parked on any amount of slope.
-- **A future update will allow on-demand calibration.** Adding on-demand calibration is on my to-do list. Stay tuned.
+- **You can redo it on demand.** `T` on the serial console (or the matching [BLE command](docs/device-commands.md)) drops the lock and measures again at the next stop, which is what to do after moving the device or parking somewhere flatter.
 
 Engine vibration doesn't interfere with the calibration process, so it doesn't matter whether you start the car before calibration or calibrate first.
 

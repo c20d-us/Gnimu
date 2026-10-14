@@ -27,7 +27,7 @@ class Console {
   void begin();
   // Reads waiting input as entries ended by Enter: 'D' report, 'C' clear,
   // 'V' version, 'L' toggles status reporting (at most kStatusMaxCount
-  // lines), or a number 0..kStatusMaxCount arms exactly that many status
+  // lines), 'T' re-trims the IMU, 'R' restarts, 'O' enters System OFF, or a number 0..kStatusMaxCount arms exactly that many status
   // reports. Anything else is rejected whole, with a message. Each call
   // handles at most one entry and reads at most the longest valid entry's
   // bytes, so a paste can't hold up the loop; the rest waits for later calls.

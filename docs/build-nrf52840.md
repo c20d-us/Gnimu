@@ -293,7 +293,7 @@ These are the M100 module's own LEDs, not driven by the firmware. They're useful
 
 ### A note on BLE power and GNSS lock
 
-GNSS reception is sensitive to nearby RF noise, and a compact build puts the BLE radio right next to the GNSS front end. Keeping the BLE transmit power low (`kBleTxPowerDbm`, default **−12dBm**) keeps the radio quiet. The phone or tablet is usually close by, so high power isn't needed, and lower power can dramatically improve fix quality. Running the GNSS from its own **3.3V buck-boost rail** further reduces supply noise.
+GNSS reception is sensitive to nearby RF noise, and a compact build puts the BLE radio right next to the GNSS front end. Keeping the BLE transmit power low (`kBleTxPowerDbm`, default **−12dBm**) keeps the radio quiet. The client is usually close by, so high power isn't needed, and lower power can dramatically improve fix quality. Running the GNSS from its own **3.3V buck-boost rail** further reduces supply noise.
 
 ---
 

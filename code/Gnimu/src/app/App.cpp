@@ -152,7 +152,7 @@ void App::apply(Transition t) {
     t = enter(t.to);
   }
   if (t.kind == Transition::Kind::Restart) restart(t.why);
-  if (t.kind == Transition::Kind::SystemOff) enterSystemOff();
+  if (t.kind == Transition::Kind::SystemOff) enterSystemOff(t.requested);
 }
 
 Transition App::enter(RunState s) {
@@ -224,8 +224,9 @@ void App::restart(RestartReason why) {
   PeripheralPower::reset();
 }
 
-void App::enterSystemOff() {
-  console_.log("Power: battery below cutoff - System OFF (plug in USB or cycle the switch to restart)");
+void App::enterSystemOff(bool requested) {
+  console_.log("Power: %s - System OFF (cycle the switch or USB to restart)",
+               requested ? "requested" : "battery below cutoff");
   stopPeripherals();
   StatusLedPort::write(false, LedColor::Blue);
   BatteryPort::disableVoltageSense();
@@ -281,7 +282,12 @@ void App::bleJob() {
   // go to the protocol. The D report counts what arrived.
   uint8_t buf[32];
   size_t n;
-  while ((n = ble_.read(buf, sizeof(buf))) > 0) protocol_.onRx(buf, n);
+  while ((n = ble_.read(buf, sizeof(buf))) > 0) {
+    protocol_.onRx(buf, n);
+    DeviceCommand c;
+    for (size_t i = 0; i < n; i++)
+      if (commandParser_.feed(buf[i], c)) onCommand(c);
+  }
 }
 
 void App::ledJob() {
@@ -302,6 +308,15 @@ void App::consoleJob() {
     case CommandKind::Clear:
       clearStats();
       break;
+    case CommandKind::Retrim:
+      onCommand(DeviceCommand::Retrim);
+      break;
+    case CommandKind::Restart:
+      onCommand(DeviceCommand::Restart);
+      break;
+    case CommandKind::SystemOff:
+      onCommand(DeviceCommand::SystemOff);
+      break;
     case CommandKind::None:
     case CommandKind::Report:
     case CommandKind::Version:
@@ -310,6 +325,34 @@ void App::consoleJob() {
   }
   diagnostics_.handle(cmd);
   diagnostics_.tick(PlatformClock::nowUs());
+}
+
+void App::onCommand(DeviceCommand c) {
+  switch (c) {
+    case DeviceCommand::Retrim:
+      if (!imu_.up()) {
+        console_.log("IMU: not running - re-trim ignored");
+      } else if (imu_.retrim()) {
+        console_.log("IMU: trim cleared - re-qualifying at the next stop");
+      } else if (imu_.relocking()) {
+        console_.log("IMU: re-trim already in progress");
+      } else {
+        console_.log("IMU: no trim locked yet - nothing to redo");
+      }
+      break;
+    case DeviceCommand::Restart:
+      apply(machine_.restartRequested());
+      break;
+    case DeviceCommand::SystemOff: {
+      const Transition t = machine_.systemOffRequested();
+      if (t.kind == Transition::Kind::Stay) {
+        console_.log("Power: System OFF is not available on this board");
+      } else {
+        apply(t);
+      }
+      break;
+    }
+  }
 }
 
 void App::clearStats() {

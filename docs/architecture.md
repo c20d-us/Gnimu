@@ -81,7 +81,7 @@ What goes in a packet, and the BLE services that carry it, belong to a protocol 
 
 RaceBox is the only protocol today. The encoder, [`core/RaceBoxEncoder.h`](../code/Gnimu/src/core/RaceBoxEncoder.h), is tested byte for byte against independently computed packets.
 
-Bytes an app writes to the device are queued by the BLE stack's callback and collected by the `ble` job, which hands them to the protocol. The RaceBox protocol currently discards them.
+Bytes an app writes to the device are queued by the BLE stack's callback and collected by the `ble` job, which hands them to the protocol and also scans them for the [device commands](device-commands.md). The RaceBox protocol itself discards them.
 
 ---
 

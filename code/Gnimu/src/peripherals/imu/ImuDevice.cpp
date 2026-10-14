@@ -50,12 +50,23 @@ void ImuDevice::poll(float speedMps, bool speedValid) {
     // variance test, and feeding it its own output would close the loop and
     // make the reported tilt decay toward zero as the correction converged.
     trim_.update(sample.accel, sample.gyro, speedMps, speedValid);
+    if (relocking_ && trim_.converged()) {
+      relocking_ = false;
+      const unsigned tenths = static_cast<unsigned>(trim_.tiltDegrees() * 10.0f + 0.5f);
+      log_->log("IMU: trim locked, tilt %u.%u\xC2\xB0", tenths / 10, tenths % 10);
+    }
     trim_.apply(sample.accel, sample.gyro);
     filter_.update(sample);
   }
   if (health_.feed(ok)) {
     log_->log("\xE2\x9D\x8C IMU: stopped answering - IMU fields will read zero until reboot");
   }
+}
+
+bool ImuDevice::retrim() {
+  if (!up() || !trim_.retrim()) return false;
+  relocking_ = true;
+  return true;
 }
 
 void ImuDevice::end() {

@@ -234,6 +234,7 @@ static void testText() {
   assert(strcmp(restartReasonText(RestartReason::SwitchOn), "Power: switch on") == 0);
   assert(strcmp(restartReasonText(RestartReason::UsbRemoved), "Power: USB removed") == 0);
   assert(strcmp(restartReasonText(RestartReason::GnssSilent), "GNSS: epochs stopped") == 0);
+  assert(strcmp(restartReasonText(RestartReason::Requested), "Restart requested") == 0);
   assert(strcmp(faultMessage(FaultReason::GnssNoData),
                 "GNSS detected but sending no data. Check its power supply. Everything else stopped.") == 0);
   assert(strcmp(faultMessage(FaultReason::GnssConfigFailed),
@@ -271,7 +272,25 @@ static void testGnssLivenessIgnoredOutsideRunning() {
   assert(stays(waiting.gnssLiveness(GnssLiveness::NeverStarted)));
 }
 
+// A requested restart is taken in every state; System OFF only with a battery.
+static void testRequests() {
+  RunStateMachine m = running();
+  assert(restarts(m.restartRequested(), RestartReason::Requested));
+  const Transition off = m.systemOffRequested();
+  assert(systemOff(off) && off.requested);
+  assert(systemOff(Transition::systemOff()) && !Transition::systemOff().requested);
+
+  RunStateMachine waiting(kBattery);
+  waiting.boot(false, true, false);
+  assert(restarts(waiting.restartRequested(), RestartReason::Requested));
+
+  RunStateMachine bare(kNoBattery);
+  assert(restarts(bare.restartRequested(), RestartReason::Requested));
+  assert(stays(bare.systemOffRequested()));
+}
+
 int main() {
+  testRequests();
   testBootClassification();
   testRunningOnlyWhenEverythingStarted();
   testBringUpFailureReasons();

@@ -165,7 +165,7 @@ The dev board's LED is a single color, so it shows the pattern only.
 
 ### A note on BLE power and GNSS lock
 
-GNSS reception is sensitive to nearby RF noise. On compact builds, the ESP32's BLE radio can desensitize the GNSS receiver. Keeping `kBleTxPowerDbm` at a low level (the default is `-12`, the minimum) keeps the radio quiet. The phone or tablet is usually close by, so high power isn't needed, and it can dramatically improve fix quality, including indoors.
+GNSS reception is sensitive to nearby RF noise. On compact builds, the ESP32's BLE radio can desensitize the GNSS receiver. Keeping `kBleTxPowerDbm` at a low level (the default is `-12`, the minimum) keeps the radio quiet. The client is usually close by, so high power isn't needed, and it can dramatically improve fix quality, including indoors.
 
 The **RF shield** shown in the [build gallery](#build-gallery) is the hardware counterpart to this: a grounded metal enclosure over the GNSS module that physically blocks radio noise from reaching the GNSS receiver. The two measures stack. Lowering the BLE power quiets the source, while the shield blocks whatever remains. Either helps on its own; together they give the most reliable lock.
 

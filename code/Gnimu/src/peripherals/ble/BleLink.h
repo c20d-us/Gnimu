@@ -23,7 +23,7 @@ class BleLink {
 
   // False, and counted as refused, when a `len`-byte frame won't fit in one
   // notification (MTU - 3 bytes): refused rather than split. A few refusals
-  // right after connecting are normal - the phone hasn't finished the MTU
+  // right after connecting are normal - the client hasn't finished the MTU
   // exchange yet - so only a refusal lasting kRefusalLogUs is logged, once
   // per connection.
   bool admit(size_t len, uint16_t mtu) {

@@ -24,6 +24,8 @@ static void testOwnRestartShowsItsReason() {
                  "software (Power: USB removed)"));
   assert(!strcmp(text(makeResetRecord(ResetCause::Software, restartCode(RestartReason::GnssSilent))),
                  "software (GNSS: epochs stopped)"));
+  assert(!strcmp(text(makeResetRecord(ResetCause::Software, restartCode(RestartReason::Requested))),
+                 "software (Restart requested)"));
 }
 
 // Nothing kept (an upload's reset, or the ESP32 core's own restart): plain

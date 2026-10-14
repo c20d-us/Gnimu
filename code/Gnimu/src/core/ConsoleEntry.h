@@ -14,9 +14,10 @@ constexpr size_t decimalDigits(uint32_t v) { return v < 10 ? 1 : 1 + decimalDigi
 enum class EntryKind : uint8_t { None, Command, Count, TooLarge, Unrecognised };
 
 // The console's commands, named once here where the letters are recognised:
-// D Report, C Clear, V Version, L ToggleStatus. Everything downstream
-// switches on these, so a new command can't go unrouted without a warning.
-enum class CommandKind : uint8_t { None, Report, Clear, Version, ToggleStatus };
+// D Report, C Clear, V Version, L ToggleStatus, T Retrim, R Restart, O
+// SystemOff. Everything downstream switches on these, so a new command can't
+// go unrouted without a warning.
+enum class CommandKind : uint8_t { None, Report, Clear, Version, ToggleStatus, Retrim, Restart, SystemOff };
 
 struct EntryResult {
   EntryKind kind = EntryKind::None;
@@ -25,7 +26,7 @@ struct EntryResult {
 };
 
 // Collects console input into entries ended by Enter (CR or LF). An entry is
-// either exactly one command letter (D, C, V, L) or a number 0..MaxCount;
+// either exactly one command letter (D, C, V, L, T, R, O) or a number 0..MaxCount;
 // anything else is rejected whole, so "Love" or "1g6" do nothing.
 template <uint32_t MaxCount>
 class ConsoleEntry {
@@ -98,6 +99,12 @@ class ConsoleEntry {
         return CommandKind::Version;
       case 'L':
         return CommandKind::ToggleStatus;
+      case 'T':
+        return CommandKind::Retrim;
+      case 'R':
+        return CommandKind::Restart;
+      case 'O':
+        return CommandKind::SystemOff;
       default:
         return CommandKind::None;
     }

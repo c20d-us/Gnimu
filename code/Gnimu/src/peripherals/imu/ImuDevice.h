@@ -61,6 +61,11 @@ class ImuDevice {
   // Mount status, for the D report. See core/ImuTrim.h for what these mean.
   float trimTiltDegrees() const { return trim_.tiltDegrees(); }
   bool trimConverged() const { return trim_.converged(); }
+  // Drops a locked trim and re-qualifies from the next stop; logs the new lock
+  // when it comes. False, doing nothing, when no trim is locked.
+  bool retrim();
+  // A requested re-trim is still waiting to lock.
+  bool relocking() const { return relocking_; }
 
   // The sensor-to-vehicle axis map this build applies.
   static const AxisMap& axisMap() { return ImuChip::axisMap(); }
@@ -71,6 +76,7 @@ class ImuDevice {
   ImuHealth health_{0};
   ImuTrim trim_{ImuTrimConfig{}};  // re-constructed with real config in begin()
   Console* log_ = nullptr;
+  bool relocking_ = false;  // a requested re-trim hasn't locked yet
 };
 
 }  // namespace gnimu

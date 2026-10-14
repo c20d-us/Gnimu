@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../core/BatteryMonitor.h"
+#include "../core/DeviceCommand.h"
 #include "../core/GnssFeed.h"
 #include "../core/ResetReason.h"
 #include "../core/RunStateMachine.h"
@@ -69,7 +70,9 @@ class App {
   // the verified bring-up instead of restarting peripherals in place. The
   // reason is kept across the reset for the next boot's "Reset:" line.
   [[noreturn]] void restart(RestartReason why);
-  [[noreturn]] void enterSystemOff();
+  [[noreturn]] void enterSystemOff(bool requested);
+  // A client's request, from the console or BLE.
+  void onCommand(DeviceCommand c);
   // Console C: the counters App owns. Diagnostics re-baselines its own rate
   // trackers when it sees the same command.
   void clearStats();
@@ -83,6 +86,7 @@ class App {
   char deviceId_[11] = {};  // 10 digits; also the BLE name suffix and DIS serial
   GnssFeed feed_;
   Protocol protocol_;
+  CommandFrameParser commandParser_;
   StatusLed statusLed_;
   BatteryMonitor battery_;
   RunStateMachine machine_;

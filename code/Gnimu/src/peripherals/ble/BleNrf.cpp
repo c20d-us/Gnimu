@@ -30,7 +30,7 @@ static_assert(isNrfTxPower(config::kBleTxPowerDbm),
               "nRF52840 BLE TX power must be -40, -20, -16, -12, -8, -4, 0 or 2..8 dBm");
 
 // Advertising cadence, in 0.625 ms units: fast (20 ms) for the first
-// 30 s so a phone finds it quickly, then slow (152.5 ms) to save power.
+// 30 s so a client finds it quickly, then slow (152.5 ms) to save power.
 constexpr uint16_t kAdvFastInterval = 32;
 constexpr uint16_t kAdvSlowInterval = 244;
 constexpr uint16_t kAdvFastTimeoutS = 30;
@@ -61,7 +61,7 @@ bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Co
   if (started_) return true;
   if (!built_) {
     // Must precede Bluefruit.begin(): raises the ATT MTU ceiling to 247, so a
-    // phone that asks for room gets an 88-byte frame in one notification.
+    // client that asks for room gets an 88-byte frame in one notification.
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
     if (!Bluefruit.begin()) {
       log.log("BLE: stack failed to start \xE2\x9D\x8C");

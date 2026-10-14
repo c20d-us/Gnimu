@@ -24,6 +24,8 @@ vehicle, so every re-measurement is a chance to swap a good calibration for a
 worse one. The worst-placed stop of a session, such as a sloped staging lane, is
 also the last one before the run that matters.
 
+You can ask for a new measurement (`T` on the console, or the [BLE command](device-commands.md)). That drops the lock and qualifies a fresh one at the next stop, and until it locks the output is uncorrected. The request is a deliberate act, so the risk above is yours to judge: send it where the ground is flat.
+
 ## Gyroscope: per-axis zero offset, refined at every stop
 
 At rest the true rotation rate is exactly zero in every orientation, so whatever

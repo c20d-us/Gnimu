@@ -142,7 +142,52 @@ static void testRequireFixBlocksWithoutValidSpeed() {
   assert(!driveToConvergence(trim, accel, gyro, 0.0f, /*speedValid=*/false));
 }
 
+// Before a lock there is nothing to drop, and the state is left alone.
+static void testRetrimBeforeLockIsNoop() {
+  ImuTrim trim(baseConfig());
+  assert(!trim.retrim());
+  assert(!trim.converged());
+}
+
+// A locked trim is dropped (output uncorrected again) and a new one qualifies
+// from the next stop, even at a different tilt. The gyro offset survives.
+static void testRetrimRelocksAtNewTilt() {
+  ImuTrim trim(baseConfig());
+  const float theta = 10.0f * kDegToRad;
+  const float accel[3] = {kGravity * sinf(theta), 0.0f, kGravity * cosf(theta)};
+  const float gyro[3] = {0.05f, 0.0f, 0.0f};
+  assert(driveToConvergence(trim, accel, gyro, 0.0f, true));
+
+  assert(trim.retrim());
+  assert(!trim.converged());
+  assert(near(trim.tiltDegrees(), 0.0f));
+  float a[3] = {1.0f, 2.0f, 3.0f};
+  float g[3] = {gyro[0], gyro[1], gyro[2]};
+  trim.apply(a, g);
+  assert(near(a[0], 1.0f) && near(a[1], 2.0f) && near(a[2], 3.0f));  // not rotated
+  assert(near(g[0], 0.0f, 1e-4f));                                    // gyro bias kept
+
+  const float theta2 = 4.0f * kDegToRad;
+  const float accel2[3] = {kGravity * sinf(theta2), 0.0f, kGravity * cosf(theta2)};
+  assert(driveToConvergence(trim, accel2, gyro, 0.0f, true));
+  assert(near(trim.tiltDegrees(), 4.0f, 0.1f));
+}
+
+// Moving through the re-qualification doesn't lock: it waits for a stop.
+static void testRetrimWaitsForAStop() {
+  ImuTrim trim(baseConfig());
+  const float accel[3] = {0.0f, 0.0f, kGravity};
+  const float gyro[3] = {0.0f, 0.0f, 0.0f};
+  assert(driveToConvergence(trim, accel, gyro, 0.0f, true));
+  assert(trim.retrim());
+  assert(!driveToConvergence(trim, accel, gyro, 10.0f, true, 50));
+  assert(driveToConvergence(trim, accel, gyro, 0.0f, true));
+}
+
 int main() {
+  testRetrimBeforeLockIsNoop();
+  testRetrimRelocksAtNewTilt();
+  testRetrimWaitsForAStop();
   testInitialStateIsNoop();
   testConvergesAndCorrectsKnownTilt();
   testRefusesExcessiveTilt();

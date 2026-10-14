@@ -36,7 +36,10 @@ static void testCommands() {
   const Case cases[] = {{"D\n", CommandKind::Report},
                         {"C\r", CommandKind::Clear},
                         {"V\r\n", CommandKind::Version},
-                        {"L\n", CommandKind::ToggleStatus}};
+                        {"L\n", CommandKind::ToggleStatus},
+                        {"T\n", CommandKind::Retrim},
+                        {"R\r", CommandKind::Restart},
+                        {"O\r\n", CommandKind::SystemOff}};
   for (const Case& c : cases) {
     const EntryResult r = feedAll(e, c.text);
     assert(r.kind == EntryKind::Command && r.cmd == c.kind);
