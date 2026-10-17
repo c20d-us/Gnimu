@@ -87,12 +87,13 @@ Before you rely on the GNSS module at 20Hz or more, read the notes on GNSS modul
 
 Photos of the reference build, from loose components to the finished, enclosed unit. Several shots show an **RF shield** fitted over the electronics. It's a hardware counterpart to the firmware's reduced BLE power, further isolating the GNSS receiver from radio noise (see [A note on BLE power and GNSS lock](#a-note-on-ble-power-and-gnss-lock)).
 
-<div align="center">
-  <img src="../images/ESP32/completed-emulator.jpeg" alt="The finished Gnimu device" width="520"><br>
-  <sub>The completed device, decorated with the stickers that came with the GNSS module<br>and an indicator of which end points forward (for Gyro/Accelerometer).</sub><br>&nbsp;
-</div>
-
 <table>
+  <tr>
+    <td align="center" valign="top" colspan="2">
+      <img src="../images/ESP32/completed-emulator.jpeg" alt="The finished Gnimu device" width="520"><br>
+      <sub>The completed device.</sub><br>&nbsp;
+    </td>
+  </tr>
   <tr>
     <td align="center" valign="top" width="50%">
       <img src="../images/ESP32/components-and-box.jpeg" alt="Components laid out with the enclosure" width="340"><br>
