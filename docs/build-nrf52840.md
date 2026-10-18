@@ -127,7 +127,7 @@ The carrier's design files and fabrication outputs are in the [Gnimu-PCB](https:
     </td>
     <td align="center" valign="top" width="50%">
       <img src="../images/PCB/gnimu-carrier-pcb-loaded.jpeg" alt="The Gnimu carrier PCB with the XIAO, regulator, resistors and leads fitted" width="340"><br>
-      <sub>Loaded: the XIAO, the XL63070 regulator, the two resistors, and leads<br>for the GNSS, battery, XIAO battery pads and switch.</sub><br>&nbsp;
+      <sub>Loaded: the XIAO, the XL63070 regulator, the two resistors, and leads for the GNSS, battery, XIAO battery pads and switch.</sub><br>&nbsp;
     </td>
   </tr>
 </table>
