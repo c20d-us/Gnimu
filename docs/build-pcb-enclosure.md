@@ -14,8 +14,8 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 - Drill press and bits, small file or chisel, rotary tool or sharp hobby knife for the notches
 
 <p align="center">
-  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400"><br>
-  <sub>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</sub>
+  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400">
+<h4>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</h4>
 </p>
 
 ---
@@ -214,13 +214,3 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 <a href="../images/PCB-build/17-complete-device.jpeg">
   <img src="../images/PCB-build/thumbs/17-complete-device.jpeg" alt="The finished device with the GNSS module on the lid" width="300">
 </a>
-
----
-
-## Checklist
-
-- [ ] USB-C port is reachable through the notch
-- [ ] Switch moves freely and clicks on and off
-- [ ] Battery is clear of the PCB underside and the standoffs
-- [ ] GNSS lead has slack to open the lid
-- [ ] Lid closes without pinching any wires
