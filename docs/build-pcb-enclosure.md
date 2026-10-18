@@ -14,7 +14,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 - Drill press and bits, small file or chisel, rotary tool or sharp hobby knife for the notches
 
 <p align="center">
-  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="520"><br>
+  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400"><br>
   <sub>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</sub>
 </p>
 
@@ -31,7 +31,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
     </td>
     <td valign="top">
         The box as it comes. Which end gets the switch and which gets the USB notch is not critical. I put the USB at the end with the lid-opening notches.<br><br>
-        <b>Note:</b> the mounting holes in the PCB are designed to line up exactly with the standoffs in this particular brand of box. If you use a different brand of box, the standoffs/holes may not exactly line up. Check before you start.
+        <b>Note:</b> the mounting holes in the PCB are designed to line up exactly with the standoffs in this particular brand/size of box. If you use a different brand or size of box, the standoffs/holes may not exactly line up. Check before you start.
     </td>
   </tr>
 </table>
@@ -74,10 +74,10 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
       <a href="../images/PCB-build/05-gnss-in-lid.jpeg"><img src="../images/PCB-build/thumbs/05-gnss-in-lid.jpeg" alt="Finished lid with the GNSS module in its opening and the LED showing through" width="300"></a>
     </td>
     <td valign="top">
-        Create a square hole in one end of the lid to accomodate the GNSS's patch antenna. The M100-5883 has a small flange around the patch antenna that is perfect for holding the GNSS to the lid with a few dabs of superglue. Start with a large-ish drilled hole in one end of the lid, then shave plastic away with your utility knife until the GNSS just fits in the opening. You can notch the edge side to allow visibility to the LEDs.<br><br>
+        Create a square hole in one end of the lid to accomodate the GNSS's patch antenna. The M100-5883 has a small PCB flange around the patch antenna that is perfect for holding the GNSS to the lid with a few dabs of superglue. Start with a large-ish drilled hole in one end of the lid, then shave plastic away with your utility knife until the GNSS just fits in the opening. You can notch the side of the hole adjacent to the edge of the lid to allow visibility to the LEDs.<br><br>
         You may want to drill two small holes in the XIAO end of the lid for the LED and reset button. Use the mounted XIAO in the box to determine where these two need to go. 3/32" holes should be plenty big enough.<br><br>
         <b>Optional:</b> put a dab of hot-glue in the LED hole for a DIY light-pipe effect. Hold the lid tight against a utility knife blade while you put the hot glue in the hole so that the top side of the glue spot turns out flat.<br><br>
-        <b>Optional:</b> If you don't want to cut a hole in the lid, there should be *just* enough room above the PCB to affix the GNSS to the underside of the lid with some double-sided tape. This shouldn't affect signal reception at all.
+        <b>Optional:</b> if you don't want to cut a hole in the lid, there should be *just* enough room above the PCB to affix the GNSS to the underside of the lid with some double-sided tape. This shouldn't affect signal reception at all.
     </td>
   </tr>
 </table>
@@ -96,7 +96,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
       <a href="../images/PCB-build/07-usb-plug-notch.jpeg"><img src="../images/PCB-build/thumbs/07-usb-plug-notch.jpeg" alt="PCB test-fit with the USB-C port in the notch" width="300"></a>
     </td>
     <td valign="top">
-        Notch the top edge of one end of the box to accomodate the XIAO's USB plug. The notch should be roughly 9mm wide and 3.5mm deep. You can use the board as a reference to mark the left and right edges, and then carefully cut away plastic to make the notch. It's not critical to get it exactly right at this step, as you can adjust it a bit later. Just go slow and remember that you can always take more off, but you can't put any back.<br><br>
+        Notch the top edge of one end of the box to accomodate the XIAO's USB plug. The notch should be roughly 9mm wide and 3.5mm deep. You can use the board as a reference to mark the left and right edges, and then carefully cut away plastic to make the notch. It's not critical to get it exactly right at this step, as you mayneed to adjust it a bit later. Just go slow and remember that you can always take more off, but you can't put any back.<br><br>
         You'll need to notch the vertical flange on the underside of the lid to match where the USB port lands.
     </td>
   </tr>
@@ -113,12 +113,12 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
     </td>
     <td valign="top">
       Start the opening for the switch by drilling a 3/16" hole in the opposite end of the box from the USB notch. You want the 3/16" hole's bottom edge to be right at the floor of the box. Once you have the hole drilled, use your utility knife to open up the hole to a rectangle for the switch body. You want the rectangle to be just big enough for the switch body to fit through, so again, go slow and take off small amounts at a time, checking fit with the switch often.<br><br>
-      <b>Note:</b> I chose to put the switch in the end of the box, but realistically there is room to put the switch on either side of the box at the end opposite the battery. Pick a location that suits your taste. Just be mindful to not interfere with the locations of the standoffs. Wherever you put it, I recommend have the switch as low as possible to ensure that it's clear of the PCB.
+      <b>Note:</b> I chose to put the switch in the end of the box, but realistically there is room to put the switch on either side of the box at the end opposite the battery. Pick a location that suits your taste. Just be mindful to not interfere with the locations of the standoffs. Wherever you put it, I recommend having the switch as low as possible to ensure that it's clear of the PCB.
     </td>
   </tr>
 </table>
 
-### 2.2 Switch mounting screws
+### 2.3 Switch mounting screws
 
 <table>
   <tr>
@@ -146,7 +146,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
     </td>
     <td valign="top">
       Feed the switch's JST pigtail through the hole, then use M2.5 screws and nuts to fasten the switch to the box. The hex nuts should fit right up against the switch body as you tighten the screws.<br><br>
-      Feed an M2.5x5mm screw through each hole in the bottom of the box, put one 1mm washer over each, and then affix a 10mm hex standoff. These should be snugged down well but not overtightened so that you don't strip out the standoffs. If you want, after fully assembling the box you can disassemble it and then put the standoffs back in with a bit of glue to hold them permanently.
+      Feed an M2.5x5mm screw through each hole in the bottom of the box, put one 1mm washer over each, and then affix a 10mm female-female hex standoff. These should be snugged down well but not overtightened so that you don't strip out the standoffs. If you want, after fully assembling the box you can disassemble it and put the standoffs back in with a bit of glue to hold them permanently.
     </td>
   </tr>
 </table>
@@ -159,12 +159,12 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
       <a href="../images/PCB-build/13-battery-prep.jpeg"><img src="../images/PCB-build/thumbs/13-battery-prep.jpeg" alt="Battery bay prepared with a pad of tape" width="300"></a>
     </td>
     <td valign="top">
-      Double-check the cell for damage before installing. Put some double-sided tape at the USB end of the box to hold the battery. I use 3M squares that hold well but that can be removed if needed.
+      Double-check the cell for damage before installing. Put some double-sided tape at the USB end of the box to hold the battery. I use 3M squares that hold well but that can be removed later if needed.
     </td>
   </tr>
 </table>
 
-### 3.4 Install the battery
+### 3.3 Install the battery
 
 <table>
   <tr>
@@ -172,7 +172,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
       <a href="../images/PCB-build/14-battery-installed.jpeg"><img src="../images/PCB-build/thumbs/14-battery-installed.jpeg" alt="LiPo cell installed in the box" width="300"></a>
     </td>
     <td valign="top">
-      Mount the battery to the bottom of the box as shown, with the pigtail going toward the center. If you're using an 8mm or thinner battery there should be ample room between the bottom of the PCB and the battery once everything is in place. You can go with a 5mm or 6mm thick cell if you want extra clearance, but you will likely give up some capacity.
+      Mount the battery to the bottom of the box as shown, with the pigtail going toward the center. If you're using an 8mm or thinner battery like the one shown there should be ample room between the bottom of the PCB and the battery once everything is in place. You can go with a 5mm or 6mm thick cell if you want extra clearance, but you will likely give up some capacity.
     </td>
   </tr>
 </table>
@@ -210,16 +210,10 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 
 ### 4.3 Close the box
 
-<table>
-  <tr>
-    <td valign="top" width="320">
-      <a href="../images/PCB-build/17-complete-device.jpeg"><img src="../images/PCB-build/thumbs/17-complete-device.jpeg" alt="The finished device with the GNSS module on the lid" width="300"></a>
-    </td>
-    <td valign="top">
-      You're all done!
-    </td>
-  </tr>
-</table>
+<h3>Done!</h3>
+<a href="../images/PCB-build/17-complete-device.jpeg">
+  <img src="../images/PCB-build/thumbs/17-complete-device.jpeg" alt="The finished device with the GNSS module on the lid" width="300">
+</a>
 
 ---
 
