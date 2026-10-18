@@ -15,7 +15,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 
 <table style="border:none">
   <tr>
-    <td align="center">
+    <td>
       <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400">
       <b>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</b>
     </td>
