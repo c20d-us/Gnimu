@@ -31,7 +31,7 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
     </td>
     <td valign="top">
         The box as it comes. Which end gets the switch and which gets the USB notch is not critical. I put the USB at the end with the lid-opening notches.<br><br>
-        <b>Note:<b> the mounting holes in the PCB are designed to line up exactly with the standoffs in this particular brand of box. If you use a different brand of box, the standoffs/holes may not exactly line up. Check before you start.
+        <b>Note:</b> the mounting holes in the PCB are designed to line up exactly with the standoffs in this particular brand of box. If you use a different brand of box, the standoffs/holes may not exactly line up. Check before you start.
     </td>
   </tr>
 </table>
@@ -74,12 +74,9 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
       <a href="../images/PCB-build/05-gnss-in-lid.jpeg"><img src="../images/PCB-build/thumbs/05-gnss-in-lid.jpeg" alt="Finished lid with the GNSS module in its opening and the LED showing through" width="300"></a>
     </td>
     <td valign="top">
-        Create a square hole in one end of the lid to accomodate the GNSS's patch antenna. The M100-5883 has a small flange around the patch antenna that is perfect for holding the GNSS to the lid with a few dabs of superglue. Start with a large-ish drilled hole in one end of the lid, then shave plastic away with your utility knife until the GNSS just fits in the opening. You can notch the edge side to allow visibility to the LEDs.
-
-        You may want to drill two small holes in the XIAO end of the lid for the LED and reset button. Use the mounted XIAO in the box to determine where these two need to go. 3/32" holes should be plenty big enough.
-
-        <b>Optional:</b> put a dab of hot-glue in the LED hole for a DIY light-pipe effect. Hold the lid tight against a utility knife blade while you put the hot glue in the hole so that the top side of the glue spot turns out flat.
-
+        Create a square hole in one end of the lid to accomodate the GNSS's patch antenna. The M100-5883 has a small flange around the patch antenna that is perfect for holding the GNSS to the lid with a few dabs of superglue. Start with a large-ish drilled hole in one end of the lid, then shave plastic away with your utility knife until the GNSS just fits in the opening. You can notch the edge side to allow visibility to the LEDs.<br><br>
+        You may want to drill two small holes in the XIAO end of the lid for the LED and reset button. Use the mounted XIAO in the box to determine where these two need to go. 3/32" holes should be plenty big enough.<br><br>
+        <b>Optional:</b> put a dab of hot-glue in the LED hole for a DIY light-pipe effect. Hold the lid tight against a utility knife blade while you put the hot glue in the hole so that the top side of the glue spot turns out flat.<br><br>
         <b>Optional:</b> If you don't want to cut a hole in the lid, there should be *just* enough room above the PCB to affix the GNSS to the underside of the lid with some double-sided tape. This shouldn't affect signal reception at all.
     </td>
   </tr>
