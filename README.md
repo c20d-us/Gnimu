@@ -12,29 +12,30 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability, so telemetry apps and tools that read that protocol can use it. Only the streaming data protocol is implemented, not the RaceBox command/configuration functions. The firmware ignores BLE packets written back to except for three Gnimu-specific command structures (re-trim, device restart and system OFF), described in [device commands](docs/device-commands.md). Only a Gnimu-specific client such as [Gnimu Monitor](https://github.com/c20d-us/Gnimu-Monitor) will send these commands.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability. Telemetry apps and tools that read that protocol should be able to use it, with a minor caveat regarding the advertised name as outlined below. Only the streaming data protocol is implemented, not the RaceBox command/configuration functions. The firmware ignores BLE packets written back to it except for three Gnimu-specific command structures (re-trim, device restart and system OFF) described in [device commands](docs/device-commands.md). Only a Gnimu-specific client such as [Gnimu Monitor](https://github.com/c20d-us/Gnimu-Monitor) will send these commands.
 
-It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, BLE telemetry protocols, and sensor fusion built from inexpensive off-the-shelf parts.
+It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, BLE telemetry protocols and sensor fusion, built from inexpensive off-the-shelf parts.
 
 I originally started this project as a streaming GNSS+IMU telemetry source for use with the [AutoX Data Logger for iOS](https://autoxdrivermod.com) app.
 
 I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
+> [!NOTE]
+> **Multi-protocol compatibility.** Right now, Gnimu streams the RaceBox data protocol only. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats to be wired in, and [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next one I intend to implement. In the future I intend to implement a new, purpose-built, Open Source telemetry protocol that stands on its own and delivers GNSS+IMU data in an extensible format. Keep an eye out for those updates.
 
-**Note: multi-protocol compatibility.** Right now, Gnimu streams the RaceBox data protocol only. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats to be wired in, and [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next one I intend to implement. I also intend to implement a from-scratch, purpose-built, Open Source telemetry protocol that stands on its own and delivers GNSS+IMU data in an extensible format. Keep an eye out for those updates.
-
-**Note: the advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` and `kBleManufacturer` appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
-
-> [!IMPORTANT]
-> **Unofficial project.** This is an independent and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner, and are used here only to describe the protocol this firmware is compatible with. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
+> [!NOTE]
+> **The advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` and `kBleManufacturer` appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
 
 > [!NOTE]
 > **Looking for the original firmware?** The first generation of Gnimu, including the OLED build, now lives in [`classic/`](classic/README.md). It still works, but it is deprecated and no longer receives updates or fixes. See [Gnimu Classic](#gnimu-classic) below.
+
+> [!IMPORTANT]
+> **Unofficial project.** This is an independent and non-commercial implementation. It is **not affiliated with, endorsed by, or supported by RaceBox.** "RaceBox" and related marks belong to their respective owner, and are used here only to describe the protocol this firmware is compatible with. Use this code for learning and personal purposes only, and at your own risk. Do not use this code to impersonate a genuine device for any commercial or fraudulent purpose.
 
 ---
 
 ## Supported boards
 
-One firmware, in [`code/Gnimu/`](code/Gnimu/), builds for both boards. The board you select in the Arduino IDE decides which hardware support is compiled in; there is nothing to edit to switch between them. Both advertise the same BLE identity and stream the same data protocol, so the same apps work with either.
+One firmware (in [`code/Gnimu/`](code/Gnimu/)) builds for both boards. The board you select in the Arduino IDE or with the command-line build script decides which hardware support is compiled in; there is nothing to edit to switch between them. Both advertise the same BLE identity and stream the same data protocol, so the same apps work with either.
 
 | | [**ESP32**](docs/build-esp32.md) | [**XIAO nRF52840**](docs/build-nrf52840.md) |
 |---|---|---|
@@ -79,19 +80,19 @@ The OLED variant was not carried forward. If you want the display, [Classic](cla
 
 ## Three notes about GNSS modules
 
-1. My builds use the M10-based HGLRC M100-5883, which is ~$20 from Amazon and excellent for the price. I've seen 16+ SVs locked with <0.200m hAcc and 1.2 pDOP with the device sitting on a table in my living room. The smaller M100 Mini also works, but I wouldn't choose it again: its smaller antenna patch (15x15mm vs. 21x21mm) costs some performance, and the savings aren't worth it IMO.
+1. My builds use the M10-based HGLRC M100-5883, which is ~$20 from Amazon and excellent for the price. I've seen 16+ SVs locked with <0.200m hAcc and 1.2 pDOP with the device sitting on a table in my living room. The smaller M100 Mini also works, but I wouldn't choose it again: its smaller antenna patch (15x15mm vs. 21x21mm) costs some SV-lock performance, and the savings aren't worth it IMO.
 
-2. If you use the HGLRC M100-5883 or M100 Mini modules, be aware that **as-delivered they *cannot* hold a 20Hz+ fix rate** even with just one constellation configured. To enable high fix rates you need to adjust the module's clock speed by writing values to One-Time Programmable (OTP) memory. [`tools/gnss_ver`](tools/gnss_ver/gnss_ver.ino) tells you whether your module needs it, and [`tools/gnss_otp_clock`](tools/gnss_otp_clock/gnss_otp_clock.ino) does the write. **The OTP write is permanent.** Without it you'll never get 20Hz (with GPS **and** Galileo) or 25Hz (with GPS **or** Galileo) fix rates at high SV counts. All will look fine until you reach ~10-12 SVs, and then the fix rate will start to stumble and sag, getting worse as the SV count climbs. After you write the OTP settings, you will see solid 20Hz/25Hz performance into the high teen SV counts. Keep in mind that the module documentation only claims ≥98% of fix rate at full SV capacity, so you may still see minor degradation when lots of SVs (20+) are visible. If you regularly use the device in a location with wide sky visibility, you should consider going to one enabled constellation at either 20Hz or 25Hz to avoid high-SV-count fix drops. Testing will tell you if this is a problem.
+2. If you use the HGLRC M100-5883 or M100 Mini modules, be aware that **as-delivered they *cannot* hold a 20Hz+ fix rate** even with just one constellation configured. To enable high fix rates you need to adjust the module's clock speed by writing values to One-Time Programmable (OTP) memory. [`tools/gnss_ver`](tools/gnss_ver/gnss_ver.ino) tells you whether your module needs it, and [`tools/gnss_otp_clock`](tools/gnss_otp_clock/gnss_otp_clock.ino) does the write. **The OTP write is permanent.** Without it you'll never get 20Hz (with GPS **and** Galileo) or 25Hz (with GPS **or** Galileo) fix rates at high SV counts. All will look fine until you reach ~12 SVs, and then the fix rate will start to stumble and sag, getting worse as the SV count climbs. After you write the OTP settings, you should see solid 20Hz/25Hz performance with SV counts into the high teens. Keep in mind that the module documentation only claims ≥98% of fix rate at full SV capacity, so you may still see minor degradation when lots of SVs (20+) are visible. If you regularly use the device in a location with wide sky visibility, you should consider going to one enabled constellation at either 20Hz or 25Hz to avoid high-SV-count fix drops. Testing will tell you if this is a problem.
 
-3. There are other u-blox compatible GNSS modules that should work with this firmware, either as a drop-in replacement or with minor code tweaks. I have not tried any other options, but you can easily find several other M10-based modules on Amazon, DigiKey, and Mouser. Keep in mind that M10-based modules will all have similar performance and constraints as the HGLRC modules.
+3. There are other u-blox compatible GNSS modules that should work with this firmware, either as a drop-in replacement or with minor code tweaks. I have not tried any other options, but you can easily find several other M10-based modules on Amazon, DigiKey, and Mouser. Keep in mind that M10-based modules will all have similar performance and constraints as the HGLRC modules. I have not looked into non-UBX (NMEA-only) GNSS modules at all, so if you want to try one you're on your own.
 
 ---
 
 ## A note about mounting and self-calibration
 
-The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point and applies them. The tilt correction is then held until the device is powered off or you ask it to measure again; the gyroscope zero point keeps refining whenever the device is stationary.
+The firmware calibrates itself to how it's mounted. Once it's powered on, settled, and stationary with a valid 3D fix, it measures its own mounting tilt and gyroscope zero point and applies them. The tilt correction is then held until the device is powered off or you ask it to re-trim; the gyroscope zero point continues refining whenever the device is stationary to adjust for temperature variations that can affect the gyro.
 
-This means you don't have to get the mount perfectly level and there's no per-board calibration step before you flash.
+This calibration process means that you don't have to worry about getting the device perfectly level when you mount it in your vehicle, though you should try to get reasonably close. The calibration won't correct for a wildly askew mount.
 
 A few practical notes:
 
@@ -100,7 +101,7 @@ A few practical notes:
 - If you're connected to serial, **watch the `Trim:` field** on the status line. `⏳` means it hasn't locked yet; `🔒` means it has, and the number beside it is the mounting tilt it measured.
 - **It'll correct up to about 15° of tilt.** Past that it refuses rather than half-correcting. If `Trim:` shows an angle above 15° and stays at `⏳`, the mount is the problem, not the firmware.
 - **It calibrates against the ground it's parked on**, and can't tell mounting tilt from the slope under the car, so try to not have the calibration step happen when parked on any amount of slope.
-- **You can redo it on demand.** `T` on the serial console (or the matching [BLE command](docs/device-commands.md)) drops the lock and measures again at the next stop, which is what to do after moving the device or parking somewhere flatter.
+- **You can redo it on demand without a restart.** `T` on the serial console, or the matching [BLE command](docs/device-commands.md), drops the lock and measures again at the next stop.
 
 Engine vibration doesn't interfere with the calibration process, so it doesn't matter whether you start the car before calibration or calibrate first.
 
