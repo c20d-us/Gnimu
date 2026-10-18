@@ -14,9 +14,8 @@ This page walks through fitting a loaded [Gnimu carrier PCB](build-nrf52840.md) 
 - Drill press and bits, small file or chisel, rotary tool or sharp hobby knife for the notches
 
 <p align="center">
-  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400">
-<h4>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</h4>
-</p>
+  <h4>The loaded carrier PCB, with the battery, switch, and GNSS connectors still loose.</h4>
+  <img src="../images/PCB-build/00-gnimu-carrier-pcb-loaded.jpeg" alt="The loaded Gnimu carrier PCB" width="400"></p>
 
 ---
 
