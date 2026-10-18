@@ -157,6 +157,8 @@ The XIAO's battery pads are on its underside and aren't part of its edge pins, s
 
 The **IMU** axes printed beside the XIAO show how the device must sit in the car: the **X** arrow points to the front of the car and the **Y** arrow to its left, with the component side of the board facing up. That puts the XIAO's USB connector toward the rear.
 
+To put the finished board in a project box with the battery and switch, see [Installing the carrier PCB in a project box](build-pcb-enclosure.md).
+
 ---
 
 ## Building it hand-wired
