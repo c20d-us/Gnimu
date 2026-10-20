@@ -79,14 +79,17 @@ The IMU is sampled at 100 Hz and smoothed before it's sent. Alpha of `1.0` is th
 
 ### Mounting orientation
 
-| Setting | Default | Applies to |
+Which way the IMU sits in the vehicle depends on how the device was built, so it belongs to the build's [hardware profile](#hardware-profiles), not to this file:
+
+| Profile | Mounting it describes | Axis map |
 |---|---|---|
-| `kMpu6050AxisSrc`, `kMpu6050AxisSign` | `{0, 1, 2}`, `{+1, +1, +1}` | ESP32, external MPU-6050 |
-| `kLsm6ds3AxisSrc`, `kLsm6ds3AxisSign` | `{0, 1, 2}`, `{+1, +1, +1}` | XIAO nRF52840 Sense, onboard LSM6DS3TR-C |
+| ESP32 `reference` | A GY-521 (MPU-6050) aligned to the axis marks on its silkscreen: mounting holes toward the front of the car, header pins toward the rear, PCB face up. | `kMpu6050AxisSrc` `{0, 1, 2}`, `kMpu6050AxisSign` `{+1, +1, +1}` |
+| nRF52840 `v2` | The XIAO's USB connector toward the rear of the car, as in the [XIAO nRF52840 build guide](build-nrf52840.md). | `kLsm6ds3AxisSrc` `{0, 1, 2}`, `kLsm6ds3AxisSign` `{+1, +1, +1}` |
+| nRF52840 `classic` | The XIAO facing the other way, as in the Classic nRF52840 build. | `kLsm6ds3AxisSrc` `{0, 1, 2}`, `kLsm6ds3AxisSign` `{-1, -1, +1}` |
 
-These map the sensor's axes onto the vehicle's. Output axis *i* is sensor axis `Src[i]` multiplied by `Sign[i]`. `Src` must use each of 0, 1 and 2 exactly once.
+The map takes the sensor's axes onto the vehicle's. Output axis *i* is sensor axis `Src[i]` multiplied by `Sign[i]`. `Src` must use each of 0, 1 and 2 exactly once, which is checked when the firmware compiles.
 
-The XIAO's sensor is soldered to the board, so its mapping follows which way the XIAO faces. The default is for the XIAO's USB connector pointing toward the rear of the car, as in the [XIAO nRF52840 build guide](build-nrf52840.md). On the ESP32 the MPU-6050 is a separate module, and you may have mounted it differently than the [ESP32 build guide](build-esp32.md) shows. If an axis reads backwards in your app, flip its sign; if two are swapped, swap their `Src` entries.
+If you mounted the sensor differently from the build guide, make [a profile of your own](#adding-your-own-profile) with the right map. If an axis reads backwards in your app, flip its sign; if two are swapped, swap their `Src` entries.
 
 This is for getting the axes pointing the right way. Small tilts, up to about 15°, are measured and corrected automatically while the car is parked; see the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 
@@ -108,30 +111,57 @@ The percentage is a straight line from the cutoff (0%) to full scale (100%). The
 
 ---
 
-## Protocol
+## Build variants
 
-| Setting | Default | What it does |
+Some choices are made when the firmware is built, by naming a *profile*: a small header file in [`code/Gnimu/src/variants/`](../code/Gnimu/src/variants/). Choosing a profile modifies no file, so one tagged release can produce every combination and each build reports `dirty=0`.
+
+| Choice | Option | Profiles (default first) |
 |---|---|---|
-| `kProtocol` | `Protocol::RaceBox` | Which BLE protocol the firmware speaks. |
+| Hardware | `--hardware <name>` | nRF52840: `v2`, `classic`. ESP32: `reference`. |
+| Protocol | `--protocol <name>` | `racebox` |
+
+```bash
+scripts/build.sh nrf52840 --hardware classic
+```
+
+See [Building and flashing](building.md#command-line). A profile's name is its file name, so adding a profile adds an option value. An unknown name is refused with a list of the ones that exist. `scripts/build.sh --matrix` builds every combination.
+
+### Hardware profiles
+
+A hardware profile holds what depends on how the device was built: the pins you are free to route differently, and which way the IMU is mounted. Pins the board fixes for you (the XIAO's RGB LED, battery sense, charger and IMU power, and the GNSS UART on D6/D7) are not in profiles.
+
+| | nRF52840 `v2` | nRF52840 `classic` | ESP32 `reference` |
+|---|---|---|---|
+| GNSS regulator enable | D1 | D9 | not switched |
+| Power-switch sense | A0 | A4 | not present |
+| GNSS UART RX, TX | fixed | fixed | GPIO16, GPIO17 |
+| IMU I²C SDA, SCL | fixed | fixed | GPIO21, GPIO22 |
+| Status LED | fixed (RGB) | fixed (RGB) | GPIO2 |
+| IMU axis map | identity | X and Y reversed | identity |
+
+- **`v2`** is the current pinout, used by the carrier PCB and by the [build guide](build-nrf52840.md).
+- **`classic`** matches a device built from the Classic nRF52840 instructions, so existing hardware runs this firmware without rewiring. See [Migrating from Classic](migrating-from-classic.md).
+- **`reference`** is the [ESP32 build guide](build-esp32.md)'s wiring and mounting.
+
+The console's `V` command shows which profile a device was built with, as `hardware` on the `Config: board` line.
+
+### Adding your own profile
+
+If your wiring or IMU mounting differs from the build guide, make a profile for it instead of editing a shared file:
+
+1. Copy the closest profile in `code/Gnimu/src/variants/<board>/hardware/`, for example `reference.h` to `mine.h`.
+2. Change the values you need, and give `kHardwareName` a name for `V` to show.
+3. Build with `scripts/build.sh <board> --hardware mine`.
+
+Keep every constant the copied file defines. A missing one fails the build with an error naming it, and an axis map that isn't a permutation fails with a message saying so. Your new file shows as untracked in `git status`, so a build that includes it reports `dirty=1`, which is accurate: the firmware isn't a clean copy of the repository.
+
+### Protocols
 
 The RaceBox data protocol is the only one available today. [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is planned.
 
----
+### Arduino IDE
 
-## Board wiring (XIAO nRF52840)
-
-One hardware setting lives outside `Config.h`, in [`code/Gnimu/src/platform/nrf52840/BoardConfig.h`](../code/Gnimu/src/platform/nrf52840/BoardConfig.h):
-
-| Setting | Default | What it does |
-|---|---|---|
-| `kWiring` | `Wiring::V2` | Which pins the GNSS power control and the power-switch sense are wired to. |
-
-| | `Wiring::V2` | `Wiring::Classic` |
-|---|---|---|
-| GNSS regulator enable | D1 | D9 |
-| Power-switch sense | A0 | A4 |
-
-`Wiring::V2` is the current pinout, used by the carrier PCB and by the [build guide](build-nrf52840.md). `Wiring::Classic` matches a device built from the Classic nRF52840 instructions, so existing hardware can run this firmware without rewiring. See [Migrating from Classic](migrating-from-classic.md).
+The IDE can't pass options, so it builds the defaults. To build another profile there, change the default: the `GNIMU_HARDWARE_DEFAULT` line in the board's `BoardConfig.h` (for example `"nrf52840/hardware/classic.h"`), or `GNIMU_PROTOCOL_FILE` in `Config.h`. Or edit the default profile itself. Edits like these show as `dirty=1` in a command-line build, but an IDE build doesn't record that either way.
 
 ---
 

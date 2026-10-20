@@ -23,5 +23,12 @@ constexpr const char* gnssSystemName(GnssSystem s) {
                                     : "GLONASS";
 }
 
+// True if src holds each of 0, 1, 2 once: an axis remap that is a rotation or
+// reflection of the sensor, not a collapse of two axes onto one.
+constexpr bool isAxisPermutation(const uint8_t src[3]) {
+  return src[0] < 3 && src[1] < 3 && src[2] < 3 && src[0] != src[1] &&
+         src[0] != src[2] && src[1] != src[2];
+}
+
 }  // namespace config
 }  // namespace gnimu

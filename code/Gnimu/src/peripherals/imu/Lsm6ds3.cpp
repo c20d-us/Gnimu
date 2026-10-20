@@ -76,10 +76,10 @@ constexpr float kDegToRad = 0.017453293f; // rad/s per deg/s
 LSM6DS3 sensor(I2C_MODE, kAddr);
 
 const AxisMap kAxisMap = {
-    {config::kLsm6ds3AxisSrc[0], config::kLsm6ds3AxisSrc[1],
-     config::kLsm6ds3AxisSrc[2]},
-    {config::kLsm6ds3AxisSign[0], config::kLsm6ds3AxisSign[1],
-     config::kLsm6ds3AxisSign[2]}};
+    {board::kLsm6ds3AxisSrc[0], board::kLsm6ds3AxisSrc[1],
+     board::kLsm6ds3AxisSrc[2]},
+    {board::kLsm6ds3AxisSign[0], board::kLsm6ds3AxisSign[1],
+     board::kLsm6ds3AxisSign[2]}};
 
 // Little-endian, matching the library's own readRegisterInt16().
 int16_t rawPair(const uint8_t *p) {

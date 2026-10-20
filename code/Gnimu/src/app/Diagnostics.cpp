@@ -148,11 +148,7 @@ unsigned centi(float v) { return static_cast<unsigned>(v * 100.0f + 0.5f); }
 }  // namespace
 
 void Diagnostics::putConfig(detail::Out& o) const {
-  if (board::kWiringName) {
-    o.put("Config: board %s, wiring %s\n", buildInfo().target, board::kWiringName);
-  } else {
-    o.put("Config: board %s\n", buildInfo().target);
-  }
+  o.put("Config: board %s, hardware %s\n", buildInfo().target, board::kHardwareName);
 
   char gnss[64];
   detail::Out g{gnss, sizeof(gnss), 0};

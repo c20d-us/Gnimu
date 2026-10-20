@@ -52,7 +52,7 @@ Start with the build guide for whichever hardware you're building (links at the 
 | Guide | What it covers |
 |---|---|
 | [Building and flashing](docs/building.md) | Arduino IDE and `arduino-cli` setup, library versions, the build script, and the host tests |
-| [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing and mounting, battery thresholds |
+| [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing, battery thresholds, and the hardware and protocol build profiles |
 | [Console and diagnostics](docs/console.md) | The boot log, the serial commands, the diagnostics report, and the 1Hz status line |
 | [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE, and reading the configuration over BLE |
 | [Architecture](docs/architecture.md) | How the code is organized, the fixed-rate scheduler, and the run and power states |
@@ -122,6 +122,7 @@ code/Gnimu/              The firmware sketch
     platform/            Per-board support: esp32/ and nrf52840/
     peripherals/         GNSS, IMU and BLE drivers
     app/                 Wiring it all together: jobs, states, console
+    variants/            Build profiles: hardware (pins, IMU mounting) and protocol
 tools/                   GNSS utility sketches: identity report, factory reset, OTP clock
 tests/                   Host-side unit tests (tests/run.sh)
 scripts/                 build.sh and flash.sh: build and upload with arduino-cli

@@ -13,15 +13,18 @@
 
 #include "src/app/ConfigTypes.h"
 
-namespace gnimu {
-namespace config {
-
-// Build
-
 // Which BLE protocol this build speaks: one binary per protocol. The
 // protocol, not the board, decides whether the IMU is sampled at all; a
-// RaceChrono build ignores even an onboard IMU. Choices: RaceBox.
-constexpr Protocol kProtocol = Protocol::RaceBox;
+// RaceChrono build ignores even an onboard IMU. The choices are the files in
+// src/variants/protocol/. scripts/build.sh picks one with --protocol; any
+// other build uses RaceBox.
+#ifndef GNIMU_PROTOCOL_FILE
+#define GNIMU_PROTOCOL_FILE "src/variants/protocol/racebox.h"
+#endif
+#include GNIMU_PROTOCOL_FILE
+
+namespace gnimu {
+namespace config {
 
 // GNSS
 
@@ -69,16 +72,8 @@ constexpr char kBleManufacturer[] = "Gnimu";
 constexpr float kImuAccelAlpha = 0.33f;
 constexpr float kImuGyroAlpha = 0.33f;
 
-// Sensor frame -> vehicle frame, one per chip: the external MPU-6050's mount
-// is a builder/BOM choice, while the Sense's onboard LSM6DS3TR-C is fixed to
-// the XIAO, so its map follows which way the XIAO faces in the device. The
-// default is for the XIAO's USB connector toward the rear of the vehicle,
-// verified on hardware. Output axis i is input axis src[i] times sign[i]; src
-// must be a permutation of 0, 1, 2.
-constexpr uint8_t kMpu6050AxisSrc[3] = {0, 1, 2};
-constexpr float kMpu6050AxisSign[3] = {+1.0f, +1.0f, +1.0f};
-constexpr uint8_t kLsm6ds3AxisSrc[3] = {0, 1, 2};
-constexpr float kLsm6ds3AxisSign[3] = {+1.0f, +1.0f, +1.0f};
+// The sensor's mounting (which way each of its axes points in the vehicle) is
+// part of the hardware profile, not a setting: see src/variants/.
 
 // Battery, for builds that have one
 

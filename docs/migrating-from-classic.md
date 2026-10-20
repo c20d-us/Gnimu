@@ -26,7 +26,7 @@ Then build and flash as described in [Building and flashing](building.md). There
 
 **Hardware:** nothing changes. The GNSS stays on GPIO16/17, the MPU-6050 on GPIO21/22, and the status LED is the onboard one on GPIO2.
 
-If you moved the GNSS or LED to different pins by editing Classic's `config.h`, set the same pins in [`code/Gnimu/src/platform/esp32/BoardConfig.h`](../code/Gnimu/src/platform/esp32/BoardConfig.h).
+If you moved the GNSS or LED to different pins by editing Classic's `config.h`, set the same pins in a copy of the ESP32 hardware profile, [`reference.h`](../code/Gnimu/src/variants/esp32/hardware/reference.h), and build with `--hardware` and your profile's name. See [Adding your own profile](configuration.md#adding-your-own-profile).
 
 ---
 
@@ -43,7 +43,7 @@ Everything else is the same: the GNSS on D6/D7, the onboard IMU and LED, and the
 
 You have two options:
 
-- **Keep your wiring.** In [`code/Gnimu/src/platform/nrf52840/BoardConfig.h`](../code/Gnimu/src/platform/nrf52840/BoardConfig.h), change `kWiring` from `Wiring::V2` to `Wiring::Classic`, then build and flash. You'll need to make that one edit again whenever you update the firmware.
+- **Keep your wiring.** Build for Classic hardware: `scripts/build.sh nrf52840 --hardware classic`, then `scripts/flash.sh nrf52840 --hardware classic`. Nothing needs editing, so it works the same on every firmware update. In the Arduino IDE, which can't pass options, change `GNIMU_HARDWARE_DEFAULT` in [`nrf52840/BoardConfig.h`](../code/Gnimu/src/platform/nrf52840/BoardConfig.h) to `"nrf52840/hardware/classic.h"` and re-apply that after each update.
 - **Move the two wires** to D1 and A0, and flash the firmware unmodified.
 
 > [!IMPORTANT]
@@ -64,7 +64,7 @@ All settings are now in [`code/Gnimu/Config.h`](../code/Gnimu/Config.h), describ
 | `GNSS_BAUD` | No longer a setting. The firmware always runs the receiver at 115200. |
 | `IMU_ACCEL_ALPHA`, `IMU_GYRO_ALPHA` | `kImuAccelAlpha`, `kImuGyroAlpha`. **The default changed from 0.09 to 0.33**: lighter smoothing, less lag. |
 | `IMU_*_TRANSIENT_THRESHOLD*` | Gone. There is no transient blending; with the lighter smoothing it isn't needed. |
-| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | `kMpu6050AxisSrc` / `kMpu6050AxisSign` on the ESP32, `kLsm6ds3AxisSrc` / `kLsm6ds3AxisSign` on the nRF52840. Same meaning, written as `{X, Y, Z}`. |
+| `IMU_AXIS_X/Y/Z_SRC`, `IMU_AXIS_X/Y/Z_SIGN` | `kMpu6050AxisSrc` / `kMpu6050AxisSign` on the ESP32, `kLsm6ds3AxisSrc` / `kLsm6ds3AxisSign` on the nRF52840. Same meaning, written as `{X, Y, Z}`, but in the [hardware profile](configuration.md#mounting-orientation), not in `Config.h`. |
 | `IMU_TRIM_*` | Not settings any more. The self-calibration behaves the same way. |
 | `BLE_TX_POWER` (ESP32), `BLE_TX_POWER_ADV` / `_CONN` (nRF52840) | `kBleTxPowerDbm`: one value, in dBm on both boards. |
 | `LOW_BATT_CUTOFF_V`, `LOW_BATT_CRITICAL_V`, `LOW_BATT_WARN_V`, `BATTERY_FULL_V` | `kBatteryCutoffV`, `kBatteryCriticalV`, `kBatteryWarningV`, `kBatteryChargeFullV` |
@@ -73,12 +73,12 @@ All settings are now in [`code/Gnimu/Config.h`](../code/Gnimu/Config.h), describ
 | `STATE_CHARGE_ONLY_ON_USB` | Gone. See [Power and charging](#power-and-charging) below. |
 | `STATE_IDLE_TIMEOUT_MIN` and the other `LIGHT_SLEEP` settings, `IMU_WAKE_*`, `GNSS_WAKE_PULSE_MS` | Gone, along with LIGHT_SLEEP itself. |
 | `LOG_ENABLED` | Gone. The console is silent after boot unless you ask it for something. |
-| Pin assignments | In each board's `BoardConfig.h`, not in `Config.h`. |
+| Pin assignments | In the [hardware profile](configuration.md#hardware-profiles), not in `Config.h`. The Classic nRF52840 pins are the `classic` profile, selected with `--hardware classic`. |
 
-If you had the IMU mounted in a non-default orientation, carry your six axis values over.
+If you had the IMU mounted in a non-default orientation, carry your six axis values over into a [profile of your own](configuration.md#adding-your-own-profile).
 
 > [!IMPORTANT]
-> **Classic nRF52840 devices need their axis signs set.** The XIAO faces a different way in the current build than it did in the Classic nRF52840 build, so the default changed. For a device built from the Classic nRF52840 instructions, set `kLsm6ds3AxisSign` to `{-1.0f, -1.0f, +1.0f}` in `Config.h`, which is what Classic used. Without it, forward and left read reversed.
+> **Classic nRF52840 devices need Classic hardware selected.** The XIAO faces a different way in the current build than it did in the Classic nRF52840 build, so the default axis signs changed. Building with `--hardware classic` selects a profile whose `kLsm6ds3AxisSign` is `{-1.0f, -1.0f, +1.0f}`, which is what Classic used. Without it, forward and left read reversed.
 
 If your IMU smoothing was tuned to taste at Classic's default, set both alphas back to `0.09` to keep the feel you had.
 

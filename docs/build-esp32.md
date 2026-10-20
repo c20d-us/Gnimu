@@ -79,7 +79,7 @@ Before you rely on the GNSS module at 20Hz or more, read the notes on GNSS modul
 
 **Status LED:** the dev board's onboard LED (GPIO2).
 
-> The pin assignments are in [`code/Gnimu/src/platform/esp32/BoardConfig.h`](../code/Gnimu/src/platform/esp32/BoardConfig.h), if you need to route something differently.
+> The pin assignments are in the ESP32 hardware profile, [`code/Gnimu/src/variants/esp32/hardware/reference.h`](../code/Gnimu/src/variants/esp32/hardware/reference.h). To route something differently, make [a profile of your own](configuration.md#adding-your-own-profile).
 
 ---
 
@@ -189,5 +189,5 @@ The boot log is the first place to look. Every step reports ✅ or ❌.
 | Few or no satellites | Move outdoors or near a window; keep `kBleTxPowerDbm` low; give it a cold-start minute. |
 | The GNSS rate sags as the satellite count climbs | The module is running at its stock clock. See the notes on GNSS modules in the [README](../README.md#three-notes-about-gnss-modules). |
 | App won't connect | Make sure no other client is already connected, and that you're selecting the name the boot log shows. |
-| An axis reads backwards in the app | Adjust the mounting orientation in [Configuration](configuration.md#mounting-orientation). |
+| An axis reads backwards in the app | Set the mounting orientation in your [hardware profile](configuration.md#mounting-orientation). |
 | Build fails with a `static_assert` message | Read the message. It names the offending setting and the allowed range. |

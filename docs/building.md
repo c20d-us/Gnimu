@@ -75,13 +75,17 @@ That is expected, and the firmware is otherwise identical.
 scripts/build.sh            # both boards
 scripts/build.sh esp32      # one board
 scripts/build.sh nrf52840
+scripts/build.sh nrf52840 --hardware classic   # Classic nRF52840 wiring and IMU axes
+scripts/build.sh --matrix                      # every board and profile combination
 ```
+
+`--hardware <name>` and `--protocol <name>` choose the build's [profiles](configuration.md#build-variants): small header files that hold the pins, the IMU mounting and the protocol. Hardware profiles belong to a board, so name the board with `--hardware`. Left out, the build uses the defaults. The choice is passed to the compiler as a flag, so no file is modified, and a build from a clean tagged commit reports `dirty=0` whichever profile you pick.
 
 The script:
 
 - compiles from clean with all warnings on, and **fails if any warning comes from the project's own sources** (warnings from board packages and libraries are shown but don't fail the build);
 - stamps the version, git revision, and build time into the firmware;
-- writes the finished firmware to `build/esp32/` or `build/nrf52840/`.
+- writes the finished firmware to `build/esp32/` or `build/nrf52840/`, with the profile names appended when you give them (`build/nrf52840-classic/`), so builds of one commit don't overwrite each other.
 
 It finds `arduino-cli` on your `PATH`, or uses the copy bundled with the Arduino IDE on macOS, or whatever `ARDUINO_CLI` points to. It uses its own build folder, so it can run alongside an IDE build without either disturbing the other.
 
@@ -104,6 +108,12 @@ arduino-cli lib install "Seeed Arduino LSM6DS3@2.0.7"
 ```bash
 scripts/build.sh nrf52840
 scripts/flash.sh nrf52840
+```
+
+`flash.sh` takes the same `--hardware` and `--protocol` options as `build.sh` and picks the matching build directory, so pass the ones you built with. Add `--build` to build first with those options and flash the result in one step; if the build fails, nothing is flashed:
+
+```bash
+scripts/flash.sh nrf52840 --build --hardware classic
 ```
 
 **XIAO nRF52840.** With one XIAO connected, the script finds its port by itself. The upload resets the board into its bootloader, as it does from the IDE; if that fails, double-tap the XIAO's reset button and run the script again.
@@ -138,7 +148,7 @@ BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,t
 | `dirty` | `1` if the working tree had uncommitted changes when it was built, `0` if it was clean. |
 | `utc` | When it was built. |
 
-That line settles which firmware a device is running, which an IDE build's `IDE-UNSTAMPED` cannot.
+That line settles which firmware a device is running, which an IDE build's `IDE-UNSTAMPED` cannot. Which hardware profile and protocol it was built for follow in the `Config:` lines `V` prints (`hardware`, `IMU axes`, `BLE`).
 
 The script is a thin wrapper. The command underneath is:
 

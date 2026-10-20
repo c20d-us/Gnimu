@@ -57,7 +57,7 @@ Here is a complete boot of each board. Both GNSS receivers had been configured o
 ```
 BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,target=esp32
 Device ID: 0301821570
-Config: board esp32
+Config: board esp32, hardware Reference
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
 Config: BLE RaceBox, name "Gnimu-RB 0301821570", TX power -12 dBm
@@ -128,7 +128,7 @@ L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 ```
 BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
-Config: board nrf52840, wiring V2
+Config: board nrf52840, hardware V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
 Config: BLE RaceBox, name "Gnimu-RB 1120954722", TX power -12 dBm
@@ -232,7 +232,7 @@ If the receiver was working and then goes quiet for two seconds, the firmware re
 ```
 BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
-Config: board nrf52840, wiring V2
+Config: board nrf52840, hardware V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
 Config: BLE RaceBox, name "Gnimu-RB 1120954722", TX power -12 dBm
@@ -243,7 +243,7 @@ The `BUILD` line and the device ID are described under [the boot log](#the-boot-
 
 | Line | What it shows |
 |---|---|
-| `Config: board` | The board the firmware was built for. On the XIAO nRF52840, also the [wiring](configuration.md#board-wiring-xiao-nrf52840) it expects. |
+| `Config: board` | The board the firmware was built for, and the [hardware profile](configuration.md#hardware-profiles) it was built with: the pins and IMU mounting it expects. |
 | `Config: GNSS` | The constellations in use, the navigation rate, the receiver's dynamic model, and the minimum satellite elevation. |
 | `Config: IMU` | The axis mapping and the smoothing. `X=+x` means the vehicle's X axis is the sensor's x axis, unchanged; `X=-x` means it is reversed. See [mounting orientation](configuration.md#mounting-orientation). |
 | `Config: BLE` | The protocol, the advertised BLE name and the transmit power. |

@@ -13,7 +13,7 @@ Everything is under [`code/Gnimu/src/`](../code/Gnimu/src/), in four layers. Eac
 | Layer | What's in it | Rules |
 |---|---|---|
 | [`core/`](../code/Gnimu/src/core/) | Logic and math: the scheduler, the state machine, the power policy, the packet encoder, filters, the self-calibration, the report formatters. | Plain C++ with no Arduino and no hardware, so it runs in the [host tests](building.md#host-tests). |
-| [`platform/`](../code/Gnimu/src/platform/) | What differs per board: the clock, the GNSS UART, the I2C bus, power control, the battery reading, the status LED, the watchdog. | One header per service, with an implementation under `esp32/` and `nrf52840/`. Each board's pins are in its `BoardConfig.h`. |
+| [`platform/`](../code/Gnimu/src/platform/) | What differs per board: the clock, the GNSS UART, the I2C bus, power control, the battery reading, the status LED, the watchdog. | One header per service, with an implementation under `esp32/` and `nrf52840/`. What a board has is in its `BoardConfig.h`; the pins and IMU mounting that depend on how it's built are in a [hardware profile](../code/Gnimu/src/variants/). |
 | [`peripherals/`](../code/Gnimu/src/peripherals/) | Drivers for the devices: the GNSS receiver, the two IMU chips, and BLE on each board's stack. | Built on `platform/` and the vendor libraries. |
 | [`app/`](../code/Gnimu/src/app/) | The application: the job table, the states, the console, the diagnostics. | Ties the rest together. No board-specific code. |
 
@@ -23,7 +23,7 @@ The sketch itself, [`Gnimu.ino`](../code/Gnimu/Gnimu.ino), is three lines: it cr
 
 Nothing is selected by editing the code. Each file under `platform/esp32/` and `platform/nrf52840/` is wrapped in a check for its own board, so the compiler builds one set and reduces the other to nothing. The same mechanism picks the IMU driver and the BLE transport: `ImuDevice` and `BleTransport` are compile-time aliases for the right class.
 
-What a board *has* is stated once, in its `BoardConfig.h`: whether there's a battery, and whether the GNSS and IMU power can be switched. The rest of the code asks those questions rather than asking which board it is.
+What a board *has* is stated once, in its `BoardConfig.h`: whether there's a battery, and whether the GNSS and IMU power can be switched. The rest of the code asks those questions rather than asking which board it is. How a particular device is wired and mounted (the pins you can route differently, and which way the IMU faces) is a separate choice, made by naming a hardware profile when the firmware is built.
 
 Shared code is written in C++11, because that's what the Seeed nRF52 board package compiles with.
 
@@ -77,7 +77,7 @@ The receiver's speed also feeds back into the IMU job. The self-calibration only
 
 ### The protocol
 
-What goes in a packet, and the BLE services that carry it, belong to a protocol class under [`app/protocol/`](../code/Gnimu/src/app/protocol/), chosen at compile time by `kProtocol` in `Config.h`. The protocol also decides whether the IMU is used at all.
+What goes in a packet, and the BLE services that carry it, belong to a protocol class under [`app/protocol/`](../code/Gnimu/src/app/protocol/), chosen at compile time by the protocol profile in [`variants/protocol/`](../code/Gnimu/src/variants/protocol/) (see [Build variants](configuration.md#build-variants)). The protocol also decides whether the IMU is used at all.
 
 RaceBox is the only protocol today. The encoder, [`core/RaceBoxEncoder.h`](../code/Gnimu/src/core/RaceBoxEncoder.h), is tested byte for byte against independently computed packets.
 

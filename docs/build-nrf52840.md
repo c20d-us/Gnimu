@@ -311,7 +311,7 @@ The boot log is the first place to look. Every step reports ✅ or ❌.
 | `GNSS not detected at any standard baud rate` | UART wiring (note the TX↔RX crossover), the 3.3V rail (measure it), and that the regulator's EN reaches D1. |
 | `GNSS detected but sending no data` | The GNSS rail. A module that is only partly powered can answer without producing fixes. |
 | `IMU: LSM6DS3TR-C detected ❌` | Confirm that you have a **Sense** XIAO; the plain XIAO has no IMU. The device still streams GNSS data, with the IMU fields reading zero. |
-| The device restarts or misbehaves when the switch is moved | Confirm the switch sense is on **D0/A0** and the regulator EN on **D1**. A Classic-wired device needs the Classic pinout selected; see [Migrating from Classic](migrating-from-classic.md). |
+| The device restarts or misbehaves when the switch is moved | Confirm the switch sense is on **D0/A0** and the regulator EN on **D1**. A Classic-wired device needs the `classic` hardware profile (`--hardware classic`); see [Migrating from Classic](migrating-from-classic.md). |
 | Few or no satellites | Move outdoors or near a window; keep the BLE transmit power low; give it a cold-start minute. |
 | The GNSS rate sags as the satellite count climbs | The module is running at its stock clock. See the notes on GNSS modules in the [README](../README.md#three-notes-about-gnss-modules). |
 | App won't connect | Make sure no other client already holds the connection, and that you're selecting the name the boot log shows. |

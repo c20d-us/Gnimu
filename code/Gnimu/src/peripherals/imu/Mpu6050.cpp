@@ -2,6 +2,10 @@
 // Copyright (C) 2026 Chris Halstead
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// ESP32 only: the MPU-6050 is the ESP32 build's IMU, and its axis map comes
+// from the ESP32 hardware profile, which no other board has. See Lsm6ds3.cpp.
+#if defined(ARDUINO_ARCH_ESP32)
+
 #include "Mpu6050.h"
 
 #include <Arduino.h>
@@ -9,6 +13,7 @@
 #include <string.h>
 
 #include "../../app/SystemConfig.h"
+#include "../../platform/Board.h"
 #include "../../platform/ImuBus.h"
 #include "ImuLog.h"
 
@@ -53,10 +58,10 @@ constexpr float kGravity = 9.80665f;      // m/s^2 per g
 constexpr float kDegToRad = 0.017453293f; // rad/s per deg/s
 
 const AxisMap kAxisMap = {
-    {config::kMpu6050AxisSrc[0], config::kMpu6050AxisSrc[1],
-     config::kMpu6050AxisSrc[2]},
-    {config::kMpu6050AxisSign[0], config::kMpu6050AxisSign[1],
-     config::kMpu6050AxisSign[2]}};
+    {board::kMpu6050AxisSrc[0], board::kMpu6050AxisSrc[1],
+     board::kMpu6050AxisSrc[2]},
+    {board::kMpu6050AxisSign[0], board::kMpu6050AxisSign[1],
+     board::kMpu6050AxisSign[2]}};
 
 void writeRegs(uint8_t reg, const uint8_t *data, size_t len) {
   Wire.beginTransmission(kAddr);
@@ -146,3 +151,5 @@ bool Mpu6050::begin(Console &log, ImuSample &first) {
 }
 
 } // namespace gnimu
+
+#endif

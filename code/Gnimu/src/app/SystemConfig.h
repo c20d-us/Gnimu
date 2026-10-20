@@ -250,14 +250,6 @@ static_assert(kImuAccelAlpha > 0.0f && kImuAccelAlpha <= 1.0f,
               "alpha must be in (0, 1]");
 static_assert(kImuGyroAlpha > 0.0f && kImuGyroAlpha <= 1.0f,
               "alpha must be in (0, 1]");
-constexpr bool isAxisPermutation(const uint8_t src[3]) {
-  return src[0] < 3 && src[1] < 3 && src[2] < 3 && src[0] != src[1] &&
-         src[0] != src[2] && src[1] != src[2];
-}
-static_assert(isAxisPermutation(kMpu6050AxisSrc),
-              "Mpu6050 axis remap must be a permutation of 0,1,2");
-static_assert(isAxisPermutation(kLsm6ds3AxisSrc),
-              "Lsm6ds3 axis remap must be a permutation of 0,1,2");
 
 static_assert(kImuTrimGravityNative > 0.0f, "gravity must be positive");
 static_assert(kImuTrimQualifyMs >= kImuSamplePeriodUs / 1000,
