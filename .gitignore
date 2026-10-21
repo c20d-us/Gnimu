@@ -102,6 +102,7 @@ test/vectors*.gc1
 # Editors
 .vscode/
 .idea/
+.claude/
 
 # Firmware review working notes: kept locally, not part of the repository.
 docs/firmware-review-*.md
