@@ -125,7 +125,7 @@ code/Gnimu/              The firmware sketch
     variants/            Build profiles: hardware (pins, IMU mounting) and protocol
 tools/                   GNSS utility sketches: identity report, factory reset, OTP clock
 tests/                   Host-side unit tests (tests/run.sh)
-scripts/                 build.sh and flash.sh: build and upload with arduino-cli
+scripts/                 setup.sh, build.sh and flash.sh: set up, build and upload with arduino-cli
 docs/                    Build guides and reference documentation
 images/                  Build photos for the current guides
 classic/                 The original firmware, deprecated (see below)

@@ -44,7 +44,7 @@ The log runs in this order:
 
 1. **Identity and start.** The `BUILD` line, the device ID and the `Config:` lines (the same lines `V` prints), then `Gnimu starting`, the reason for the last reset, and the watchdog.
 2. **Power** (XIAO nRF52840 only). The switch and USB state, and a first battery reading.
-3. **GNSS.** Detecting the receiver, then one line for every receiver setting the firmware checks.
+3. **GNSS.** Detecting the receiver, one line for every receiver setting the firmware checks, then one for the receiver's CPU clock. The clock line shows ⚠️ when the receiver is on the stock clock (`stock 128 MHz`), when the high clock is programmed but not running yet, or when the clock could not be read.
 4. **IMU and BLE.** The IMU start-up, then BLE, which is started last and ends with advertising.
 5. **Jobs.** One line per job with how often it runs and its time budget, or `disabled`.
 6. **State and commands.** The state the firmware ended up in, and the command list.
@@ -101,6 +101,7 @@ GNSS: setting Nav frequency to 20Hz
 GNSS: nav ratio=1 ✅
 GNSS: nav rate=50 ✅
 GNSS: NAV-PVT output rate=1 ✅
+GNSS: CPU clock 192 MHz ✅
 GNSS: Configuring PVT callback and auto PVT output
 GNSS: PVT callback and auto PVT output enabled ✅
 IMU: MPU-6050 detected ✅
@@ -177,6 +178,7 @@ GNSS: setting Nav frequency to 20Hz
 GNSS: nav ratio=1 ✅
 GNSS: nav rate=50 ✅
 GNSS: NAV-PVT output rate=1 ✅
+GNSS: CPU clock 192 MHz ✅
 GNSS: Configuring PVT callback and auto PVT output
 GNSS: PVT callback and auto PVT output enabled ✅
 IMU: LSM6DS3TR-C detected ✅
@@ -232,6 +234,7 @@ If the receiver was working and then goes quiet for two seconds, the firmware re
 ```
 BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
+GNSS clock: 192 MHz
 Config: board nrf52840, hardware V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
 Config: IMU axes X=+x Y=+y Z=+z, smoothing accel 0.33 gyro 0.33
@@ -243,6 +246,7 @@ The `BUILD` line and the device ID are described under [the boot log](#the-boot-
 
 | Line | What it shows |
 |---|---|
+| `GNSS clock` | The receiver's CPU clock, read at start-up: `192 MHz`, `stock 128 MHz`, `high clock programmed, not active yet`, or `unknown`. Unlike the `Config:` lines it reports the receiver, not the build, and is left out of the `V` lines that open the boot log, which print before the receiver is read. |
 | `Config: board` | The board the firmware was built for, and the [hardware profile](configuration.md#hardware-profiles) it was built with: the pins and IMU mounting it expects. |
 | `Config: GNSS` | The constellations in use, the navigation rate, the receiver's dynamic model, and the minimum satellite elevation. |
 | `Config: IMU` | The axis mapping and the smoothing. `X=+x` means the vehicle's X axis is the sensor's x axis, unchanged; `X=-x` means it is reversed. See [mounting orientation](configuration.md#mounting-orientation). |

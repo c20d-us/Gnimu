@@ -37,6 +37,6 @@ A client can also read what the device is, as text: the same lines the console's
 
 - **Not advertised.** Find it by discovering the device's services once connected. A client that cached the device's services before this was added needs to refresh them.
 - **Read the whole value.** It is up to 512 bytes, longer than one BLE packet, so use a long read (most BLE tools do this automatically).
-- **UTF-8 text, one line per `\n`.** The first line is the `BUILD` line, which carries the firmware version and revision; read the rest against that. Lines begin `Device ID:` or `Config:`. New lines may be added in later versions, and a client should ignore any it doesn't recognise.
-- **Fixed at boot.** The values are what the firmware was built with. The device never accepts changes through this characteristic.
+- **UTF-8 text, one line per `\n`.** The first line is the `BUILD` line, which carries the firmware version and revision; read the rest against that. Lines begin `Device ID:`, `GNSS clock:` or `Config:`. New lines may be added in later versions, and a client should ignore any it doesn't recognise.
+- **Fixed at boot.** The `Config:` values are what the firmware was built with, and the `GNSS clock:` line is what the device found in the receiver at start-up. Neither changes while it runs, and the device never accepts changes through this characteristic.
 

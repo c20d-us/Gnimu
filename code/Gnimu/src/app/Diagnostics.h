@@ -15,13 +15,14 @@
 #include "../core/Scheduler.h"
 #include "../core/TextOut.h"
 #include "../peripherals/ble/BleTransport.h"
+#include "../peripherals/gnss/Gnss.h"
 #include "../peripherals/imu/ImuDevice.h"
 #include "Console.h"
 
 namespace gnimu {
 
 // The console's reporting side: the D report, the 1 s status line, and the
-// V lines (build, device ID and the build's settings). It only reads the modules it reports on; App
+// V lines (build, device ID, the receiver's clock and the build's settings). It only reads the modules it reports on; App
 // routes each command, clears its own state on Clear, and passes every command
 // here too, so each owner resets only what it owns.
 class Diagnostics {
@@ -29,7 +30,7 @@ class Diagnostics {
   // Everything is referenced, not copied, and must outlive this object.
   // `battery` is nullptr on boards without one.
   Diagnostics(Console& console, const Job* jobs, const JobStats* stats, size_t jobCount,
-              const uint32_t& loops, const GnssFeed& feed, const ImuDevice& imu,
+              const uint32_t& loops, const GnssFeed& feed, const Gnss& gnss, const ImuDevice& imu,
               const BleTransport& ble, const BatteryStatus* battery,
               const RunStateMachine& machine, const char* deviceId, const ResetRecord& reset)
       : console_(console),
@@ -38,6 +39,7 @@ class Diagnostics {
         jobCount_(jobCount),
         loops_(loops),
         feed_(feed),
+        gnss_(gnss),
         imu_(imu),
         ble_(ble),
         battery_(battery),
@@ -52,8 +54,9 @@ class Diagnostics {
   // Prints the status line when one is due.
   void tick(uint64_t nowUs);
 
-  // What this device is: the build, the device ID, and the settings the build
-  // was compiled with. The V command, and the top of the boot log.
+  // What this device is: the build, the device ID, the receiver's CPU clock
+  // once it has been read, and the settings the build was compiled with. The V
+  // command, and the top of the boot log, which prints before the clock is read.
   void printVersion();
   // The same text for `buf`, lines separated by '\n'; truncated, never
   // overrun. What a BLE client reads from the config characteristic. Returns
@@ -79,6 +82,7 @@ class Diagnostics {
   size_t jobCount_;
   const uint32_t& loops_;
   const GnssFeed& feed_;
+  const Gnss& gnss_;
   const ImuDevice& imu_;
   const BleTransport& ble_;
   const BatteryStatus* battery_;

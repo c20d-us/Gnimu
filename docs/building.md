@@ -53,7 +53,11 @@ If an upload to the XIAO can't reset the board into its bootloader, **double-tap
 > [!IMPORTANT]
 > **macOS build gotcha (XIAO nRF52840):** The Seeed nRF52 core's `platform.txt` invokes bare `python` for its UF2 step, but modern macOS only ships `python3`, so compiling fails with `exec: "python": executable file not found in $PATH`.
 >
-> **Fix:** in `~/Library/Arduino15/packages/Seeeduino/hardware/nrf52/<version>/platform.txt`, change `python` to `python3` on the `recipe.objcopy.uf2.pattern` line. This reverts on every core reinstall or update, so it must be re-done afterward.
+> **Fix:** with Homebrew's Python installed (`brew install python`), put its unversioned `python` on your `PATH` by adding this line to your zsh startup file, such as `~/.zshrc`:
+> ```bash
+> export PATH="$(brew --prefix python)/libexec/bin:$PATH"
+> ```
+> Editing the core's `platform.txt` also works, but the edit reverts on every core reinstall or update. [`scripts/setup.sh`](../scripts/setup.sh) checks that `python` resolves.
 
 ### The build stamp
 
@@ -89,17 +93,23 @@ The script:
 
 It finds `arduino-cli` on your `PATH`, or uses the copy bundled with the Arduino IDE on macOS, or whatever `ARDUINO_CLI` points to. It uses its own build folder, so it can run alongside an IDE build without either disturbing the other.
 
-To set up `arduino-cli` from scratch, install the board packages and libraries at the tested versions:
+### Setting up a fresh machine
+
+On a clean Mac, with no Arduino IDE:
 
 ```bash
-arduino-cli core update-index --config-file arduino-cli.yaml
-arduino-cli core install esp32:esp32@3.3.12 --config-file arduino-cli.yaml
-arduino-cli core install Seeeduino:nrf52@1.1.13 --config-file arduino-cli.yaml
-arduino-cli lib install "SparkFun u-blox GNSS v3@3.1.15"
-arduino-cli lib install "Seeed Arduino LSM6DS3@2.0.7"
+xcode-select --install                                  # git, g++, python3
+softwareupdate --install-rosetta --agree-to-license     # Apple Silicon only
+brew install arduino-cli python
 ```
 
-[`arduino-cli.yaml`](../arduino-cli.yaml), in the repository root, carries the Seeed boards manager URL. If you already installed everything through the Arduino IDE, `arduino-cli` shares those installs and there is nothing more to do.
+Add the `python` line from the [macOS build gotcha](#arduino-ide) to your zsh startup file (such as `~/.zshrc`), then run:
+
+```bash
+scripts/setup.sh
+```
+
+[`scripts/setup.sh`](../scripts/setup.sh) checks those tools, then installs the board packages and libraries at the tested versions. It is safe to run again. [`arduino-cli.yaml`](../arduino-cli.yaml), in the repository root, carries the Seeed boards manager URL. If you already installed everything through the Arduino IDE, `arduino-cli` shares those installs and there is nothing more to do.
 
 ### Flashing from the command line
 
@@ -114,6 +124,12 @@ scripts/flash.sh nrf52840
 
 ```bash
 scripts/flash.sh nrf52840 --build --hardware classic
+```
+
+Add `--monitor` to open the serial console on the same port once the upload finishes, so you see the [boot log](console.md#the-boot-log) from the first line. Press Ctrl-C to quit:
+
+```bash
+scripts/flash.sh nrf52840 --monitor
 ```
 
 **XIAO nRF52840.** With one XIAO connected, the script finds its port by itself. The upload resets the board into its bootloader, as it does from the IDE; if that fails, double-tap the XIAO's reset button and run the script again.

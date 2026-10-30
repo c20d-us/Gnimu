@@ -8,6 +8,7 @@
 #include <SparkFun_u-blox_GNSS_v3.h>
 
 #include "../../app/SystemConfig.h"
+#include "../../core/GnssClock.h"
 #include "../../platform/Clock.h"
 #include "../../platform/GnssUart.h"
 #include "../../platform/Watchdog.h"
@@ -84,6 +85,9 @@ bool getVal(uint32_t key, uint8_t *val, uint8_t layer) {
 bool getVal(uint32_t key, uint16_t *val, uint8_t layer) {
   return receiver.getVal16(key, val, layer);
 }
+bool getVal(uint32_t key, uint32_t *val, uint8_t layer) {
+  return receiver.getVal32(key, val, layer);
+}
 bool setAll(uint32_t key, uint8_t val) {
   return receiver.setVal8(key, val, VAL_LAYER_ALL);
 }
@@ -105,6 +109,32 @@ template <typename T> bool readLayer(uint32_t key, T *val, uint8_t layer) {
     Watchdog::feed();
     if (getVal(key, val, layer))
       return true;
+  }
+  return false;
+}
+
+// VALGET's wire layer for OTP. The library only names RAM, BBR and flash, and
+// sends any other layer as the default one, so the request is built with the
+// library and the layer byte is then set by hand.
+constexpr uint8_t kValgetLayerOtp = 4;
+constexpr uint16_t kOtpReplyWaitMs = 400;
+constexpr int kOtpReadAttempts = 2;
+
+// True if OTP holds the high clock. A receiver with nothing in OTP either
+// NAKs or says nothing, so both end as false; the caller has already shown
+// the receiver is answering.
+bool otpHoldsHighClockNow() {
+  uint8_t payload[48]; // the 36-byte reply with room to spare
+  ubxPacket pkt = {0, 0, 0, 0, 0, payload, 0, 0, SFE_UBLOX_PACKET_VALIDITY_NOT_DEFINED,
+                   SFE_UBLOX_PACKET_VALIDITY_NOT_DEFINED};
+  for (int attempt = 0; attempt < kOtpReadAttempts; attempt++) {
+    receiver.newCfgValget(&pkt, sizeof(payload), VAL_LAYER_RAM);
+    for (uint32_t key : kGnssClockKeys)
+      receiver.addCfgValget(&pkt, key);
+    pkt.payload[1] = kValgetLayerOtp;
+    Watchdog::feed();
+    if (receiver.sendCfgValget(&pkt, kOtpReplyWaitMs))
+      return otpHoldsHighClock(payload, 4 + 4 * 8);
   }
   return false;
 }
@@ -219,6 +249,21 @@ bool Gnss::ensureVal(uint32_t key, T desired, const char *name, Check check) {
   return true;
 }
 
+// Reports the CPU clock; never a failure. RAM shows what the receiver is
+// running, OTP what it will run after its next start, which a burn leaves
+// out of RAM until then.
+void Gnss::checkClock() {
+  uint32_t ramHz = 0;
+  const bool ramRead = readLayer(kGnssClockKeys[0], &ramHz, VAL_LAYER_RAM);
+  const bool ramHigh = ramRead && ramHz == kGnssHighClockHz[0];
+  const bool otpHigh = ramRead && !ramHigh && otpHoldsHighClockNow();
+  // A reply that came in after its wait must not be taken for the next read's.
+  drainUart();
+  clock_ = classifyClock(ramRead, ramHigh, otpHigh);
+  log_->log("GNSS: CPU clock %s %s", gnssClockText(clock_),
+            clock_ == GnssClockState::Active ? "✅" : "⚠️");
+}
+
 bool Gnss::configure() {
   // Let the receiver settle and then clear any bytes left from the baud
   // handshake so the first configuration reads/ACKs parse cleanly.
@@ -323,6 +368,7 @@ bool Gnss::configure() {
     log_->log("GNSS: %u setting(s) not saved to flash - in effect now, rewritten next boot ⚠️",
               flashWarnings_);
   }
+  checkClock();
 
   // Callback is registered last, once the receiver is fully configured. It
   // also turns PVT output back on - in RAM only, since flash already holds it
@@ -343,6 +389,7 @@ bool Gnss::configure() {
 bool Gnss::begin(Console &log) {
   log_ = &log;
   configured_ = false;
+  clock_ = GnssClockState::Unchecked;
   if (!connectAtBaud())
     return false;
   configured_ = configure();

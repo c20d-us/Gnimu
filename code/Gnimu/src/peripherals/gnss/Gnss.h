@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../../app/Console.h"
+#include "../../core/GnssClock.h"
 #include "../../core/GnssEpoch.h"
 
 namespace gnimu {
@@ -25,6 +26,8 @@ public:
   // isn't running the configuration, which is fatal (GnssConfigFailed).
   // Settings that are right but not saved to flash are only warnings.
   bool configured() const { return configured_; }
+  // The receiver's CPU clock as of the last begin(); Unchecked until it has been read.
+  GnssClockState clockState() const { return clock_; }
   // Drains the UART and parses; call at least every drain period.
   void poll();
   // Returns true and fills `out` once per new epoch.
@@ -39,6 +42,8 @@ private:
   bool connectAtBaud();
   // False when a setting is left wrong in RAM (see configured()).
   bool configure();
+  // Reads and logs the CPU clock into clock_. Never fails the boot.
+  void checkClock();
   // Which layer a key is checked in: RAM, or flash for the one key
   // configure() deliberately holds off in RAM while it works.
   enum class Check : uint8_t { Ram, FlashOnly };
@@ -51,6 +56,7 @@ private:
 
   Console *log_ = nullptr;
   bool configured_ = false;
+  GnssClockState clock_ = GnssClockState::Unchecked;
   unsigned flashWarnings_ = 0;  // this configure()'s "not saved to flash" keys
 };
 

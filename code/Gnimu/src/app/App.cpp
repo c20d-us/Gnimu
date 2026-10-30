@@ -42,7 +42,7 @@ App::App()
                 config::kBatteryFullScaleV, config::kBatteryCutoffDebounceMs,
                 config::kBatteryChargeFullV, config::kBatteryChargeFullDebounceMs}),
       machine_(kRunConfig),
-      diagnostics_(console_, scheduler_.jobs(), scheduler_.allStats(), kJobs, loops_, feed_, imu_,
+      diagnostics_(console_, scheduler_.jobs(), scheduler_.allStats(), kJobs, loops_, feed_, gnss_, imu_,
                    ble_, board::kHasBattery ? &battery_.status() : nullptr, machine_, deviceId_,
                    reset_) {
   // Here, not in the class: GCC only evaluates it once App is complete.

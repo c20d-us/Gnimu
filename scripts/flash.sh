@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Chris Halstead
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Usage: scripts/flash.sh <esp32|nrf52840> [port] [--build]
+# Usage: scripts/flash.sh <esp32|nrf52840> [port] [--build] [--monitor]
 #                         [--hardware <name>] [--protocol <name>]
 #
 # Uploads the firmware scripts/build.sh last built for that board and
@@ -13,6 +13,9 @@
 # flashing nothing, if the build fails. Either way, what's flashed is exactly
 # what was built, stamp and all.
 #
+# --monitor opens the serial console on the same port once the upload is done,
+# so the boot log is there to read (Ctrl-C to quit).
+#
 # Without a port, uses the one connected board that identifies itself as this
 # board type. The XIAO does; an ESP32 dev board's USB-serial chip doesn't, so
 # the ESP32 needs its port named.
@@ -20,13 +23,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 usage() {
-  echo "Usage: $0 <esp32|nrf52840> [port] [--build] [--hardware <name>] [--protocol <name>]" >&2
+  echo "Usage: $0 <esp32|nrf52840> [port] [--build] [--monitor] [--hardware <name>] [--protocol <name>]" >&2
   exit 2
 }
 build=0
+monitor=0
 rest=()
 for arg in "$@"; do
-  if [[ "$arg" == --build ]]; then build=1; else rest+=("$arg"); fi
+  case "$arg" in
+    --build) build=1 ;;
+    --monitor) monitor=1 ;;
+    *) rest+=("$arg") ;;
+  esac
 done
 set -- ${rest[@]+"${rest[@]}"}
 source scripts/variant.sh
@@ -95,3 +103,18 @@ echo "Flashing $dir/$image to $port"
   --port "$port" \
   --input-dir "$dir"
 echo "$board$variant: flashed"
+
+if [[ $monitor -eq 1 ]]; then
+  # The board resets after an upload and its port can take a moment to come
+  # back, so wait for it rather than failing on the first try.
+  for _ in $(seq 1 50); do
+    [[ -e "$port" ]] && break
+    sleep 0.2
+  done
+  if [[ ! -e "$port" ]]; then
+    echo "$port did not come back after the upload; find the port and open the monitor yourself" >&2
+    exit 1
+  fi
+  echo "Opening console on $port at 115200 baud (Ctrl-C to quit)"
+  exec "$cli" monitor --config-file arduino-cli.yaml --port "$port" --config baudrate=115200
+fi

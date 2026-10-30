@@ -135,6 +135,9 @@ size_t Diagnostics::formatVersion(char* buf, size_t cap) const {
   formatBuildLine(line, sizeof(line), buildInfo());
   o.put("%s\n", line);
   o.put("Device ID: %s\n", deviceId_);
+  // Absent at the top of the boot log, which prints before the receiver is read.
+  if (gnss_.clockState() != GnssClockState::Unchecked)
+    o.put("GNSS clock: %s\n", gnssClockText(gnss_.clockState()));
   putConfig(o);
   return o.len;
 }
