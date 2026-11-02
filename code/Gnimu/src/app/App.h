@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../core/BatteryMonitor.h"
+#include "../core/ConfirmWindow.h"
 #include "../core/DeviceCommand.h"
 #include "../core/GnssFeed.h"
 #include "../core/ResetReason.h"
@@ -73,6 +74,8 @@ class App {
   [[noreturn]] void enterSystemOff(bool requested);
   // A client's request, from the console or BLE.
   void onCommand(DeviceCommand c);
+  // Console G: asks twice, then wipes the receiver and restarts.
+  void onGnssReset();
   // Console C: the counters App owns. Diagnostics re-baselines its own rate
   // trackers when it sees the same command.
   void clearStats();
@@ -87,6 +90,7 @@ class App {
   GnssFeed feed_;
   Protocol protocol_;
   CommandFrameParser commandParser_;
+  ConfirmWindow confirm_{config::kConfirmWindowMs};
   StatusLed statusLed_;
   BatteryMonitor battery_;
   RunStateMachine machine_;

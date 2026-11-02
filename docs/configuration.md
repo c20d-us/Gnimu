@@ -34,6 +34,8 @@ So the two practical choices are **20 Hz with two constellations** (the default,
 
 Those figures are the top row. The HGLRC modules ship at the default clock, the bottom row, and need a one-time, permanent change to reach the top one. The firmware will ask an unmodified module for 20 Hz and the module will accept the setting, then drop fixes once it's tracking more than about 10 to 12 satellites. See the notes on GNSS modules in the [README](../README.md#three-notes-about-gnss-modules), and run [`tools/gnss_ver`](../tools/gnss_ver/gnss_ver.ino) to see which row your module is on.
 
+The boot log's last GNSS line says which clock the receiver is running. If it says the high clock is programmed but not active yet, send `G` twice in the console to reset the receiver; see [the CPU clock line](console.md#the-cpu-clock-line).
+
 QZSS and SBAS are always off. They are augmentation systems rather than constellations, and the firmware doesn't use them.
 
 ---

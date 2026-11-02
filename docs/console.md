@@ -22,6 +22,7 @@ Type a command and press **Enter**. Set the terminal to send a line ending (CR, 
 | `L` | Turns the [status line](#the-status-line) on or off. Left on, it stops by itself after 3600 lines (one hour). |
 | `T` | Drops the locked [IMU trim](imu-trim.md) and measures a new one at the next stop. Does nothing if no trim has locked yet. |
 | `R` | Restarts the device. The next boot's `Reset:` line says `Restart requested`. |
+| `G` | Erases the receiver's saved settings and satellite data, then restarts the device. Because it erases something, the first press only asks: send `G` again within 10 seconds to go ahead, and any other command cancels it. The next boot finds a blank receiver and configures it again, with a run of ⏬ lines, and the first fix takes longer than usual. It does nothing unless the device is running, and it never touches the receiver's [OTP clock setting](#the-cpu-clock-line). |
 | `O` | Puts the device into System OFF, on battery boards. Cycle the switch or USB to start it again. Other boards say it isn't available. |
 | a number | Prints exactly that many status lines, 1 to 3600, then stops. `0` stops the status line. |
 
@@ -117,7 +118,7 @@ Job ble: every 10000 us, budget 2000 us
 Job led: every 25000 us, budget 500 us
 Job console: every 10000 us, budget 2000 us
 Running.
-Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart.
+Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart, G = reset GNSS.
 L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 ```
 
@@ -194,7 +195,7 @@ Job ble: every 10000 us, budget 2000 us
 Job led: every 25000 us, budget 500 us
 Job console: every 10000 us, budget 2000 us
 Running.
-Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart, O = System OFF.
+Commands end with Enter: D = report, C = clear statistics counters, V = version, T = re-trim IMU, R = restart, G = reset GNSS, O = System OFF.
 L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 ```
 
@@ -209,6 +210,19 @@ The **device ID** is a 10-digit number derived from the chip's own hardware ID. 
 ### GNSS settings
 
 The receiver keeps its settings in its own flash, so the firmware checks each one at boot and only writes what differs. On a receiver the firmware has configured before, every line shows ✅ and the boot is quick. On a new or factory-reset receiver, the first boot shows a run of ⏬ as the settings are written and saved, and later boots are back to ✅.
+
+### The CPU clock line
+
+The last GNSS line reports the receiver's CPU clock, which sets how fast it can navigate: 20 Hz with two constellations needs the high clock, as [configuration](configuration.md#gnss) explains.
+
+| Line | What it means |
+|---|---|
+| `GNSS: CPU clock 192 MHz ✅` | The receiver is running the high clock. |
+| `GNSS: CPU clock stock 128 MHz ⚠️` | The high clock has not been programmed into the receiver. |
+| `GNSS: CPU clock high clock programmed, not active yet ⚠️` | The high clock is programmed, but the receiver is not running it: a setting saved in its flash or battery-backed memory is overriding it. The first step is the `G` command ([above](#commands)): send it twice, and after the restart the line should read `192 MHz`. |
+| `GNSS: CPU clock unknown ⚠️` | The receiver did not answer the clock read. |
+
+If the line still says "not active yet" after a `G` reset, run `tools/gnss_ver`: its phase 3 shows the clock on every layer of the receiver's settings.
 
 ### When a boot stops early
 
@@ -246,7 +260,7 @@ The `BUILD` line and the device ID are described under [the boot log](#the-boot-
 
 | Line | What it shows |
 |---|---|
-| `GNSS clock` | The receiver's CPU clock, read at start-up: `192 MHz`, `stock 128 MHz`, `high clock programmed, not active yet`, or `unknown`. Unlike the `Config:` lines it reports the receiver, not the build, and is left out of the `V` lines that open the boot log, which print before the receiver is read. |
+| `GNSS clock` | The receiver's CPU clock, read at start-up: `192 MHz`, `stock 128 MHz`, `high clock programmed, not active yet` ([what to do](#the-cpu-clock-line)), or `unknown`. Unlike the `Config:` lines it reports the receiver, not the build, and is left out of the `V` lines that open the boot log, which print before the receiver is read. |
 | `Config: board` | The board the firmware was built for, and the [hardware profile](configuration.md#hardware-profiles) it was built with: the pins and IMU mounting it expects. |
 | `Config: GNSS` | The constellations in use, the navigation rate, the receiver's dynamic model, and the minimum satellite elevation. |
 | `Config: IMU` | The axis mapping and the smoothing. `X=+x` means the vehicle's X axis is the sensor's x axis, unchanged; `X=-x` means it is reversed. See [mounting orientation](configuration.md#mounting-orientation). |

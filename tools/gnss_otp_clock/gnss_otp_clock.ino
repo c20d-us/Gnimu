@@ -81,7 +81,8 @@
 // keep reporting the stock 128/128/128/64 after a fully successful write, so
 // RAM must not be used to judge the outcome. If RAM still reads stock after the
 // receiver has lost all power, a stock value stored in BBR or flash is
-// overriding the OTP clock: tools/gnss_reset clears it.
+// overriding the OTP clock: G in the firmware's console, or tools/gnss_reset,
+// clears it.
 //
 // Requires: the GNSS wired as the board's build guide describes, USB for
 // serial, and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial
@@ -793,8 +794,9 @@ void setup() {
     Serial.println("values can happen right after a write; check the Default");
     Serial.println("column above, which should read 192/192/192/96. If RAM is");
     Serial.println("still stock after the receiver has lost all power, a value");
-    Serial.println("stored in BBR or flash is overriding the OTP clock, and");
-    Serial.println("tools/gnss_reset clears it (gnss_ver shows those layers).");
+    Serial.println("stored in BBR or flash is overriding the OTP clock. Send G");
+    Serial.println("twice in the firmware's console, or run tools/gnss_reset,");
+    Serial.println("to clear it (gnss_ver shows those layers).");
     Serial.println();
     Serial.println("Nothing to do. Writing again would only consume more OTP.");
     Serial.println("\nDone. Halting.");
@@ -848,7 +850,8 @@ void setup() {
       Serial.println(
           "a value stored in BBR or flash is overriding the OTP clock:");
       Serial.println(
-          "tools/gnss_reset clears it, and gnss_ver shows those layers.");
+          "send G twice in the firmware's console, or run tools/gnss_reset,");
+      Serial.println("to clear it. gnss_ver shows those layers.");
     }
     Serial.println();
     Serial.println(

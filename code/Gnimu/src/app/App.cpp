@@ -119,7 +119,7 @@ void App::begin() {
   console_.log("%s.", stateName(machine_.state()));
   // O only where System OFF exists: elsewhere it just says it isn't available.
   console_.log("Commands end with Enter: D = report, C = clear statistics counters, V = version, "
-               "T = re-trim IMU, R = restart%s.",
+               "T = re-trim IMU, R = restart, G = reset GNSS%s.",
                board::kHasBattery ? ", O = System OFF" : "");
   console_.log("L = 1s status on/off (up to %lu lines), N = N status reports (0-%lu).",
                static_cast<unsigned long>(config::kStatusMaxCount),
@@ -309,6 +309,8 @@ void App::ledJob() {
 
 void App::consoleJob() {
   const ConsoleCommand cmd = console_.poll();
+  // A second press only counts as the very next command.
+  if (cmd.kind != CommandKind::None && cmd.kind != CommandKind::GnssReset) confirm_.cancel();
   // Every command is routed here, to whoever owns it. App owns the counters
   // Clear resets; Diagnostics sees every command too and resets only its own
   // state, after App's.
@@ -324,6 +326,9 @@ void App::consoleJob() {
       break;
     case CommandKind::SystemOff:
       onCommand(DeviceCommand::SystemOff);
+      break;
+    case CommandKind::GnssReset:
+      onGnssReset();
       break;
     case CommandKind::None:
     case CommandKind::Report:
@@ -361,6 +366,21 @@ void App::onCommand(DeviceCommand c) {
       break;
     }
   }
+}
+
+void App::onGnssReset() {
+  if (machine_.state() != RunState::Running) {
+    console_.log("GNSS: not running - reset ignored");
+    return;
+  }
+  if (!confirm_.press(static_cast<uint8_t>(CommandKind::GnssReset), nowMs())) {
+    console_.log("GNSS: send G again within %lu s to erase the receiver's saved settings and "
+                 "satellite data, then restart",
+                 static_cast<unsigned long>(config::kConfirmWindowMs / 1000));
+    return;
+  }
+  gnss_.factoryReset();
+  apply(machine_.restartRequested());
 }
 
 void App::clearStats() {

@@ -28,6 +28,11 @@ bool epochPending = false;
 static_assert(3 * kUBLOXGNSSDefaultMaxWait + 1000 <= config::kWatchdogMs,
               "watchdog shorter than one GNSS detection attempt plus margin");
 
+// How long the receiver gets to finish erasing its flash before the restart
+// that follows a factory reset. Boards that switch the receiver's rail cut its
+// power at that restart.
+constexpr uint32_t kFactoryResetPauseMs = 1000;
+
 // A setting the receiver must hold, and its human name for the log line.
 struct KeyVal {
   uint32_t key;
@@ -384,6 +389,14 @@ bool Gnss::configure() {
     log_->log("GNSS: PVT output enable not acknowledged - the liveness check will tell ⚠️");
   }
   return allOk;
+}
+
+void Gnss::factoryReset() {
+  log_->log("GNSS: factory reset");
+  Watchdog::feed();
+  receiver.factoryReset();
+  delay(kFactoryResetPauseMs);
+  Watchdog::feed();
 }
 
 bool Gnss::begin(Console &log) {

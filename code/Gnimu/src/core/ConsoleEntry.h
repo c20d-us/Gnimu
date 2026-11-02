@@ -15,9 +15,11 @@ enum class EntryKind : uint8_t { None, Command, Count, TooLarge, Unrecognised };
 
 // The console's commands, named once here where the letters are recognised:
 // D Report, C Clear, V Version, L ToggleStatus, T Retrim, R Restart, O
-// SystemOff. Everything downstream switches on these, so a new command can't
+// SystemOff, G GnssReset. Everything downstream switches on these, so a new command can't
 // go unrouted without a warning.
-enum class CommandKind : uint8_t { None, Report, Clear, Version, ToggleStatus, Retrim, Restart, SystemOff };
+enum class CommandKind : uint8_t {
+  None, Report, Clear, Version, ToggleStatus, Retrim, Restart, SystemOff, GnssReset
+};
 
 struct EntryResult {
   EntryKind kind = EntryKind::None;
@@ -26,7 +28,7 @@ struct EntryResult {
 };
 
 // Collects console input into entries ended by Enter (CR or LF). An entry is
-// either exactly one command letter (D, C, V, L, T, R, O) or a number 0..MaxCount;
+// either exactly one command letter (D, C, V, L, T, R, O, G) or a number 0..MaxCount;
 // anything else is rejected whole, so "Love" or "1g6" do nothing.
 template <uint32_t MaxCount>
 class ConsoleEntry {
@@ -105,6 +107,8 @@ class ConsoleEntry {
         return CommandKind::Restart;
       case 'O':
         return CommandKind::SystemOff;
+      case 'G':
+        return CommandKind::GnssReset;
       default:
         return CommandKind::None;
     }

@@ -626,15 +626,17 @@ static bool printClockConfig() {
                                            : "Flash");
       Serial.println("  from Default, then flash, then BBR, so that value");
       Serial.println("  overrides the OTP clock and the receiver is probably");
-      Serial.println("  running at the stock clock. tools/gnss_reset clears it;");
-      Serial.println("  run the firmware afterwards and then this again.");
+      Serial.println("  running at the stock clock. Sending G twice in the");
+      Serial.println("  firmware's console, or running tools/gnss_reset, clears");
+      Serial.println("  it; check the firmware's clock line or this tool again.");
     } else if (!allHigh) {
       Serial.println();
       Serial.println("  The RAM column still reads the stock clock, with");
       Serial.println("  nothing stored in BBR or flash to explain it. That can");
       Serial.println("  happen right after an OTP write. If it is still stock");
       Serial.println("  after the receiver has lost all power (battery and USB");
-      Serial.println("  off), run tools/gnss_reset and check again.");
+      Serial.println("  off), send G twice in the firmware's console, or run");
+      Serial.println("  tools/gnss_reset, and check again.");
     }
   } else if (allHigh) {
     Serial.println("  VERDICT: HIGH CPU CLOCK. RAM reads 192/192/192/96 even");

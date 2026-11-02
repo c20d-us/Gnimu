@@ -114,6 +114,9 @@ constexpr uint64_t kStatusPeriodUs = 1000000;
 // digit count, so changing this resizes both.
 constexpr uint32_t kStatusMaxCount = 3600;
 
+// How long a command that erases something waits for its second press.
+constexpr uint32_t kConfirmWindowMs = 10000;
+
 // IMU sample rate, shared by both MPU-6050 and LSM6DS3.
 // 100 Hz, undecimated - a future encoder step picks its own transmit cadence
 // rather than this job deciding one. The LSM6DS3 outputs at 104 Hz (100 isn't

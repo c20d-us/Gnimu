@@ -39,7 +39,8 @@ static void testCommands() {
                         {"L\n", CommandKind::ToggleStatus},
                         {"T\n", CommandKind::Retrim},
                         {"R\r", CommandKind::Restart},
-                        {"O\r\n", CommandKind::SystemOff}};
+                        {"O\r\n", CommandKind::SystemOff},
+                        {"G\n", CommandKind::GnssReset}};
   for (const Case& c : cases) {
     const EntryResult r = feedAll(e, c.text);
     assert(r.kind == EntryKind::Command && r.cmd == c.kind);

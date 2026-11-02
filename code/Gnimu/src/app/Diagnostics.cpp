@@ -56,6 +56,7 @@ void Diagnostics::handle(const ConsoleCommand& cmd) {
     case CommandKind::Retrim:
     case CommandKind::Restart:
     case CommandKind::SystemOff:
+    case CommandKind::GnssReset:
       break;  // App acts on these
     case CommandKind::ToggleStatus:
       // A second 'L' stops whatever's running; otherwise it starts the

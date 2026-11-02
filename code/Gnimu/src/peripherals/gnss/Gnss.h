@@ -28,6 +28,10 @@ public:
   bool configured() const { return configured_; }
   // The receiver's CPU clock as of the last begin(); Unchecked until it has been read.
   GnssClockState clockState() const { return clock_; }
+  // Erases the receiver's saved settings and satellite data and cold-starts
+  // it. The caller restarts the device afterwards, so the next boot finds a
+  // blank receiver and configures it again.
+  void factoryReset();
   // Drains the UART and parses; call at least every drain period.
   void poll();
   // Returns true and fills `out` once per new epoch.
