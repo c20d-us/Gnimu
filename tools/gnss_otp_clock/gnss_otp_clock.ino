@@ -77,9 +77,11 @@
 //
 // The OTP-layer reply matches the manual's expected frame byte-for-byte. That
 // is the manual's own verification step and the authoritative result. The
-// Default layer follows it to 192/192/192/96; the RAM layer does NOT, and keeps
-// reporting the stock 128/128/128/64 even after a fully successful write, so
-// RAM must not be used to judge the outcome.
+// Default layer follows it to 192/192/192/96; the RAM layer does NOT, and can
+// keep reporting the stock 128/128/128/64 after a fully successful write, so
+// RAM must not be used to judge the outcome. If RAM still reads stock after the
+// receiver has lost all power, a stock value stored in BBR or flash is
+// overriding the OTP clock: tools/gnss_reset clears it.
 //
 // Requires: the GNSS wired as the board's build guide describes, USB for
 // serial, and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial
@@ -781,16 +783,18 @@ void setup() {
   if (otpMatched) {
     // This is the state a correctly programmed receiver reports: OTP returns
     // the manual's frame while RAM still shows the stock values. It is a
-    // completed burn, not a pending one - the RAM column is simply not where
-    // these keys surface. Burning again would spend more of a finite 64 bytes
-    // for nothing.
+    // completed burn, not a pending one - RAM can lag it, or be overridden by
+    // a value stored in BBR or flash. Burning again would spend more of a
+    // finite 64 bytes for nothing.
     Serial.println("ALREADY PROGRAMMED. The OTP layer returns the manual's");
     Serial.println(
         "expected frame, which is the manual's own pass criterion, so");
-    Serial.println(
-        "the high clock is written and in effect. RAM still reading");
-    Serial.println("the stock values is expected for these keys - check the");
-    Serial.println("Default column above, which should read 192/192/192/96.");
+    Serial.println("the high clock is written. RAM still reading the stock");
+    Serial.println("values can happen right after a write; check the Default");
+    Serial.println("column above, which should read 192/192/192/96. If RAM is");
+    Serial.println("still stock after the receiver has lost all power, a value");
+    Serial.println("stored in BBR or flash is overriding the OTP clock, and");
+    Serial.println("tools/gnss_reset clears it (gnss_ver shows those layers).");
     Serial.println();
     Serial.println("Nothing to do. Writing again would only consume more OTP.");
     Serial.println("\nDone. Halting.");
@@ -834,13 +838,17 @@ void setup() {
     if (after != CLOCK_HIGH) {
       Serial.println();
       Serial.println(
-          "The RAM column above still reads the stock clock. That is");
+          "The RAM column above still reads the stock clock. That can");
       Serial.println(
-          "expected for these keys and is NOT a failure - compare it");
-      Serial.println("against the Default column, which should now read");
+          "happen right after a write - compare it against the Default");
+      Serial.println("column, which should now read 192/192/192/96. This");
+      Serial.println("sketch must NOT be run against this receiver again.");
       Serial.println(
-          "192/192/192/96. Nothing further is needed, and this sketch");
-      Serial.println("must NOT be run against this receiver again.");
+          "If RAM is still stock after the receiver has lost all power,");
+      Serial.println(
+          "a value stored in BBR or flash is overriding the OTP clock:");
+      Serial.println(
+          "tools/gnss_reset clears it, and gnss_ver shows those layers.");
     }
     Serial.println();
     Serial.println(

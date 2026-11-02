@@ -62,12 +62,15 @@
 //            comparison - some M10 parts leave fields the library expects
 //            empty.
 //   Phase 3  CPU clock. Reads the four undocumented CFG keys in group 0x40A4
-//            from the RAM and Default layers, then runs the integration
-//            manual's own verification poll on VALGET layer 4 - the OTP layer.
-//            High clock = 192/192/192/96 MHz, and the OTP poll is the
-//            authoritative one: after a successful OTP write these keys read
-//            192/192/192/96 on Default and OTP while RAM still reports the
-//            stock 128/128/128/64. RAM is not the answer for these keys.
+//            from the RAM, BBR, flash and Default layers, then runs the
+//            integration manual's own verification poll on VALGET layer 4 -
+//            the OTP layer. High clock = 192/192/192/96 MHz, and the OTP poll
+//            is the authoritative one for what is programmed: after a
+//            successful OTP write these keys read 192/192/192/96 on Default
+//            and OTP, while RAM can still report the stock 128/128/128/64.
+//            RAM is built from Default, then flash, then BBR, so a stock
+//            value stored in BBR or flash overrides the OTP clock in RAM. The
+//            BBR and flash columns show whether one is there.
 //   Phase 4  Current rate + constellation config, read from RAM, with the
 //            nav rate this combination is actually rated for.
 //   Phase 5  Message output inventory: every CFG-MSGOUT-*-UART1 key the M10
@@ -94,9 +97,11 @@
 // PASS CRITERIA
 //
 // Phase 1 identifies the part. Phase 3 passes when the OTP-layer poll returns
-// the manual's frame byte-for-byte - that is the manual's own criterion, and it
-// holds even when the RAM column still shows the stock clock. Phase 4's rated
-// ceiling should then be >= kGnssNavRateHz.
+// the manual's frame byte-for-byte - that is the manual's own criterion for
+// what is programmed. It does not show what the receiver is running: a stock
+// RAM column that persists after a full power loss means a stored value is
+// overriding the OTP clock. Phase 4's rated ceiling should be >= kGnssNavRateHz
+// once the receiver runs the high clock.
 //
 // Requires: the GNSS wired as the board's build guide describes, USB for
 // serial, and the SparkFun_u-blox_GNSS_v3 library installed. Open the serial
@@ -295,8 +300,10 @@ static bool connectAtAnyBaud() {
 // The integration manual verifies the clock on VALGET layer 4 - the OTP layer -
 // not on RAM. That distinction turned out to matter: after a successful OTP
 // write these keys read back 192/192/192/96 on the Default and OTP layers while
-// RAM still reports the stock 128/128/128/64. RAM is therefore NOT the
-// authoritative answer for these keys, and the manual's layer-4 poll is.
+// RAM can still report the stock 128/128/128/64. RAM is therefore not the
+// answer for what is programmed, and the manual's layer-4 poll is. RAM is still
+// what the receiver runs on, though, and it is built from Default, then flash,
+// then BBR: a stock value left in BBR or flash overrides the OTP clock there.
 //
 // Layer 4 isn't in the public interface description and the SparkFun library
 // has no constant for it, so the poll and its expected reply go out and get
@@ -504,38 +511,56 @@ static void printLibraryModuleInfo() {
 }
 
 // --- Phase 3: CPU clock ----------------------------------------------------
+// A layer's value as "N MHz", or `failed` when the read got no answer.
+static void clockText(char *out, size_t size, bool ok, uint32_t hz,
+                      const char *failed) {
+  if (ok) {
+    snprintf(out, size, "%lu MHz", (unsigned long)(hz / 1000000UL));
+  } else {
+    snprintf(out, size, "%s", failed);
+  }
+}
+
 // Returns true if every key read back its high-clock value on the RAM layer.
 static bool printClockConfig() {
   Serial.println("--- Phase 3: CPU clock (VALGET, read-only) ---");
-  Serial.println("  key         RAM          Default      expected (high)");
+  Serial.println(
+      "  key         RAM          BBR          Flash        Default      "
+      "expected (high)");
 
   bool allHigh = true;
   bool anyRamReadFailed = false;
+  // A stock value stored in BBR or flash, which overrides the OTP clock in RAM.
+  bool bbrStock = false;
+  bool flashStock = false;
 
   for (int i = 0; i < NUM_CLOCK_KEYS; i++) {
     uint32_t ramValue = 0;
+    uint32_t bbrValue = 0;
+    uint32_t flashValue = 0;
     uint32_t defaultValue = 0;
     bool ramOk = myGNSS.getVal32(CLOCK_KEYS[i].key, &ramValue, VAL_LAYER_RAM);
+    bool bbrOk = myGNSS.getVal32(CLOCK_KEYS[i].key, &bbrValue, VAL_LAYER_BBR);
+    bool flashOk =
+        myGNSS.getVal32(CLOCK_KEYS[i].key, &flashValue, VAL_LAYER_FLASH);
     bool defaultOk =
         myGNSS.getVal32(CLOCK_KEYS[i].key, &defaultValue, VAL_LAYER_DEFAULT);
 
+    // BBR and flash only answer for a key something has stored there, so a
+    // failed read on those two means "not stored", not a fault.
     char ramText[16];
+    char bbrText[16];
+    char flashText[16];
     char defaultText[16];
-    if (ramOk) {
-      snprintf(ramText, sizeof(ramText), "%lu MHz",
-               (unsigned long)(ramValue / 1000000UL));
-    } else {
-      snprintf(ramText, sizeof(ramText), "read failed");
-    }
-    if (defaultOk) {
-      snprintf(defaultText, sizeof(defaultText), "%lu MHz",
-               (unsigned long)(defaultValue / 1000000UL));
-    } else {
-      snprintf(defaultText, sizeof(defaultText), "read failed");
-    }
+    clockText(ramText, sizeof(ramText), ramOk, ramValue, "read failed");
+    clockText(bbrText, sizeof(bbrText), bbrOk, bbrValue, "not stored");
+    clockText(flashText, sizeof(flashText), flashOk, flashValue, "not stored");
+    clockText(defaultText, sizeof(defaultText), defaultOk, defaultValue,
+              "read failed");
 
-    Serial.printf("  0x%08lX  %-12s %-12s %lu MHz\n",
-                  (unsigned long)CLOCK_KEYS[i].key, ramText, defaultText,
+    Serial.printf("  0x%08lX  %-12s %-12s %-12s %-12s %lu MHz\n",
+                  (unsigned long)CLOCK_KEYS[i].key, ramText, bbrText, flashText,
+                  defaultText,
                   (unsigned long)(CLOCK_KEYS[i].highClockHz / 1000000UL));
 
     if (!ramOk) {
@@ -543,6 +568,12 @@ static bool printClockConfig() {
       allHigh = false;
     } else if (ramValue != CLOCK_KEYS[i].highClockHz) {
       allHigh = false;
+    }
+    if (bbrOk && bbrValue != CLOCK_KEYS[i].highClockHz) {
+      bbrStock = true;
+    }
+    if (flashOk && flashValue != CLOCK_KEYS[i].highClockHz) {
+      flashStock = true;
     }
   }
 
@@ -587,13 +618,23 @@ static bool printClockConfig() {
     Serial.println("  the manual's expected frame, which is its own pass");
     Serial.println("  criterion. This receiver is clocked for 25 Hz single-GNSS");
     Serial.println("  / 20 Hz two-GNSS. Do not run gnss_otp_clock against it.");
-    if (!allHigh) {
+    if (bbrStock || flashStock) {
       Serial.println();
-      Serial.println("  Note the RAM column above may still read the stock");
-      Serial.println("  128/128/128/64. That is expected and is NOT a failure:");
-      Serial.println("  for these keys the OTP value surfaces on the Default and");
-      Serial.println("  OTP layers, not RAM. It is exactly why the manual");
-      Serial.println("  verifies on layer 4 rather than layer 0.");
+      Serial.printf("  The %s column holds a stock clock value. RAM is built\n",
+                    bbrStock && flashStock ? "BBR and Flash"
+                    : bbrStock             ? "BBR"
+                                           : "Flash");
+      Serial.println("  from Default, then flash, then BBR, so that value");
+      Serial.println("  overrides the OTP clock and the receiver is probably");
+      Serial.println("  running at the stock clock. tools/gnss_reset clears it;");
+      Serial.println("  run the firmware afterwards and then this again.");
+    } else if (!allHigh) {
+      Serial.println();
+      Serial.println("  The RAM column still reads the stock clock, with");
+      Serial.println("  nothing stored in BBR or flash to explain it. That can");
+      Serial.println("  happen right after an OTP write. If it is still stock");
+      Serial.println("  after the receiver has lost all power (battery and USB");
+      Serial.println("  off), run tools/gnss_reset and check again.");
     }
   } else if (allHigh) {
     Serial.println("  VERDICT: HIGH CPU CLOCK. RAM reads 192/192/192/96 even");
