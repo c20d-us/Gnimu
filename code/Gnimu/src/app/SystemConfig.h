@@ -21,6 +21,10 @@ namespace config {
 
 constexpr uint8_t kGnssDynamicModel = 4; // u-blox dynamic model 4 = automotive
 
+// Below this ground speed the Gnimu frame marks heading invalid: heading of
+// motion comes from the velocity, so it wanders when there's too little of it.
+constexpr float kGnssHeadingMinKmh = 5.0f;
+
 // The baud rate the receiver is switched to and run at. Higher than 115200
 // isn't needed, and lower leads to poor performance. Must be one of the rates
 // the detection sweep tries.
@@ -192,6 +196,9 @@ constexpr uint32_t kImuTrimPvtStaleMs = 1000;
 
 // Checks: the settings in Config.h first, then the system constants.
 
+// strlen for a constant string; a single return, for C++11.
+constexpr size_t textLength(const char* s) { return *s ? 1 + textLength(s + 1) : 0; }
+
 static_assert(kGnssNavRateHz > 0 && kGnssNavRateHz <= 25,
               "nav rate must be 1-25 Hz");
 static_assert(kGnssMinElevDeg <= 90, "min elevation must be 0-90 degrees");
@@ -204,11 +211,12 @@ static_assert(kConstellationPriority[0] != kConstellationPriority[1] &&
                   kConstellationPriority[1] != kConstellationPriority[3] &&
                   kConstellationPriority[2] != kConstellationPriority[3],
               "constellation priority must list each system exactly once");
-static_assert(sizeof(kBleNamePrefix) >= 2 && sizeof(kBleNamePrefix) <= 21,
+static_assert(textLength(kBleNamePrefix) >= 1 && textLength(kBleNamePrefix) <= 20,
               "BLE name prefix must be 1-20 characters so the advertised name "
               "fits in 31 bytes");
 static_assert(sizeof(kBleManufacturer) >= 2,
               "BLE manufacturer string must not be empty");
+static_assert(kGnssHeadingMinKmh >= 0.0f, "heading speed gate can't be negative");
 static_assert(kStatusPeriodUs > 0, "status period must be positive");
 static_assert(kGnssSilenceMs > 1000 &&
                   kGnssSilenceMs >= 10 * (1000 / kGnssNavRateHz),

@@ -9,8 +9,8 @@
 #
 # No board builds both. --hardware and --protocol pick profile files from
 # code/Gnimu/src/variants (hardware profiles are per board) without editing a
-# tracked file, so a tagged commit builds clean, `dirty=0`, in every
-# combination. Left out, the build uses the default profiles. A build with
+# tracked file, so a tagged commit builds clean, with no `-dirty` on its
+# version, in every combination. Left out, the build uses the default profiles. A build with
 # options goes to its own directory, such as build/nrf52840-classic.
 # --matrix builds every board with every hardware and protocol profile.
 #
@@ -86,15 +86,10 @@ fi
 
 revision="$(git rev-parse --short=12 HEAD 2>/dev/null || printf 'unknown')"
 version="$(git describe --tags --always --dirty 2>/dev/null || printf '0.0.0-dev')"
-if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
-  dirty=1
-else
-  dirty=0
-fi
 build_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 extra_flags="-DGNIMU_VERSION=\"${version}\" -DGNIMU_REVISION=\"${revision}\""
-extra_flags+=" -DGNIMU_DIRTY=\"${dirty}\" -DGNIMU_BUILD_UTC=\"${build_utc}\""
+extra_flags+=" -DGNIMU_BUILD_UTC=\"${build_utc}\""
 extra_flags+="${variant_flags}"
 
 sketch="$PWD/code/Gnimu"

@@ -11,6 +11,8 @@ namespace config {
 
 // The RaceBox data protocol.
 constexpr Protocol kProtocol = Protocol::RaceBox;
+// The default advertised-name prefix: Gnimu, marked as speaking RaceBox.
+constexpr char kProtocolNamePrefix[] = "Gnimu-RB";
 
 }  // namespace config
 }  // namespace gnimu

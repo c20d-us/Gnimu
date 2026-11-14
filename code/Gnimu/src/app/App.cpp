@@ -15,6 +15,7 @@
 #include "../platform/ResetInfo.h"
 #include "../platform/StatusLedPort.h"
 #include "../platform/Watchdog.h"
+#include "BuildInfo.h"
 
 namespace gnimu {
 
@@ -175,11 +176,42 @@ Transition App::enter(RunState s) {
       BleProfile profile = Protocol::profile();
       profile.model = config::kBleNamePrefix;
       profile.manufacturer = config::kBleManufacturer;
-      // The transport copies it, so a static local the begin() call outlives
-      // is enough; static to keep it off the loop's few-KB stack.
-      static char configReport[kConfigReportMaxBytes];
-      diagnostics_.formatVersion(configReport, sizeof(configReport));
-      profile.configReport = configReport;
+      // The transport copies every string, so static locals the begin() call
+      // outlives are enough; static to keep them off the loop's few-KB stack.
+      static char hardware[48];
+      if (!profile.firmwareRevision) profile.firmwareRevision = buildInfo().version;
+      if (!profile.hardwareRevision) {
+        snprintf(hardware, sizeof(hardware), "%s, %s", buildInfo().target, board::kHardwareName);
+        profile.hardwareRevision = hardware;
+      }
+      static char configReport[kBleTextMaxBytes];
+      static char schema[kBleTextMaxBytes];
+      static char deviceInfo[kBleTextMaxBytes];
+      for (uint8_t i = 0; i < profile.charCount; i++) {
+        BleCharacteristic& c = profile.chars[i];
+        size_t len = 0;
+        switch (c.text) {
+          case BleText::ConfigReport:
+            len = diagnostics_.formatVersion(configReport, sizeof(configReport));
+            c.value = configReport;
+            break;
+          case BleText::Schema:
+            len = GnimuFrameProtocol::formatSchema(schema, sizeof(schema), board::kHasBattery);
+            c.value = schema;
+            break;
+          case BleText::DeviceInfo:
+            len = diagnostics_.formatDeviceInfo(deviceInfo, sizeof(deviceInfo));
+            c.value = deviceInfo;
+            break;
+          case BleText::None:
+            break;
+        }
+        // A full buffer means the text didn't fit and a client reads it cut off.
+        if (len + 1 >= kBleTextMaxBytes) {
+          console_.log("BLE: text for characteristic %u cut off at %u bytes \xE2\x9D\x8C", static_cast<unsigned>(i),
+                       static_cast<unsigned>(len));
+        }
+      }
       char name[32];
       snprintf(name, sizeof(name), "%s %s", profile.model, deviceId_);
       const bool advertising = ble_.begin(profile, name, deviceId_, console_);
@@ -257,8 +289,9 @@ void App::gnssJob() {
     // One packet per epoch, in the same pass that completed it.
     if (ble_.connected()) {
       Protocol::Packet packet;
-      protocol_.encode(epoch, imu_.read(), batteryStatus(), BatteryPort::usbPresent(), packet);
-      ble_.send(packet, sizeof(packet));
+      protocol_.encode(epoch, imu_.read(), batteryStatus(), BatteryPort::usbPresent(), PlatformClock::nowUs(),
+                       packet);
+      ble_.send(Protocol::kDataChar, packet, sizeof(packet));
     }
   }
   apply(machine_.gnssLiveness(feed_.liveness(PlatformClock::nowUs())));
@@ -290,7 +323,7 @@ void App::bleJob() {
   // go to the protocol. The D report counts what arrived.
   uint8_t buf[32];
   size_t n;
-  while ((n = ble_.read(buf, sizeof(buf))) > 0) {
+  while ((n = ble_.read(Protocol::kRxChar, buf, sizeof(buf))) > 0) {
     protocol_.onRx(buf, n);
     DeviceCommand c;
     for (size_t i = 0; i < n; i++)
@@ -387,7 +420,7 @@ void App::clearStats() {
   scheduler_.clearStats();
   feed_.clear();
   loops_ = 0;
-  ble_.clearMaxSend();
+  ble_.clearStats();
   machine_.clearSwitchNoise();
 }
 

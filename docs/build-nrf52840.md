@@ -261,7 +261,7 @@ The thresholds are in [Configuration](configuration.md#battery), and the full se
 1. Charge the LiPo before using the device away from USB.
 2. Mount the device level, with the XIAO's **USB connector toward the rear of the car**, slide the switch on, and give the GNSS time to acquire a fix. The LED **blinks blue** while waiting for an app.
 3. The M100's own LEDs report GNSS status (see the table below).
-4. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID`. If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
+4. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID` (`Gnimu` instead of `Gnimu-RB` on a [Gnimu-protocol](gnimu-protocol.md) build). If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
 5. On connect, the LED turns **solid blue** and the device begins streaming data packets.
 6. Leave it parked and still for the first minute or two so it can calibrate itself to its mounting. See the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 7. Optional: with USB connected and a serial monitor open, type `L` and Enter for a 1Hz status line. See [Console and diagnostics](console.md).

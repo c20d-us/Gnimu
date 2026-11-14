@@ -62,6 +62,10 @@ class Diagnostics {
   // overrun. What a BLE client reads from the config characteristic. Returns
   // the length.
   size_t formatVersion(char* buf, size_t cap) const;
+  // The same settings as JSON, for the Gnimu protocol's Device info
+  // characteristic: the build, then the settings as a flat "cfg" object.
+  // Truncated, never overrun. Returns the length.
+  size_t formatDeviceInfo(char* buf, size_t cap) const;
 
  private:
   // Arms (or disarms, with count == 0) periodic status reporting and resets

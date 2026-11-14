@@ -149,7 +149,7 @@ Open the Serial Monitor at **115200 baud** for the first boot. The [boot log](co
 ## Usage
 
 1. Power the assembled device over USB and give the GNSS module time to acquire a fix. The onboard LED blinks slowly while no app is connected.
-2. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID`. If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
+2. In your telemetry app, scan for and connect to the device. It advertises as `Gnimu-RB` followed by a 10-digit ID, which the boot log prints as `Device ID` (`Gnimu` instead of `Gnimu-RB` on a [Gnimu-protocol](gnimu-protocol.md) build). If your app doesn't list it, see [`kBleNamePrefix`](configuration.md#ble).
 3. On connect, the LED goes solid and the device begins streaming data packets.
 4. Leave it parked and still for the first minute or two so it can calibrate itself to its mounting. See the mounting note in the [README](../README.md#a-note-about-mounting-and-self-calibration).
 5. Optional: keep a serial monitor open and type `L` and Enter for a 1Hz status line. See [Console and diagnostics](console.md).

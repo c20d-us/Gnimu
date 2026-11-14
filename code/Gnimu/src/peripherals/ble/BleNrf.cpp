@@ -35,16 +35,16 @@ constexpr uint16_t kAdvFastInterval = 32;
 constexpr uint16_t kAdvSlowInterval = 244;
 constexpr uint16_t kAdvFastTimeoutS = 30;
 
-BLEService* service = nullptr;
-BLECharacteristic* tx = nullptr;
-BLECharacteristic* rx = nullptr;
-BLEService* gnimuService = nullptr;
-BLECharacteristic* configChar = nullptr;
+uint8_t charCount = 0;
+BLECharacteristic* chars[kBleMaxCharacteristics] = {};
+// Each writable characteristic's inbound queue, by its position in the list;
+// nullptr for the others.
+ByteRing<256> rxRings[kBleMaxWritable];
+ByteRing<256>* ringOf[kBleMaxCharacteristics] = {};
 BLEDis deviceInfo;
 BLEBas batteryService;
 std::atomic<bool> linkUp{false};
 std::atomic<uint16_t> connHandle{BLE_CONN_HANDLE_INVALID};
-ByteRing<256> rxRing;
 
 void onConnect(uint16_t handle) {
   connHandle.store(handle, std::memory_order_relaxed);
@@ -53,8 +53,16 @@ void onConnect(uint16_t handle) {
 
 void onDisconnect(uint16_t, uint8_t) { linkUp.store(false, std::memory_order_release); }
 
-// Copy only: parsing and acting on commands happen on the loop.
-void onRxWrite(uint16_t, BLECharacteristic*, uint8_t* data, uint16_t len) { rxRing.push(data, len); }
+// Copy only: parsing and acting on commands happen on the loop. Registered
+// only on writable characteristics, so the one written always has a queue.
+void onRxWrite(uint16_t, BLECharacteristic* chr, uint8_t* data, uint16_t len) {
+  for (uint8_t i = 0; i < charCount; i++) {
+    if (chars[i] == chr) {
+      ringOf[i]->push(data, len);
+      return;
+    }
+  }
+}
 
 }  // namespace
 
@@ -63,7 +71,7 @@ bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Co
   if (started_) return true;
   if (!built_) {
     // Must precede Bluefruit.begin(): raises the ATT MTU ceiling to 247, so a
-    // client that asks for room gets an 88-byte frame in one notification.
+    // client that asks for room gets a whole frame in one notification.
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
     if (!Bluefruit.begin()) {
       log.log("BLE: stack failed to start \xE2\x9D\x8C");
@@ -91,38 +99,38 @@ bool BleNrf::begin(const BleProfile& p, const char* name, const char* serial, Co
     // Built from the profile rather than Bluefruit's BLEUart, whose UUIDs are
     // fixed to the Nordic UART service - which only happens to be RaceBox's.
     // Properties, permissions and lengths match BLEUart::begin()'s own setup.
+    // A text longer than the MTU is read in pieces by the stack.
     const uint16_t maxMtu = Bluefruit.getMaxMtu(BLE_GAP_ROLE_PERIPH);
-    service = new BLEService(BLEUuid(p.serviceUuid));
-    service->begin();
-    tx = new BLECharacteristic(BLEUuid(p.txUuid));
-    tx->setProperties(CHR_PROPS_NOTIFY);
-    tx->setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    tx->setMaxLen(maxMtu);
-    tx->begin();
-    rx = new BLECharacteristic(BLEUuid(p.rxUuid));
-    rx->setProperties(CHR_PROPS_WRITE | CHR_PROPS_WRITE_WO_RESP);
-    rx->setPermission(SECMODE_NO_ACCESS, SECMODE_OPEN);
-    rx->setMaxLen(maxMtu);
-    rx->setWriteCallback(onRxWrite, true);
-    rx->begin();
-
-    // The Gnimu service: its configuration as text, read on demand. Its own
-    // service, so RaceBox-protocol clients never see anything unfamiliar in
-    // theirs. A value longer than the MTU is read in pieces by the stack.
-    if (p.configReport) {
-      gnimuService = new BLEService(BLEUuid(kGnimuServiceUuid));
-      gnimuService->begin();
-      configChar = new BLECharacteristic(BLEUuid(kGnimuConfigUuid));
-      configChar->setProperties(CHR_PROPS_READ);
-      configChar->setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-      configChar->setMaxLen(kConfigReportMaxBytes);
-      configChar->begin();
-      configChar->write(p.configReport, static_cast<uint16_t>(strlen(p.configReport)));
+    size_t rings = 0;
+    charCount = p.charCount;
+    for (uint8_t i = 0; i < p.charCount; i++) {
+      const BleCharacteristic& d = p.chars[i];
+      // The profile lists a service's characteristics together, and Bluefruit
+      // adds each characteristic to the service begun most recently.
+      if (i == 0 || strcmp(d.serviceUuid, p.chars[i - 1].serviceUuid) != 0) {
+        (new BLEService(BLEUuid(d.serviceUuid)))->begin();
+      }
+      BLECharacteristic* c = new BLECharacteristic(BLEUuid(d.uuid));
+      uint8_t props = 0;
+      if (d.props & kBleNotify) props |= CHR_PROPS_NOTIFY;
+      if (d.props & kBleRead) props |= CHR_PROPS_READ;
+      if (d.props & kBleWrite) props |= CHR_PROPS_WRITE | CHR_PROPS_WRITE_WO_RESP;
+      c->setProperties(props);
+      c->setPermission((d.props & (kBleNotify | kBleRead)) ? SECMODE_OPEN : SECMODE_NO_ACCESS,
+                       (d.props & kBleWrite) ? SECMODE_OPEN : SECMODE_NO_ACCESS);
+      c->setMaxLen(d.text == BleText::None ? maxMtu : kBleTextMaxBytes);
+      if (d.props & kBleWrite) {
+        ringOf[i] = &rxRings[rings++];
+        c->setWriteCallback(onRxWrite, true);
+      }
+      c->begin();
+      if (d.value) c->write(d.value, static_cast<uint16_t>(strlen(d.value)));
+      chars[i] = c;
     }
 
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();
-    Bluefruit.Advertising.addService(*service);
+    Bluefruit.Advertising.addUuid(BLEUuid(p.advertisedServiceUuid));
     // A 128-bit service UUID nearly fills the 31-byte advertising packet, so
     // the full name goes in the scan response.
     Bluefruit.ScanResponse.addName();
@@ -157,7 +165,7 @@ void BleNrf::update() {
 
 bool BleNrf::connected() const { return started_ && linkUp.load(std::memory_order_acquire); }
 
-bool BleNrf::send(const uint8_t* data, size_t len) {
+bool BleNrf::send(uint8_t index, const uint8_t* data, size_t len) {
   if (!connected()) return false;
   const uint16_t handle = connHandle.load(std::memory_order_relaxed);
   BLEConnection* c = Bluefruit.Connection(handle);
@@ -168,7 +176,7 @@ bool BleNrf::send(const uint8_t* data, size_t len) {
   // False when the peer hasn't enabled notifications, or after waiting up to
   // 100 ms (BLE_GENERIC_TIMEOUT) for a free slot in the send queue.
   const uint64_t start = PlatformClock::nowUs();
-  return link_.sent(tx->notify(handle, data, static_cast<uint16_t>(len)), start);
+  return link_.sent(chars[index]->notify(handle, data, static_cast<uint16_t>(len)), start);
 }
 
 void BleNrf::setBatteryPercent(uint8_t percent) {
@@ -179,12 +187,28 @@ void BleNrf::setBatteryPercent(uint8_t percent) {
   batteryPercent_ = percent;
 }
 
-size_t BleNrf::read(uint8_t* out, size_t max) { return rxRing.pop(out, max); }
+size_t BleNrf::read(uint8_t index, uint8_t* out, size_t max) {
+  return index < charCount && ringOf[index] ? ringOf[index]->pop(out, max) : 0;
+}
+
 BleStats BleNrf::stats() const {
   BleStats s = link_.stats();
-  s.rxBytes = rxRing.pushed();
-  s.rxDropped = rxRing.dropped();
+  for (const ByteRing<256>& r : rxRings) {
+    s.rxBytes += r.pushed();
+    s.rxDropped += r.dropped();
+  }
+  s.rxBytes -= rxBytesBase_;
+  s.rxDropped -= rxDroppedBase_;
   return s;
+}
+
+void BleNrf::clearStats() {
+  link_.clear();
+  rxBytesBase_ = rxDroppedBase_ = 0;
+  for (const ByteRing<256>& r : rxRings) {
+    rxBytesBase_ += r.pushed();
+    rxDroppedBase_ += r.dropped();
+  }
 }
 
 }  // namespace gnimu

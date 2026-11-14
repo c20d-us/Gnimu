@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../SystemConfig.h"
+#include "GnimuFrame.h"
 #include "RaceBox.h"
 
 namespace gnimu {
@@ -17,6 +18,10 @@ struct ProtocolFor;
 template <>
 struct ProtocolFor<config::Protocol::RaceBox> {
   using type = RaceBoxProtocol;
+};
+template <>
+struct ProtocolFor<config::Protocol::Gnimu> {
+  using type = GnimuFrameProtocol;
 };
 
 using Protocol = ProtocolFor<config::kProtocol>::type;

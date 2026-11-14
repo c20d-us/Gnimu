@@ -14,9 +14,6 @@
 #ifndef GNIMU_REVISION
 #define GNIMU_REVISION "IDE-UNSTAMPED"
 #endif
-#ifndef GNIMU_DIRTY
-#define GNIMU_DIRTY "unknown"
-#endif
 #ifndef GNIMU_BUILD_UTC
 #define GNIMU_BUILD_UTC "unknown"
 #endif
@@ -24,8 +21,7 @@
 namespace gnimu {
 
 const BuildInfo& buildInfo() {
-  static const BuildInfo info = {GNIMU_VERSION, GNIMU_REVISION, GNIMU_DIRTY, GNIMU_BUILD_UTC,
-                                 targetName()};
+  static const BuildInfo info = {GNIMU_VERSION, GNIMU_REVISION, GNIMU_BUILD_UTC, targetName()};
   return info;
 }
 

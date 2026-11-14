@@ -20,10 +20,10 @@ I originally started this project as a streaming GNSS+IMU telemetry source for u
 
 I pronounce the project name as "nigh-mew," though I have no strong opinion on how anyone else should pronounce it.
 > [!NOTE]
-> **Multi-protocol compatibility.** Right now, Gnimu streams the RaceBox data protocol only. The recent re-write of the firmware was specifically structured in a way that allows other protocol formats to be wired in, and [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next one I intend to implement. In the future I intend to implement a new, purpose-built, Open Source telemetry protocol that stands on its own and delivers GNSS+IMU data in an extensible format. Keep an eye out for those updates.
+> **Two protocols.** A build streams one of two protocols, chosen when it's built: the RaceBox data protocol (the default), or the [Gnimu protocol](docs/gnimu-protocol.md), a purpose-built, open telemetry format for the Gnimu family of devices, specified in [Gnimu-protocol](https://github.com/c20d-us/Gnimu-protocol). Gnimu frame v1 is still in progress. [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is the next protocol I intend to implement.
 
 > [!NOTE]
-> **The advertised name.** The device advertises as `Gnimu-RB` followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` and `kBleManufacturer` appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
+> **The advertised name.** The device advertises as `Gnimu-RB` (RaceBox builds) or `Gnimu` (Gnimu-protocol builds), followed by a device-unique 10-digit ID. Some apps pick devices out of a BLE scan by the name they expect; if the app you use does this, you'll need to set `kBleNamePrefix` and `kBleManufacturer` appropriately in [`Config.h`](code/Gnimu/Config.h) or the app will not see the device.
 
 > [!NOTE]
 > **Looking for the original firmware?** The first generation of Gnimu, including the OLED build, now lives in [`classic/`](classic/README.md). It still works, but it is deprecated and no longer receives updates or fixes. See [Gnimu Classic](#gnimu-classic) below.
@@ -35,7 +35,7 @@ I pronounce the project name as "nigh-mew," though I have no strong opinion on h
 
 ## Supported boards
 
-One firmware (in [`code/Gnimu/`](code/Gnimu/)) builds for both boards. The board you select in the Arduino IDE or with the command-line build script decides which hardware support is compiled in; there is nothing to edit to switch between them. Both advertise the same BLE identity and stream the same data protocol, so the same apps work with either.
+One firmware (in [`code/Gnimu/`](code/Gnimu/)) builds for both boards. The board you select in the Arduino IDE or with the command-line build script decides which hardware support is compiled in; there is nothing to edit to switch between them. Built for the same protocol, both advertise the same BLE identity and stream the same data, so the same apps work with either.
 
 | | [**ESP32**](docs/build-esp32.md) | [**XIAO nRF52840**](docs/build-nrf52840.md) |
 |---|---|---|
@@ -54,6 +54,7 @@ Start with the build guide for whichever hardware you're building (links at the 
 | [Building and flashing](docs/building.md) | Arduino IDE and `arduino-cli` setup, library versions, the build script, and the host tests |
 | [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing, battery thresholds, and the hardware and protocol build profiles |
 | [Console and diagnostics](docs/console.md) | The boot log, the serial commands, the diagnostics report, and the 1Hz status line |
+| [The Gnimu protocol](docs/gnimu-protocol.md) | What a Gnimu-protocol build sends: the frame's fields and when they're valid, the Schema and Device info, and how to build it |
 | [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE, and reading the configuration over BLE |
 | [Architecture](docs/architecture.md) | How the code is organized, the fixed-rate scheduler, and the run and power states |
 | [Migrating from Classic](docs/migrating-from-classic.md) | What changes if you already have a Classic build |

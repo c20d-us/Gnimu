@@ -79,9 +79,18 @@ The receiver's speed also feeds back into the IMU job. The self-calibration only
 
 What goes in a packet, and the BLE services that carry it, belong to a protocol class under [`app/protocol/`](../code/Gnimu/src/app/protocol/), chosen at compile time by the protocol profile in [`variants/protocol/`](../code/Gnimu/src/variants/protocol/) (see [Build variants](configuration.md#build-variants)). The protocol also decides whether the IMU is used at all.
 
-RaceBox is the only protocol today. The encoder, [`core/RaceBoxEncoder.h`](../code/Gnimu/src/core/RaceBoxEncoder.h), is tested byte for byte against independently computed packets.
+There are two:
 
-Bytes an app writes to the device are queued by the BLE stack's callback and collected by the `ble` job, which hands them to the protocol and also scans them for the [device commands](device-commands.md). The RaceBox protocol itself discards them. Separately, a small Gnimu service next to the protocol's holds the [configuration text](device-commands.md#reading-the-configuration) a client can read; it is built once at boot from the same code as the `V` command.
+- **RaceBox** ([`app/protocol/RaceBox.h`](../code/Gnimu/src/app/protocol/RaceBox.h)). Its encoder, [`core/RaceBoxEncoder.h`](../code/Gnimu/src/core/RaceBoxEncoder.h), is tested byte for byte against independently computed packets.
+- **The Gnimu protocol** ([`app/protocol/GnimuFrame.h`](../code/Gnimu/src/app/protocol/GnimuFrame.h)). It converts Gnimu's units and decides the valid bits, and the spec's own reference encoder, copied into [`core/vendor/gnimu_frame/`](../code/Gnimu/src/core/vendor/gnimu_frame/), lays out the frame. See [The Gnimu protocol](gnimu-protocol.md).
+
+Both send one packet per position update, from the same call in the `gnss` job.
+
+A protocol describes its BLE layout as a **profile** ([`core/BleProfile.h`](../code/Gnimu/src/core/BleProfile.h)): the identity strings for the Device Information Service, and a list of characteristics, each with its service, its properties (notify, read, write), and for read-only text, a role. The BLE transport builds whatever the list says and knows nothing about either protocol; the protocol sends and reads by a characteristic's position in its list. Profiles are checked when the firmware compiles: a malformed list, or a protocol that sends on a characteristic that can't notify, fails the build.
+
+Text roles let `App` fill the text characteristics without knowing which protocol declared them: RaceBox's [configuration text](device-commands.md#reading-the-configuration), and the Gnimu protocol's Schema and Device info. All are built once at boot.
+
+Each writable characteristic gets its own inbound queue, filled by the BLE stack's callback. The `ble` job collects the protocol's queue, hands the bytes to the protocol, and also scans them for the [device commands](device-commands.md). The RaceBox protocol itself discards them; the Gnimu protocol has no writable characteristic yet.
 
 ---
 
