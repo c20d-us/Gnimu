@@ -173,48 +173,7 @@ Transition App::enter(RunState s) {
       if (Protocol::kUsesImu) imu_.begin(console_);
       Watchdog::feed();
       // Last: advertise only once there's something to stream.
-      BleProfile profile = Protocol::profile();
-      profile.model = config::kBleNamePrefix;
-      profile.manufacturer = config::kBleManufacturer;
-      // The transport copies every string, so static locals the begin() call
-      // outlives are enough; static to keep them off the loop's few-KB stack.
-      static char hardware[48];
-      if (!profile.firmwareRevision) profile.firmwareRevision = buildInfo().version;
-      if (!profile.hardwareRevision) {
-        snprintf(hardware, sizeof(hardware), "%s, %s", buildInfo().target, board::kHardwareName);
-        profile.hardwareRevision = hardware;
-      }
-      static char configReport[kBleTextMaxBytes];
-      static char schema[kBleTextMaxBytes];
-      static char deviceInfo[kBleTextMaxBytes];
-      for (uint8_t i = 0; i < profile.charCount; i++) {
-        BleCharacteristic& c = profile.chars[i];
-        size_t len = 0;
-        switch (c.text) {
-          case BleText::ConfigReport:
-            len = diagnostics_.formatVersion(configReport, sizeof(configReport));
-            c.value = configReport;
-            break;
-          case BleText::Schema:
-            len = GnimuFrameProtocol::formatSchema(schema, sizeof(schema), board::kHasBattery);
-            c.value = schema;
-            break;
-          case BleText::DeviceInfo:
-            len = diagnostics_.formatDeviceInfo(deviceInfo, sizeof(deviceInfo));
-            c.value = deviceInfo;
-            break;
-          case BleText::None:
-            break;
-        }
-        // A full buffer means the text didn't fit and a client reads it cut off.
-        if (len + 1 >= kBleTextMaxBytes) {
-          console_.log("BLE: text for characteristic %u cut off at %u bytes \xE2\x9D\x8C", static_cast<unsigned>(i),
-                       static_cast<unsigned>(len));
-        }
-      }
-      char name[32];
-      snprintf(name, sizeof(name), "%s %s", profile.model, deviceId_);
-      const bool advertising = ble_.begin(profile, name, deviceId_, console_);
+      const bool advertising = startBle();
       // After BLE: once the nRF's SoftDevice runs, the clock request has to
       // go through it. Boot until here runs on whatever clock is up.
       console_.log("Clock: crystal %s",
@@ -238,6 +197,51 @@ Transition App::enter(RunState s) {
       break;
   }
   return Transition::stay();
+}
+
+bool App::startBle() {
+  BleProfile profile = Protocol::profile();
+  profile.model = config::kBleNamePrefix;
+  profile.manufacturer = config::kBleManufacturer;
+  // The transport copies every string, so static locals the begin() call
+  // outlives are enough; static to keep them off the loop's few-KB stack.
+  static char hardware[48];
+  if (!profile.firmwareRevision) profile.firmwareRevision = buildInfo().version;
+  if (!profile.hardwareRevision) {
+    snprintf(hardware, sizeof(hardware), "%s, %s", buildInfo().target, board::kHardwareName);
+    profile.hardwareRevision = hardware;
+  }
+  static char configReport[kBleTextMaxBytes];
+  static char schema[kBleTextMaxBytes];
+  static char deviceInfo[kBleTextMaxBytes];
+  for (uint8_t i = 0; i < profile.charCount; i++) {
+    BleCharacteristic& c = profile.chars[i];
+    size_t len = 0;
+    switch (c.text) {
+      case BleText::ConfigReport:
+        len = diagnostics_.formatVersion(configReport, sizeof(configReport));
+        c.value = configReport;
+        break;
+      case BleText::Schema:
+        len = GnimuFrameProtocol::formatSchema(schema, sizeof(schema), board::kHasBattery);
+        c.value = schema;
+        break;
+      case BleText::DeviceInfo:
+        len = diagnostics_.formatDeviceInfo(deviceInfo, sizeof(deviceInfo));
+        c.value = deviceInfo;
+        break;
+      case BleText::None:
+        break;
+    }
+    // A full buffer means the text didn't fit and a client reads it cut off.
+    if (len + 1 >= kBleTextMaxBytes) {
+      console_.log("BLE: text for characteristic %u cut off at %u bytes \xE2\x9D\x8C",
+                   static_cast<unsigned>(i), static_cast<unsigned>(len));
+    }
+  }
+  char name[32];
+  snprintf(name, sizeof(name), "%s %s", profile.model, deviceId_);
+  return ble_.begin(profile, name, deviceId_, console_);
 }
 
 void App::setJobs(const JobSet& j) {

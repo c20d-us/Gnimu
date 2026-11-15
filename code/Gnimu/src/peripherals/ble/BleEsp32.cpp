@@ -66,18 +66,21 @@ class ServerCallbacks : public BLEServerCallbacks {
 using NotifyStatus = BLECharacteristicCallbacks::Status;
 NotifyStatus lastNotifyStatus = NotifyStatus::ERROR_NO_CLIENT;
 
-class TxCallbacks : public BLECharacteristicCallbacks {
-  void onStatus(BLECharacteristic*, Status s, uint32_t) override { lastNotifyStatus = s; }
-};
-
-class RxCallbacks : public BLECharacteristicCallbacks {
+// One object per characteristic, for both directions: the library keeps a
+// single callbacks pointer, so a characteristic that notifies and is written
+// to needs both handled by the same object.
+class CharCallbacks : public BLECharacteristicCallbacks {
  public:
-  explicit RxCallbacks(ByteRing<256>& ring) : ring_(ring) {}
+  // `ring` receives the client's writes; nullptr for one that isn't writable.
+  explicit CharCallbacks(ByteRing<256>* ring) : ring_(ring) {}
 
  private:
+  void onStatus(BLECharacteristic*, Status s, uint32_t) override { lastNotifyStatus = s; }
   // Copy only: parsing and acting on commands happen on the loop.
-  void onWrite(BLECharacteristic* c) override { ring_.push(c->getData(), c->getLength()); }
-  ByteRing<256>& ring_;
+  void onWrite(BLECharacteristic* c) override {
+    if (ring_) ring_->push(c->getData(), c->getLength());
+  }
+  ByteRing<256>* ring_;
 };
 
 }  // namespace
@@ -131,14 +134,9 @@ bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, 
         props |= BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR;
       }
       BLECharacteristic* c = service->createCharacteristic(d.uuid, props);
-      if (d.props & kBleNotify) {
-        c->addDescriptor(new BLE2902());
-        c->setCallbacks(new TxCallbacks());
-      }
-      if (d.props & kBleWrite) {
-        ringOf[i] = &rxRings[rings++];
-        c->setCallbacks(new RxCallbacks(*ringOf[i]));
-      }
+      if (d.props & kBleNotify) c->addDescriptor(new BLE2902());
+      if (d.props & kBleWrite) ringOf[i] = &rxRings[rings++];
+      if (d.props & (kBleNotify | kBleWrite)) c->setCallbacks(new CharCallbacks(ringOf[i]));
       if (d.value) c->setValue(reinterpret_cast<uint8_t*>(const_cast<char*>(d.value)), strlen(d.value));
       chars[i] = c;
     }
