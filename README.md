@@ -12,7 +12,10 @@
 [![Platform: ESP32 / nRF52840](https://img.shields.io/badge/platform-ESP32%20%2F%20nRF52840-000000.svg)](#supported-boards)
 [![Language: C++ (Arduino)](https://img.shields.io/badge/language-C%2B%2B%20(Arduino)-00599C.svg)](https://www.arduino.cc/)
 
-Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). It implements the publicly documented RaceBox BLE data protocol for interoperability. Telemetry apps and tools that read that protocol should be able to use it, with a minor caveat regarding the advertised name as outlined below. Only the streaming data protocol is implemented, not the RaceBox command/configuration functions. The firmware ignores BLE packets written back to it except for three Gnimu-specific command structures (re-trim, device restart and system OFF) described in [device commands](docs/device-commands.md). Only a Gnimu-specific client such as [Gnimu Monitor](https://github.com/c20d-us/Gnimu-Monitor) will send these commands.
+Gnimu turns an MCU (microcontroller), a GNSS (Global Navigation Satellite System) module and an IMU (Inertial Measurement Unit) into a motorsports telemetry source that streams live position, speed, and motion data at up to 25Hz over BLE (Bluetooth Low Energy). Each build streams one of two protocols:
+
+- **RaceBox** (the default): the publicly documented RaceBox BLE data protocol, for interoperability. Telemetry apps and tools that read that protocol should be able to use it, with a minor caveat regarding the advertised name as outlined below. Only the streaming data protocol is implemented, not the RaceBox command/configuration functions. The firmware ignores BLE packets written back to it except for three Gnimu-specific command structures (re-trim, device restart and system OFF) described in [device commands](docs/device-commands.md). Only a Gnimu-specific client such as [Gnimu Monitor](https://github.com/c20d-us/Gnimu-Monitor) will send these commands.
+- **The [Gnimu protocol](docs/gnimu-protocol.md)**: an open telemetry format designed for the Gnimu family of devices, with one fixed-layout frame that apps can map field by field. It takes no commands over BLE yet.
 
 It's a low-cost, hackable platform for experimenting with microprocessors, GNSS & IMU data capture, BLE telemetry protocols and sensor fusion, built from inexpensive off-the-shelf parts.
 
@@ -55,7 +58,7 @@ Start with the build guide for whichever hardware you're building (links at the 
 | [Configuration](docs/configuration.md) | The settings in `Config.h`: GNSS rate and constellations, BLE power, IMU smoothing, battery thresholds, and the hardware and protocol build profiles |
 | [Console and diagnostics](docs/console.md) | The boot log, the serial commands, the diagnostics report, and the 1Hz status line |
 | [The Gnimu protocol](docs/gnimu-protocol.md) | What a Gnimu-protocol build sends: the frame's fields and when they're valid, the Schema and Device info, and how to build it |
-| [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or over BLE, and reading the configuration over BLE |
+| [Device commands](docs/device-commands.md) | Re-trim, restart and System OFF, from the serial console or (RaceBox builds) over BLE, and reading the configuration over BLE |
 | [Architecture](docs/architecture.md) | How the code is organized, the fixed-rate scheduler, and the run and power states |
 | [Migrating from Classic](docs/migrating-from-classic.md) | What changes if you already have a Classic build |
 
@@ -71,7 +74,7 @@ This firmware is a ground-up rewrite of the original Gnimu. The device does the 
 - **Nothing to set per device.** The BLE name is derived from the chip's hardware ID, so every unit gets a stable, unique name from the same firmware image.
 - **Faults instead of hangs.** A missing or silent GNSS receiver puts the device into a fault state with a red LED and a working console, and a watchdog restarts the firmware if it ever stalls.
 - **A serial console.** A boot log that reports every step, an on-demand diagnostics report, and an optional 1Hz status line.
-- **Device commands.** Re-trim the IMU, restart, or switch the device off, from the serial console or over BLE, and read the device's configuration over BLE. See [Device commands](docs/device-commands.md).
+- **Device commands.** Re-trim the IMU, restart, or switch the device off, from the serial console or, on RaceBox builds, over BLE, and read the device's configuration over BLE. See [Device commands](docs/device-commands.md).
 - **Simpler power states on battery.** Running, waiting for the switch, charge-only, and a low-voltage cutoff that protects the cell.
 - **Tests.** The hardware-independent logic is unit-tested on the host, and CI builds both boards.
 
