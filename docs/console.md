@@ -18,7 +18,7 @@ Type a command and press **Enter**. Set the terminal to send a line ending (CR, 
 |---|---|
 | `D` | Prints the [diagnostics report](#the-diagnostics-report). |
 | `C` | Clears the statistics counters, so the next report covers only what happens from now on. |
-| `V` | Prints [what the device is](#what-the-device-is): the build line, the device ID, and the settings the firmware was built with. A BLE client can [read the same text](device-commands.md#reading-the-configuration). |
+| `V` | Prints [what the device is](#what-the-device-is): the build line, the device ID, and the settings the firmware was built with. A BLE client can [read the same text](device-commands.md#reading-the-configuration) on a RaceBox build, and the same information as JSON ([Device info](gnimu-protocol.md#device-info)) on a Gnimu-protocol build. |
 | `L` | Turns the [status line](#the-status-line) on or off. Left on, it stops by itself after 3600 lines (one hour). |
 | `T` | Drops the locked [IMU trim](imu-trim.md) and measures a new one at the next stop. Does nothing if no trim has locked yet. |
 | `R` | Restarts the device. The next boot's `Reset:` line says `Restart requested`. |
@@ -56,7 +56,7 @@ Here is a complete boot of each board. Both GNSS receivers had been configured o
 <summary>ESP32, built and flashed with the scripts</summary>
 
 ```
-BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,target=esp32
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,utc=2026-10-11T17:27:43Z,target=esp32
 Device ID: 0301821570
 Config: board esp32, hardware Reference
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
@@ -128,7 +128,7 @@ L = 1s status on/off (up to 3600 lines), N = N status reports (0-3600).
 <summary>XIAO nRF52840, switched on while on USB, built and flashed with the scripts</summary>
 
 ```
-BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
 Config: board nrf52840, hardware V2
 Config: GNSS GPS+Galileo, 20 Hz, automotive, min elevation 5°
@@ -246,7 +246,7 @@ If the receiver was working and then goes quiet for two seconds, the firmware re
 `V` prints what the device is and how its firmware was built. The same lines open the boot log.
 
 ```
-BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:30:08Z,target=nrf52840
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,utc=2026-10-11T17:30:08Z,target=nrf52840
 Device ID: 1120954722
 GNSS clock: 192 MHz
 Config: board nrf52840, hardware V2

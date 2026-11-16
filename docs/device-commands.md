@@ -2,6 +2,8 @@
 
 A connected BLE client can send the same three actions as the serial console's `T`, `R` and `O`: re-trim the IMU, restart the device, and enter System OFF. What each does is in the [console commands](console.md#commands); both routes end in the same handler.
 
+Everything on this page applies to RaceBox builds. A [Gnimu-protocol](gnimu-protocol.md) build takes no commands over BLE yet, since the spec's Control characteristic isn't defined, and carries its configuration in the Device info characteristic instead of the service below. On either build the console commands work.
+
 There is no reply over BLE. A restart or System OFF shows as the disconnect, and a re-trim shows in the console log.
 
 ## The BLE frame

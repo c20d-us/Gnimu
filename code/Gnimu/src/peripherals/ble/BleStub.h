@@ -25,11 +25,11 @@ class BleStub {
   void end() {}
   void update() {}
   bool connected() const { return false; }
-  bool send(const uint8_t*, size_t) { return false; }
-  size_t read(uint8_t*, size_t) { return 0; }
+  bool send(uint8_t, const uint8_t*, size_t) { return false; }
+  size_t read(uint8_t, uint8_t*, size_t) { return 0; }
   void setBatteryPercent(uint8_t) {}
   BleStats stats() const { return {}; }
-  void clearMaxSend() {}
+  void clearStats() {}
 };
 
 }  // namespace gnimu

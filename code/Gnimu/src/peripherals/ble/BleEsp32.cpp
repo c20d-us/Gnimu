@@ -28,13 +28,25 @@ static_assert(config::kBleTxPowerDbm >= -12 && config::kBleTxPowerDbm <= 9 &&
 constexpr esp_power_level_t kTxPower =
     static_cast<esp_power_level_t>((config::kBleTxPowerDbm + 12) / 3);
 
+// Room for the 140-byte Gnimu frame and more; iOS asks for 185.
+constexpr uint16_t kLocalMtu = 247;
+
 constexpr char kDeviceInfoUuid[] = "0000180a-0000-1000-8000-00805f9b34fb";
 
+// Room for every characteristic of a profile in one service: the declaration
+// and value handles, plus a CCCD for a notify one. Bluedroid's default of 15
+// is too few for six.
+constexpr uint32_t kServiceHandles = 1 + 3 * kBleMaxCharacteristics;
+
 BLEServer* server = nullptr;
-BLECharacteristic* tx = nullptr;
+uint8_t charCount = 0;
+BLECharacteristic* chars[kBleMaxCharacteristics] = {};
+// Each writable characteristic's inbound queue, by its position in the list;
+// nullptr for the others.
+ByteRing<256> rxRings[kBleMaxWritable];
+ByteRing<256>* ringOf[kBleMaxCharacteristics] = {};
 std::atomic<bool> linkUp{false};
 std::atomic<uint16_t> peerMtu{23};  // ATT default until the exchange raises it
-ByteRing<256> rxRing;
 
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer*) override {
@@ -54,13 +66,21 @@ class ServerCallbacks : public BLEServerCallbacks {
 using NotifyStatus = BLECharacteristicCallbacks::Status;
 NotifyStatus lastNotifyStatus = NotifyStatus::ERROR_NO_CLIENT;
 
-class TxCallbacks : public BLECharacteristicCallbacks {
-  void onStatus(BLECharacteristic*, Status s, uint32_t) override { lastNotifyStatus = s; }
-};
+// One object per characteristic, for both directions: the library keeps a
+// single callbacks pointer, so a characteristic that notifies and is written
+// to needs both handled by the same object.
+class CharCallbacks : public BLECharacteristicCallbacks {
+ public:
+  // `ring` receives the client's writes; nullptr for one that isn't writable.
+  explicit CharCallbacks(ByteRing<256>* ring) : ring_(ring) {}
 
-class RxCallbacks : public BLECharacteristicCallbacks {
+ private:
+  void onStatus(BLECharacteristic*, Status s, uint32_t) override { lastNotifyStatus = s; }
   // Copy only: parsing and acting on commands happen on the loop.
-  void onWrite(BLECharacteristic* c) override { rxRing.push(c->getData(), c->getLength()); }
+  void onWrite(BLECharacteristic* c) override {
+    if (ring_) ring_->push(c->getData(), c->getLength());
+  }
+  ByteRing<256>* ring_;
 };
 
 }  // namespace
@@ -87,16 +107,39 @@ bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, 
               config::kBleTxPowerDbm, advDbm, connDbm);
     }
 
+    // Lets a client that asks for it carry a whole frame in one notification;
+    // without it the ESP32 keeps the 23-byte default.
+    if (BLEDevice::setMTU(kLocalMtu) != ESP_OK) {
+      log.log("BLE: MTU %u not accepted \xE2\x9D\x8C", static_cast<unsigned>(kLocalMtu));
+    }
+
     server = BLEDevice::createServer();
     server->setCallbacks(new ServerCallbacks());
 
-    BLEService* service = server->createService(p.serviceUuid);
-    tx = service->createCharacteristic(p.txUuid, BLECharacteristic::PROPERTY_NOTIFY);
-    tx->addDescriptor(new BLE2902());
-    tx->setCallbacks(new TxCallbacks());
-    BLECharacteristic* rx = service->createCharacteristic(
-        p.rxUuid, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
-    rx->setCallbacks(new RxCallbacks());
+    // The profile lists a service's characteristics together, so each service
+    // is started once its last one has been added.
+    BLEService* service = nullptr;
+    size_t rings = 0;
+    charCount = p.charCount;
+    for (uint8_t i = 0; i < p.charCount; i++) {
+      const BleCharacteristic& d = p.chars[i];
+      if (i == 0 || strcmp(d.serviceUuid, p.chars[i - 1].serviceUuid) != 0) {
+        if (service) service->start();
+        service = server->createService(BLEUUID(d.serviceUuid), kServiceHandles);
+      }
+      uint32_t props = 0;
+      if (d.props & kBleNotify) props |= BLECharacteristic::PROPERTY_NOTIFY;
+      if (d.props & kBleRead) props |= BLECharacteristic::PROPERTY_READ;
+      if (d.props & kBleWrite) {
+        props |= BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR;
+      }
+      BLECharacteristic* c = service->createCharacteristic(d.uuid, props);
+      if (d.props & kBleNotify) c->addDescriptor(new BLE2902());
+      if (d.props & kBleWrite) ringOf[i] = &rxRings[rings++];
+      if (d.props & (kBleNotify | kBleWrite)) c->setCallbacks(new CharCallbacks(ringOf[i]));
+      if (d.value) c->setValue(reinterpret_cast<uint8_t*>(const_cast<char*>(d.value)), strlen(d.value));
+      chars[i] = c;
+    }
     service->start();
 
     struct Field {
@@ -115,17 +158,8 @@ bool BleEsp32::begin(const BleProfile& p, const char* name, const char* serial, 
       info->createCharacteristic(f.uuid, BLECharacteristic::PROPERTY_READ)->setValue(f.value);
     info->start();
 
-    // The Gnimu service: its configuration as text, read on demand, kept
-    // apart from the protocol's service. Not advertised; found by discovery.
-    if (p.configReport) {
-      BLEService* gnimu = server->createService(kGnimuServiceUuid);
-      gnimu->createCharacteristic(kGnimuConfigUuid, BLECharacteristic::PROPERTY_READ)
-          ->setValue(reinterpret_cast<uint8_t*>(const_cast<char*>(p.configReport)), strlen(p.configReport));
-      gnimu->start();
-    }
-
     BLEAdvertising* adv = BLEDevice::getAdvertising();
-    adv->addServiceUUID(p.serviceUuid);
+    adv->addServiceUUID(p.advertisedServiceUuid);
     adv->addServiceUUID(kDeviceInfoUuid);
     adv->setScanResponse(true);
     built_ = true;
@@ -155,7 +189,7 @@ void BleEsp32::update() {
 
 bool BleEsp32::connected() const { return started_ && linkUp.load(std::memory_order_acquire); }
 
-bool BleEsp32::send(const uint8_t* data, size_t len) {
+bool BleEsp32::send(uint8_t index, const uint8_t* data, size_t len) {
   if (!connected()) return false;
   // A notification carries MTU - 3 bytes; anything longer would arrive cut short.
   if (!link_.admit(len, peerMtu.load(std::memory_order_acquire))) return false;
@@ -164,17 +198,33 @@ bool BleEsp32::send(const uint8_t* data, size_t len) {
   // arrives later as a separate stack event.
   const uint64_t start = PlatformClock::nowUs();
   lastNotifyStatus = NotifyStatus::ERROR_NO_CLIENT;
-  tx->setValue(data, len);
-  tx->notify();
+  chars[index]->setValue(data, len);
+  chars[index]->notify();
   return link_.sent(lastNotifyStatus == NotifyStatus::SUCCESS_NOTIFY, start);
 }
 
-size_t BleEsp32::read(uint8_t* out, size_t max) { return rxRing.pop(out, max); }
+size_t BleEsp32::read(uint8_t index, uint8_t* out, size_t max) {
+  return index < charCount && ringOf[index] ? ringOf[index]->pop(out, max) : 0;
+}
+
 BleStats BleEsp32::stats() const {
   BleStats s = link_.stats();
-  s.rxBytes = rxRing.pushed();
-  s.rxDropped = rxRing.dropped();
+  for (const ByteRing<256>& r : rxRings) {
+    s.rxBytes += r.pushed();
+    s.rxDropped += r.dropped();
+  }
+  s.rxBytes -= rxBytesBase_;
+  s.rxDropped -= rxDroppedBase_;
   return s;
+}
+
+void BleEsp32::clearStats() {
+  link_.clear();
+  rxBytesBase_ = rxDroppedBase_ = 0;
+  for (const ByteRing<256>& r : rxRings) {
+    rxBytesBase_ += r.pushed();
+    rxDroppedBase_ += r.dropped();
+  }
 }
 
 }  // namespace gnimu

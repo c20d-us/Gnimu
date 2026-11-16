@@ -64,7 +64,7 @@ If an upload to the XIAO can't reset the board into its bootloader, **double-tap
 Every boot prints a `BUILD` line with the firmware's version, git revision, and build time. Those values are filled in by the build script described below, and reach a device when it is [flashed from the command line](#flashing-from-the-command-line). The Arduino IDE doesn't run that script, so an IDE build reports placeholders instead:
 
 ```
-BUILD,version=0.0.0-dev,revision=IDE-UNSTAMPED,dirty=unknown,utc=unknown,target=...
+BUILD,version=0.0.0-dev,revision=IDE-UNSTAMPED,utc=unknown,target=...
 ```
 
 That is expected, and the firmware is otherwise identical.
@@ -80,10 +80,11 @@ scripts/build.sh            # both boards
 scripts/build.sh esp32      # one board
 scripts/build.sh nrf52840
 scripts/build.sh nrf52840 --hardware classic   # Classic nRF52840 wiring and IMU axes
+scripts/build.sh nrf52840 --protocol gnimu     # the Gnimu protocol instead of RaceBox
 scripts/build.sh --matrix                      # every board and profile combination
 ```
 
-`--hardware <name>` and `--protocol <name>` choose the build's [profiles](configuration.md#build-variants): small header files that hold the pins, the IMU mounting and the protocol. Hardware profiles belong to a board, so name the board with `--hardware`. Left out, the build uses the defaults. The choice is passed to the compiler as a flag, so no file is modified, and a build from a clean tagged commit reports `dirty=0` whichever profile you pick.
+`--hardware <name>` and `--protocol <name>` choose the build's [profiles](configuration.md#build-variants): small header files that hold the pins, the IMU mounting and the protocol. Hardware profiles belong to a board, so name the board with `--hardware`. Left out, the build uses the defaults. The choice is passed to the compiler as a flag, so no file is modified, and a build from a clean tagged commit has no `-dirty` on its version whichever profile you pick.
 
 The script:
 
@@ -126,6 +127,8 @@ scripts/flash.sh nrf52840
 scripts/flash.sh nrf52840 --build --hardware classic
 ```
 
+**Switching a board between protocols.** A RaceBox build and a Gnimu-protocol build present different BLE services from the same BLE address. If a phone connected to the board before the switch, turn its Bluetooth off and on before connecting again, or iOS may still use the services it saw last time.
+
 Add `--monitor` to open the serial console on the same port once the upload finishes, so you see the [boot log](console.md#the-boot-log) from the first line. Press Ctrl-C to quit:
 
 ```bash
@@ -154,14 +157,13 @@ Close the IDE's Serial Monitor, or any other serial terminal on that port, befor
 A device flashed this way reports a stamped `BUILD` line, at boot and whenever you type `V`:
 
 ```
-BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,dirty=0,utc=2026-10-11T17:27:43Z,target=esp32
+BUILD,version=2.0.0-rc1,revision=7f7efe5f4d6a,utc=2026-10-11T17:27:43Z,target=esp32
 ```
 
 | Field | Meaning |
 |---|---|
-| `version` | The tag the firmware was built from. Between tags it is the nearest tag, the number of commits since it, and the commit, such as `2.0.0-rc1-3-g1a2b3c4`. |
+| `version` | The tag the firmware was built from. Between tags it is the nearest tag, the number of commits since it, and the commit, such as `2.0.0-rc1-3-g1a2b3c4`. It ends in `-dirty` when tracked files had uncommitted changes, so the firmware isn't exactly that commit. |
 | `revision` | The commit the firmware was built from. |
-| `dirty` | `1` if the working tree had uncommitted changes when it was built, `0` if it was clean. |
 | `utc` | When it was built. |
 
 That line settles which firmware a device is running, which an IDE build's `IDE-UNSTAMPED` cannot. Which hardware profile and protocol it was built for follow in the `Config:` lines `V` prints (`hardware`, `IMU axes`, `BLE`).

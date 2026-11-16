@@ -5,47 +5,103 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 namespace gnimu {
 
-// What a protocol needs the BLE transport to expose: one notify (TX) and one
-// write (RX) characteristic in a single service, plus the Device Information
-// Service strings. The transport stays protocol-agnostic; RaceChrono's
-// different service layout will extend this when it lands.
+// What a protocol needs the BLE transport to expose: its characteristics, each
+// in a named service, plus the Device Information Service strings. The
+// transport builds whatever the list says and stays protocol-agnostic; a
+// characteristic is addressed by its position in the list.
+
+// Characteristic properties, combined as a bitmask. Write accepts both write
+// and write-without-response.
+enum : uint8_t { kBleNotify = 1, kBleRead = 2, kBleWrite = 4 };
+
+// The text a read-only characteristic holds. App fills each one from its role
+// when BLE starts, so it never needs to know which protocol declared it.
+enum class BleText : uint8_t { None, ConfigReport, Schema, DeviceInfo };
+
+struct BleCharacteristic {
+  const char* serviceUuid;
+  const char* uuid;
+  uint8_t props;
+  BleText text;
+  const char* value;  // the role's text, set by App; the transport copies it
+};
+
+constexpr size_t kBleMaxCharacteristics = 6;
+// Each writable characteristic gets its own inbound queue.
+constexpr size_t kBleMaxWritable = 2;
+// The most a BLE attribute can hold; a text value is cut off here, never beyond.
+constexpr size_t kBleTextMaxBytes = 512;
+// A protocol's characteristic index when it has no such characteristic.
+constexpr uint8_t kBleNoChar = 0xFF;
+
 struct BleProfile {
-  const char *model;  // advertised-name prefix and DIS model string
-  const char *manufacturer;
-  const char *firmwareRevision;
-  const char *hardwareRevision;
-  const char *serviceUuid;
-  const char *txUuid;  // notify: device -> client
-  const char *rxUuid;  // write / write-without-response: client -> device
-  // Text a client can read from the Gnimu config characteristic; nullptr
-  // leaves that service out. Set by App from what V prints, not by the
-  // protocol. The transport copies it, so it need not outlive begin().
-  const char *configReport;
+  const char* model;  // advertised-name prefix and DIS model string
+  const char* manufacturer;
+  // nullptr: App fills in the device's own build version and hardware.
+  const char* firmwareRevision;
+  const char* hardwareRevision;
+  const char* advertisedServiceUuid;
+  uint8_t charCount;
+  // A service's characteristics are listed together, in the order they're built.
+  BleCharacteristic chars[kBleMaxCharacteristics];
 };
 
-// The Gnimu service, separate from the protocol's: one read-only characteristic
-// holding the device's configuration as text (docs/device-commands.md). It is
-// not advertised, so a client finds it by discovering services once connected.
-constexpr char kGnimuServiceUuid[] = "20D21CDE-F59E-41F1-9BCA-5BDE69876C8B";
-constexpr char kGnimuConfigUuid[] = "689E54CD-60B0-473A-B049-A5E02A2716E0";
-// The most a BLE attribute can hold; the report is cut off here, never beyond.
-constexpr size_t kConfigReportMaxBytes = 512;
+// Compile-time checks on a profile. Recursive rather than loops: the nRF core
+// builds as C++11, where a constexpr function is a single return.
+namespace ble_check {
 
-// The RaceBox data protocol's BLE layout. The model and manufacturer are
-// left empty: App fills them from Config.h, the one place the device's
-// identity is set.
-constexpr BleProfile kRaceBoxProfile = {
-    "",
-    "",
-    "3.3",
-    "1",
-    "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",
-    "6E400003-B5A3-F393-E0A9-E50E24DCCA9E",
-    "6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
-    nullptr,
-};
+constexpr bool sameUuid(const char* a, const char* b) {
+  return *a == *b && (*a == '\0' || sameUuid(a + 1, b + 1));
+}
+
+constexpr size_t writable(const BleProfile& p, size_t i = 0) {
+  return i >= p.charCount ? 0 : ((p.chars[i].props & kBleWrite) ? 1 : 0) + writable(p, i + 1);
+}
+
+// Characteristic i's service appears among chars[0, end).
+constexpr bool serviceSeen(const BleProfile& p, size_t i, size_t end, size_t k = 0) {
+  return k < end &&
+         (sameUuid(p.chars[k].serviceUuid, p.chars[i].serviceUuid) || serviceSeen(p, i, end, k + 1));
+}
+
+// Each characteristic either continues the previous one's service or starts
+// a service not seen before.
+constexpr bool servicesTogether(const BleProfile& p, size_t i = 1) {
+  return i >= p.charCount ||
+         ((sameUuid(p.chars[i].serviceUuid, p.chars[i - 1].serviceUuid) || !serviceSeen(p, i, i - 1)) &&
+          servicesTogether(p, i + 1));
+}
+
+// A text characteristic is read and nothing else.
+constexpr bool textsReadOnly(const BleProfile& p, size_t i = 0) {
+  return i >= p.charCount ||
+         ((p.chars[i].text == BleText::None || p.chars[i].props == kBleRead) && textsReadOnly(p, i + 1));
+}
+
+constexpr bool advertisedServiceListed(const BleProfile& p, size_t i = 0) {
+  return i < p.charCount &&
+         (sameUuid(p.chars[i].serviceUuid, p.advertisedServiceUuid) || advertisedServiceListed(p, i + 1));
+}
+
+}  // namespace ble_check
+
+constexpr bool bleProfileValid(const BleProfile& p) {
+  return p.charCount >= 1 && p.charCount <= kBleMaxCharacteristics &&
+         ble_check::writable(p) <= kBleMaxWritable && ble_check::servicesTogether(p) &&
+         ble_check::textsReadOnly(p) && ble_check::advertisedServiceListed(p);
+}
+
+constexpr bool bleNotifies(const BleProfile& p, uint8_t i) {
+  return i < p.charCount && (p.chars[i].props & kBleNotify) != 0;
+}
+
+// kBleNoChar counts: a protocol needn't accept writes.
+constexpr bool bleWritableOrNone(const BleProfile& p, uint8_t i) {
+  return i == kBleNoChar || (i < p.charCount && (p.chars[i].props & kBleWrite) != 0);
+}
 
 }  // namespace gnimu

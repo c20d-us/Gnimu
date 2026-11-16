@@ -63,6 +63,10 @@ class App {
   // stop. Returns the follow-up transition (Starting reports the
   // bring-up result); Stay for the others.
   Transition enter(RunState s);
+  // The protocol's BLE profile, completed with the device's identity, its DIS
+  // strings and the text characteristics' values, then advertised. Part of
+  // Starting's bring-up; false if BLE failed to start.
+  bool startBle();
   void setJobs(const JobSet& j);
   // GNSS, IMU and BLE off in hardware-safe order. Idempotent: safe when
   // nothing was started (a boot straight into waiting).

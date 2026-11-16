@@ -41,7 +41,7 @@ static void testEncodeMatchesTheEncoder() {
 
   RaceBoxProtocol p;
   RaceBoxProtocol::Packet viaProtocol;
-  p.encode(e, imu, &b, true, viaProtocol);
+  p.encode(e, imu, &b, true, 0, viaProtocol);
   uint8_t direct[kRaceBoxPacketBytes];
   encodeRaceBoxData(e, imu, 50 | 0x80, direct);
   assert(memcmp(viaProtocol, direct, sizeof(direct)) == 0);
@@ -57,8 +57,25 @@ static void testDefaultIdentityIsNotRaceBox() {
   assert(RaceBoxProtocol::profile().manufacturer[0] == '\0');
 }
 
+static void testProfileLayout() {
+  // NUS TX and RX, then the config text in the Gnimu service: the same GATT
+  // layout RaceBox clients have always seen.
+  const BleProfile& p = RaceBoxProtocol::profile();
+  assert(p.charCount == 3);
+  assert(strcmp(p.advertisedServiceUuid, kNusServiceUuid) == 0);
+  assert(strcmp(p.chars[RaceBoxProtocol::kTx].uuid, "6E400003-B5A3-F393-E0A9-E50E24DCCA9E") == 0);
+  assert(p.chars[RaceBoxProtocol::kTx].props == kBleNotify);
+  assert(strcmp(p.chars[RaceBoxProtocol::kRx].uuid, "6E400002-B5A3-F393-E0A9-E50E24DCCA9E") == 0);
+  assert(p.chars[RaceBoxProtocol::kRx].props == kBleWrite);
+  const BleCharacteristic& config = p.chars[RaceBoxProtocol::kConfig];
+  assert(strcmp(config.serviceUuid, kGnimuServiceUuid) == 0);
+  assert(strcmp(config.uuid, "689E54CD-60B0-473A-B049-A5E02A2716E0") == 0);
+  assert(config.props == kBleRead && config.text == BleText::ConfigReport);
+}
+
 int main() {
   testDefaultIdentityIsNotRaceBox();
+  testProfileLayout();
   testBatteryByte();
   testEncodeMatchesTheEncoder();
   puts("raceboxprotocol: all tests passed");

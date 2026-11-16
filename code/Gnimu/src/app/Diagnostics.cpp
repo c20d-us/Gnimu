@@ -126,7 +126,7 @@ void Diagnostics::printStatus(uint64_t nowUs) {
 
 void Diagnostics::printVersion() {
   // Static, not on the loop's few-KB stack.
-  static char text[kConfigReportMaxBytes];
+  static char text[kBleTextMaxBytes];
   console_.print(text, formatVersion(text, sizeof(text)));
 }
 
@@ -180,6 +180,39 @@ void Diagnostics::putConfig(detail::Out& o) const {
           cutoff / 100, cutoff % 100, critical / 100, critical % 100, warning / 100,
           warning % 100, scale / 100, scale % 100, full / 100, full % 100);
   }
+}
+
+size_t Diagnostics::formatDeviceInfo(char* buf, size_t cap) const {
+  detail::Out o{buf, cap, 0};
+  const BuildInfo& b = buildInfo();
+  o.put("{\"v\":1,\"build\":{\"rev\":\"%s\",\"utc\":\"%s\",\"target\":\"%s\"},", b.revision, b.buildUtc,
+        b.target);
+
+  char gnss[64];
+  detail::Out g{gnss, sizeof(gnss), 0};
+  for (unsigned i = 0; i < config::kConstellationCount; i++)
+    g.put("%s%s", i ? "+" : "", config::gnssSystemName(config::kConstellationPriority[i]));
+  o.put("\"cfg\":{\"hardware\":\"%s\",\"gnss\":\"%s\",\"nav_hz\":%u,\"dyn_model\":\"%s\",\"min_elev\":%u,",
+        board::kHardwareName, gnss, static_cast<unsigned>(config::kGnssNavRateHz),
+        dynamicModelName(config::kGnssDynamicModel), static_cast<unsigned>(config::kGnssMinElevDeg));
+
+  char axes[24];
+  formatAxisMap(axes, sizeof(axes), ImuDevice::axisMap());
+  const unsigned accel = centi(config::kImuAccelAlpha), gyro = centi(config::kImuGyroAlpha);
+  o.put("\"imu_axes\":\"%s\",\"accel_alpha\":%u.%02u,\"gyro_alpha\":%u.%02u,\"tx_dbm\":%d", axes,
+        accel / 100, accel % 100, gyro / 100, gyro % 100, config::kBleTxPowerDbm);
+
+  if (board::kHasBattery) {
+    const unsigned cutoff = centi(config::kBatteryCutoffV), critical = centi(config::kBatteryCriticalV),
+                   warning = centi(config::kBatteryWarningV), scale = centi(config::kBatteryFullScaleV),
+                   full = centi(config::kBatteryChargeFullV);
+    o.put(",\"batt_cutoff_v\":%u.%02u,\"batt_critical_v\":%u.%02u,\"batt_warn_v\":%u.%02u,"
+          "\"batt_full_v\":%u.%02u,\"batt_charged_v\":%u.%02u",
+          cutoff / 100, cutoff % 100, critical / 100, critical % 100, warning / 100, warning % 100,
+          scale / 100, scale % 100, full / 100, full % 100);
+  }
+  o.put("}}");
+  return o.len;
 }
 
 }  // namespace gnimu

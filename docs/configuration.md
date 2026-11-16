@@ -57,7 +57,7 @@ The advertised BLE name is `kBleNamePrefix` followed by a 10-digit ID derived fr
 
 | Setting | Default | What it does |
 |---|---|---|
-| `kBleNamePrefix` | `"Gnimu-RB"` | The advertised-name prefix, up to 20 characters. Some apps pick devices out of a scan by the name they expect, so change it if yours does. |
+| `kBleNamePrefix` | The protocol's own | The advertised-name prefix, up to 20 characters: `Gnimu-RB` for RaceBox builds, `Gnimu` for Gnimu-protocol builds. Some apps pick devices out of a scan by the name they expect, so if yours does, replace `kProtocolNamePrefix` in this line with a string such as `"MyGnimu"`. |
 | `kBleManufacturer` | `"Gnimu"` | The Device Information manufacturer string. |
 
 ---
@@ -115,12 +115,12 @@ The percentage is a straight line from the cutoff (0%) to full scale (100%). The
 
 ## Build variants
 
-Some choices are made when the firmware is built, by naming a *profile*: a small header file in [`code/Gnimu/src/variants/`](../code/Gnimu/src/variants/). Choosing a profile modifies no file, so one tagged release can produce every combination and each build reports `dirty=0`.
+Some choices are made when the firmware is built, by naming a *profile*: a small header file in [`code/Gnimu/src/variants/`](../code/Gnimu/src/variants/). Choosing a profile modifies no file, so one tagged release can produce every combination, each with a clean version (no `-dirty`).
 
 | Choice | Option | Profiles (default first) |
 |---|---|---|
 | Hardware | `--hardware <name>` | nRF52840: `v2`, `classic`. ESP32: `reference`. |
-| Protocol | `--protocol <name>` | `racebox` |
+| Protocol | `--protocol <name>` | `racebox`, `gnimu` |
 
 ```bash
 scripts/build.sh nrf52840 --hardware classic
@@ -155,15 +155,20 @@ If your wiring or IMU mounting differs from the build guide, make a profile for 
 2. Change the values you need, and give `kHardwareName` a name for `V` to show.
 3. Build with `scripts/build.sh <board> --hardware mine`.
 
-Keep every constant the copied file defines. A missing one fails the build with an error naming it, and an axis map that isn't a permutation fails with a message saying so. Your new file shows as untracked in `git status`, so a build that includes it reports `dirty=1`, which is accurate: the firmware isn't a clean copy of the repository.
+Keep every constant the copied file defines. A missing one fails the build with an error naming it, and an axis map that isn't a permutation fails with a message saying so. A new file you haven't committed doesn't show in the build's version, so commit your profile if you want the version to identify exactly what was built.
 
 ### Protocols
 
-The RaceBox data protocol is the only one available today. [RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is planned.
+| Profile | Protocol |
+|---|---|
+| `racebox` | The RaceBox data protocol, for apps that read RaceBox devices. Advertises as `Gnimu-RB`. |
+| `gnimu` | The [Gnimu protocol](gnimu-protocol.md), the Gnimu family's own open format. Advertises as `Gnimu`. |
+
+[RaceChrono DIY](https://github.com/aollin/racechrono-ble-diy-device) is planned.
 
 ### Arduino IDE
 
-The IDE can't pass options, so it builds the defaults. To build another profile there, change the default: the `GNIMU_HARDWARE_DEFAULT` line in the board's `BoardConfig.h` (for example `"nrf52840/hardware/classic.h"`), or `GNIMU_PROTOCOL_FILE` in `Config.h`. Or edit the default profile itself. Edits like these show as `dirty=1` in a command-line build, but an IDE build doesn't record that either way.
+The IDE can't pass options, so it builds the defaults. To build another profile there, change the default: the `GNIMU_HARDWARE_DEFAULT` line in the board's `BoardConfig.h` (for example `"nrf52840/hardware/classic.h"`), or `GNIMU_PROTOCOL_FILE` in `Config.h`. Or edit the default profile itself. Edits like these show as `-dirty` on the version in a command-line build, but an IDE build doesn't record that either way.
 
 ---
 

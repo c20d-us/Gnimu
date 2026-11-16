@@ -70,7 +70,8 @@ class BleLink {
 
   // The send counters; the transport fills in its own RX fields.
   BleStats stats() const { return stats_; }
-  void clearMaxSend() { stats_.maxSendUs = 0; }
+  // Console C: the send counters start again from zero.
+  void clear() { stats_ = BleStats(); }
 
  private:
   static constexpr uint64_t kRefusalLogUs = 1000000;
