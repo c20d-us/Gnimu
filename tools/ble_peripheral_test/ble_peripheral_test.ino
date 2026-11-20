@@ -31,7 +31,7 @@ namespace {
 
 // Advertised identity.
 constexpr char kNamePrefix[] = "Gnimu-RB";
-constexpr char kManufacturer[] = "Gnimu";
+constexpr char kManufacturer[] = "Gnimu Labs";
 constexpr char kFirmwareRev[] = "3.3";
 constexpr char kHardwareRev[] = "1";
 constexpr char kServiceUuid[] = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";

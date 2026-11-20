@@ -61,7 +61,7 @@ constexpr int kBleTxPowerDbm = -12;
 // kProtocolNamePrefix below with a string, e.g. "MyGnimu". Up to 20 characters.
 constexpr const char* kBleNamePrefix = kProtocolNamePrefix;
 // Device Information manufacturer string.
-constexpr char kBleManufacturer[] = "Gnimu";
+constexpr char kBleManufacturer[] = "Gnimu Labs";
 
 // IMU
 

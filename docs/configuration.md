@@ -58,7 +58,7 @@ The advertised BLE name is `kBleNamePrefix` followed by a 10-digit ID derived fr
 | Setting | Default | What it does |
 |---|---|---|
 | `kBleNamePrefix` | The protocol's own | The advertised-name prefix, up to 20 characters: `Gnimu-RB` for RaceBox builds, `Gnimu` for Gnimu-protocol builds. Some apps pick devices out of a scan by the name they expect, so if yours does, replace `kProtocolNamePrefix` in this line with a string such as `"MyGnimu"`. |
-| `kBleManufacturer` | `"Gnimu"` | The Device Information manufacturer string. |
+| `kBleManufacturer` | `"Gnimu Labs"` | The Device Information manufacturer string. |
 
 ---
 

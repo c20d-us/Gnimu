@@ -80,7 +80,7 @@ Every value is fixed when the firmware is built. A client should ignore keys it 
 
 | Characteristic | Gnimu sends |
 |---|---|
-| Manufacturer | `kBleManufacturer` (`Gnimu`) |
+| Manufacturer | `kBleManufacturer` (`Gnimu Labs`) |
 | Model | The advertised-name prefix (`Gnimu`) |
 | Serial number | The 10-digit device ID |
 | Firmware revision | The build's version |
