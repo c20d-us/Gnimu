@@ -159,4 +159,4 @@ Protocol details follow the *RaceBox BLE Protocol Description*, [available from 
 
 Released under the **GNU General Public License, version 3 or (at your option) any later version** — see [`LICENSE`](LICENSE).
 
-The Gnimu name and logo are not covered by this license. See the [Gnimu branding usage policy](https://github.com/c20d-us/Gnimu-branding/blob/main/LICENSE.md).
+The Gnimu and Gnimu Labs names and logos are not covered by this license. See the [Gnimu Labs branding usage policy](https://github.com/c20d-us/Gnimu-branding/blob/main/LICENSE.md).
