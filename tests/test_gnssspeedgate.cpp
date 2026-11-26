@@ -56,7 +56,7 @@ static void testFreshFeedResetsStaleness() {
 }
 
 // The point of timing by arrival: asking often or rarely gives the same
-// answer, unlike the old count of caller ticks.
+// answer.
 static void testStalenessIndependentOfQueryRate() {
   GnssSpeedGate often(kStaleUs), rarely(kStaleUs);
   often.feed(epochAt(0, 3, true, 5000000));

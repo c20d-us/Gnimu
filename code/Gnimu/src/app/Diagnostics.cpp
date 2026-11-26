@@ -75,8 +75,8 @@ void Diagnostics::handle(const ConsoleCommand& cmd) {
 void Diagnostics::tick(uint64_t nowUs) {
   if (statusRemaining_ == 0 || nowUs < nextStatusDueUs_) return;
   printStatus(nowUs);
-  // Fixed grid, not "now + period": scheduling from now let every line
-  // land up to a console tick later than the last, slipping a whole
+  // Fixed grid, not "now + period": scheduling from now would let every
+  // line land up to a console tick later than the last, slipping a whole
   // second of RT every ~100 lines. After a long stall, resync to the next
   // grid point rather than firing a burst of catch-up lines.
   nextStatusDueUs_ += config::kStatusPeriodUs;

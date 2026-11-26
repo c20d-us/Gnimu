@@ -298,7 +298,7 @@ static bool connectAtAnyBaud() {
 
 // --- OTP layer poll (phase 3) ----------------------------------------------
 // The integration manual verifies the clock on VALGET layer 4 - the OTP layer -
-// not on RAM. That distinction turned out to matter: after a successful OTP
+// not on RAM. The distinction matters: after a successful OTP
 // write these keys read back 192/192/192/96 on the Default and OTP layers while
 // RAM can still report the stock 128/128/128/64. RAM is therefore not the
 // answer for what is programmed, and the manual's layer-4 poll is. RAM is still
